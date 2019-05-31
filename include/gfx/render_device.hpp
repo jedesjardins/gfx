@@ -45,6 +45,43 @@ struct Vertex
     }
 };
 
+enum class ObjectType
+{
+    NONE,
+    STATIC,
+    DYNAMIC
+};
+
+struct StaticVertexData // can be edited with a
+{
+    VkBuffer       vertexbuffer;
+    VkDeviceMemory vertexbuffer_memory;
+    VkDeviceSize   vertexbuffer_offset;
+
+    VkBuffer       indexbuffer;
+    VkDeviceMemory indexbuffer_memory;
+    uint32_t       indexbuffer_offset;
+    uint32_t       indexbuffer_size;
+};
+
+struct DynamicVertexData
+{
+    uint32_t vertex_count;
+    Vertex * vertices;
+    uint32_t index_count;
+    uint32_t * indices;
+};
+
+struct Object
+{
+    ObjectType type{ObjectType::NONE};
+    union
+    {
+        StaticVertexData  s_vertex_data;
+        DynamicVertexData d_vertex_data;
+    };
+};
+
 namespace gfx
 {
 class RenderDevice
@@ -133,16 +170,6 @@ public:
             return false;
         }
 
-        if (createVertexbuffer() != VK_SUCCESS)
-        {
-            return false;
-        }
-
-        if (createIndexbuffer() != VK_SUCCESS)
-        {
-            return false;
-        }
-
         if (createCommandbuffers() != VK_SUCCESS)
         {
             return false;
@@ -166,14 +193,6 @@ public:
             vkDestroySemaphore(logical_device, image_available_semaphores[i], nullptr);
             vkDestroyFence(logical_device, in_flight_fences[i], nullptr);
         }
-
-        // INDEXBUFFER
-        vkDestroyBuffer(logical_device, indexbuffer, nullptr);
-        vkFreeMemory(logical_device, indexbuffer_memory, nullptr);
-
-        // VERTEXBUFFER
-        vkDestroyBuffer(logical_device, vertexbuffer, nullptr);
-        vkFreeMemory(logical_device, vertexbuffer_memory, nullptr);
 
         // COLOR/DEPTH ATTACHMENTS
         vkDestroyImageView(logical_device, depth_image_view, nullptr);
@@ -236,7 +255,12 @@ public:
         }
     }
 
-    void drawFrame()
+    void waitForIdle()
+    {
+        vkDeviceWaitIdle(logical_device);
+    }
+
+    void drawFrame(uint32_t object_count, Object * p_objects)
     {
         vkWaitForFences(logical_device,
                         1,
@@ -269,7 +293,7 @@ public:
 
         // updateUniformBuffer(imageIndex);
 
-        createCommandbuffer(imageIndex);
+        createCommandbuffer(imageIndex, object_count, p_objects);
 
         auto submitInfo = VkSubmitInfo{.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
 
@@ -317,6 +341,56 @@ public:
         }
 
         currentFrame = (currentFrame + 1) % MAX_FRAMES_IN_FLIGHT;
+    }
+
+    bool createStaticObject(Object &   object,
+                            uint32_t   vertex_count,
+                            Vertex *   vertices,
+                            uint32_t   index_count,
+                            uint32_t * indices)
+
+    {
+        object.type = ObjectType::STATIC;
+        object.s_vertex_data = StaticVertexData{
+            .vertexbuffer = VK_NULL_HANDLE,
+            .vertexbuffer_memory = VK_NULL_HANDLE,
+            .vertexbuffer_offset = 0,
+            .indexbuffer = VK_NULL_HANDLE,
+            .indexbuffer_memory = VK_NULL_HANDLE,
+            .indexbuffer_offset = 0,
+            .indexbuffer_size = index_count
+        };
+
+        if (createVertexbuffer(object.s_vertex_data.vertexbuffer,
+                               object.s_vertex_data.vertexbuffer_memory,
+                               vertex_count,
+                               vertices)
+            != VK_SUCCESS)
+        {
+            return false;
+        }
+
+        if (createIndexbuffer(object.s_vertex_data.indexbuffer,
+                              object.s_vertex_data.indexbuffer_memory,
+                              index_count,
+                              indices)
+            != VK_SUCCESS)
+        {
+            return false;
+        }
+
+        return true;
+    }
+
+    void destroyStaticObject(Object & object)
+    {
+        // INDEXBUFFER
+        vkDestroyBuffer(logical_device, object.s_vertex_data.indexbuffer, nullptr);
+        vkFreeMemory(logical_device, object.s_vertex_data.indexbuffer_memory, nullptr);
+
+        // VERTEXBUFFER
+        vkDestroyBuffer(logical_device, object.s_vertex_data.vertexbuffer, nullptr);
+        vkFreeMemory(logical_device, object.s_vertex_data.vertexbuffer_memory, nullptr);
     }
 
 private:
@@ -1572,9 +1646,12 @@ private:
     }
 
     // VERTEXBUFFER
-    VkResult createVertexbuffer()
+    VkResult createVertexbuffer(VkBuffer &       vertexbuffer,
+                                VkDeviceMemory & vertexbuffer_memory,
+                                uint32_t         vertex_count,
+                                Vertex *         vertices)
     {
-        VkDeviceSize bufferSize = sizeof(vertices[0]) * vertices.size();
+        VkDeviceSize bufferSize = sizeof(Vertex) * vertex_count;
 
         VkBuffer       stagingBuffer;
         VkDeviceMemory stagingBufferMemory;
@@ -1586,7 +1663,7 @@ private:
 
         void * data;
         vkMapMemory(logical_device, stagingBufferMemory, 0, bufferSize, 0, &data);
-        memcpy(data, vertices.data(), (size_t)bufferSize);
+        memcpy(data, vertices, (size_t)bufferSize);
         vkUnmapMemory(logical_device, stagingBufferMemory);
 
         createBuffer(bufferSize,
@@ -1655,9 +1732,12 @@ private:
     };
 
     // INDEXBUFFER
-    VkResult createIndexbuffer()
+    VkResult createIndexbuffer(VkBuffer &       indexbuffer,
+                               VkDeviceMemory & indexbuffer_memory,
+                               uint32_t         index_count,
+                               uint32_t *       indices)
     {
-        VkDeviceSize bufferSize = sizeof(indices[0]) * indices.size();
+        VkDeviceSize bufferSize = sizeof(uint32_t) * index_count;
 
         VkBuffer       stagingBuffer;
         VkDeviceMemory stagingBufferMemory;
@@ -1669,7 +1749,7 @@ private:
 
         void * data;
         vkMapMemory(logical_device, stagingBufferMemory, 0, bufferSize, 0, &data);
-        memcpy(data, indices.data(), (size_t)bufferSize);
+        memcpy(data, indices, (size_t)bufferSize);
         vkUnmapMemory(logical_device, stagingBufferMemory);
 
         createBuffer(bufferSize,
@@ -1702,16 +1782,14 @@ private:
     }
 
     // COMMANDBUFFER
-    VkResult createCommandbuffer(uint32_t resource_index)
+    VkResult createCommandbuffer(uint32_t resource_index, uint32_t object_count, Object * p_objects)
     {
         auto beginInfo = VkCommandBufferBeginInfo{
             .sType            = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
             .flags            = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,
             .pInheritanceInfo = nullptr};
 
-        auto i = resource_index;
-
-        auto result = vkBeginCommandBuffer(commandbuffers[i], &beginInfo);
+        auto result = vkBeginCommandBuffer(commandbuffers[resource_index], &beginInfo);
         if (result != VK_SUCCESS)
         {
             return result;
@@ -1726,36 +1804,40 @@ private:
         auto renderPassInfo = VkRenderPassBeginInfo{
             .sType             = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
             .renderPass        = render_pass,
-            .framebuffer       = swapchain_framebuffers[i],
+            .framebuffer       = swapchain_framebuffers[resource_index],
             .renderArea.offset = {0, 0},
             .renderArea.extent = swapchain_extent,
             .clearValueCount   = static_cast<uint32_t>(clearValues.size()),
             .pClearValues      = clearValues.data()};
 
-        vkCmdBeginRenderPass(commandbuffers[i], &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
+        vkCmdBeginRenderPass(commandbuffers[resource_index], &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
 
-        vkCmdBindPipeline(commandbuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, graphics_pipeline);
+        vkCmdBindPipeline(commandbuffers[resource_index], VK_PIPELINE_BIND_POINT_GRAPHICS, graphics_pipeline);
 
-        VkBuffer     vertexBuffers[] = {vertexbuffer};
-        VkDeviceSize offsets[]       = {0};
-        vkCmdBindVertexBuffers(commandbuffers[i], 0, 1, vertexBuffers, offsets);
-        vkCmdBindIndexBuffer(commandbuffers[i], indexbuffer, 0, VK_INDEX_TYPE_UINT32);
-        /*
-        vkCmdBindDescriptorSets(commandbuffers[i],
-                                VK_PIPELINE_BIND_POINT_GRAPHICS,
-                                pipeline_layout,
-                                0,
-                                1,
-                                &descriptorSets[i],
-                                0,
-                                nullptr);
-        */
+        for (uint32_t object_index = 0; object_index < object_count; ++object_index)
+        {
+            auto & object = p_objects[object_index];
 
-        vkCmdDrawIndexed(commandbuffers[i], static_cast<uint32_t>(indices.size()), 1, 0, 0, 0);
+            if (object.type == ObjectType::STATIC)
+            {
+                vkCmdBindVertexBuffers(commandbuffers[resource_index],
+                                       0,
+                                       1,
+                                       &object.s_vertex_data.vertexbuffer,
+                                       &object.s_vertex_data.vertexbuffer_offset);
+                vkCmdBindIndexBuffer(commandbuffers[resource_index],
+                                     object.s_vertex_data.indexbuffer,
+                                     object.s_vertex_data.indexbuffer_offset,
+                                     VK_INDEX_TYPE_UINT32);
 
-        vkCmdEndRenderPass(commandbuffers[i]);
+                vkCmdDrawIndexed(
+                    commandbuffers[resource_index], object.s_vertex_data.indexbuffer_size, 1, 0, 0, 0);
+            }
+        }
 
-        result = vkEndCommandBuffer(commandbuffers[i]);
+        vkCmdEndRenderPass(commandbuffers[resource_index]);
+
+        result = vkEndCommandBuffer(commandbuffers[resource_index]);
         if (result != VK_SUCCESS)
         {
             return result;
@@ -1850,19 +1932,6 @@ private:
     VkImage        depth_image;
     VkDeviceMemory depth_image_memory;
     VkImageView    depth_image_view;
-
-    // OBJECT VERTEX/INDEX BUFFER
-    std::vector<Vertex> vertices{{{-.5f, .5f, 0.0f}, {1.f, 0.f, 0.f}},
-                                 {{.5f, .5f, 0.0f}, {1.f, 0.f, 0.f}},
-                                 {{.5f, -.5f, 0.0f}, {1.f, 0.f, 0.f}},
-                                 {{-.5f, -.5f, 0.0f}, {1.f, 0.f, 0.f}}};
-    VkBuffer            vertexbuffer;
-    VkDeviceMemory      vertexbuffer_memory;
-
-    // OBJECT VERTEX/INDEX BUFFER
-    std::vector<uint32_t> indices{0, 1, 2, 0, 2, 3};
-    VkBuffer              indexbuffer;
-    VkDeviceMemory        indexbuffer_memory;
 
     std::vector<VkCommandBuffer> commandbuffers;
 
