@@ -269,6 +269,8 @@ public:
 
         // updateUniformBuffer(imageIndex);
 
+        createCommandbuffer(imageIndex);
+
         auto submitInfo = VkSubmitInfo{.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
 
                                        .waitSemaphoreCount = 1,
@@ -1264,8 +1266,7 @@ private:
         auto poolInfo = VkCommandPoolCreateInfo{
             .sType            = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
             .queueFamilyIndex = static_cast<uint32_t>(physical_device_info.graphics_queue),
-            .flags            = 0 // Optional
-        };
+            .flags            = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT};
 
         return vkCreateCommandPool(logical_device, &poolInfo, nullptr, &command_pool);
     }
@@ -1697,72 +1698,73 @@ private:
             .level              = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
             .commandBufferCount = (uint32_t)commandbuffers.size()};
 
-        if (vkAllocateCommandBuffers(logical_device, &allocInfo, commandbuffers.data())
-            != VK_SUCCESS)
+        return vkAllocateCommandBuffers(logical_device, &allocInfo, commandbuffers.data());
+    }
+
+    // COMMANDBUFFER
+    VkResult createCommandbuffer(uint32_t resource_index)
+    {
+        auto beginInfo = VkCommandBufferBeginInfo{
+            .sType            = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
+            .flags            = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,
+            .pInheritanceInfo = nullptr};
+
+        auto i = resource_index;
+
+        auto result = vkBeginCommandBuffer(commandbuffers[i], &beginInfo);
+        if (result != VK_SUCCESS)
         {
-            throw std::runtime_error("failed to allocate command buffers!");
+            return result;
         }
 
-        for (size_t i = 0; i < commandbuffers.size(); i++)
+        VkClearValue clearColor = {0.0f, 0.0f, 0.0f, 1.0f};
+
+        auto clearValues = std::array<VkClearValue, 2>{
+            VkClearValue{.color = {0.0f, 0.0f, 0.0f, 1.0f}},
+            VkClearValue{.depthStencil = {1.0f, 0}}};
+
+        auto renderPassInfo = VkRenderPassBeginInfo{
+            .sType             = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
+            .renderPass        = render_pass,
+            .framebuffer       = swapchain_framebuffers[i],
+            .renderArea.offset = {0, 0},
+            .renderArea.extent = swapchain_extent,
+            .clearValueCount   = static_cast<uint32_t>(clearValues.size()),
+            .pClearValues      = clearValues.data()};
+
+        vkCmdBeginRenderPass(commandbuffers[i], &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
+
+        vkCmdBindPipeline(commandbuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, graphics_pipeline);
+
+        VkBuffer     vertexBuffers[] = {vertexbuffer};
+        VkDeviceSize offsets[]       = {0};
+        vkCmdBindVertexBuffers(commandbuffers[i], 0, 1, vertexBuffers, offsets);
+        vkCmdBindIndexBuffer(commandbuffers[i], indexbuffer, 0, VK_INDEX_TYPE_UINT32);
+        /*
+        vkCmdBindDescriptorSets(commandbuffers[i],
+                                VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                pipeline_layout,
+                                0,
+                                1,
+                                &descriptorSets[i],
+                                0,
+                                nullptr);
+        */
+
+        vkCmdDrawIndexed(commandbuffers[i], static_cast<uint32_t>(indices.size()), 1, 0, 0, 0);
+
+        vkCmdEndRenderPass(commandbuffers[i]);
+
+        result = vkEndCommandBuffer(commandbuffers[i]);
+        if (result != VK_SUCCESS)
         {
-            auto beginInfo = VkCommandBufferBeginInfo{
-                .sType            = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
-                .flags            = VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT,
-                .pInheritanceInfo = nullptr};
-
-            if (vkBeginCommandBuffer(commandbuffers[i], &beginInfo) != VK_SUCCESS)
-            {
-                throw std::runtime_error("failed to begin recording command buffer!");
-            }
-
-            VkClearValue clearColor = {0.0f, 0.0f, 0.0f, 1.0f};
-
-            auto clearValues = std::array<VkClearValue, 2>{
-                VkClearValue{.color = {0.0f, 0.0f, 0.0f, 1.0f}},
-                VkClearValue{.depthStencil = {1.0f, 0}}};
-
-            auto renderPassInfo = VkRenderPassBeginInfo{
-                .sType             = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
-                .renderPass        = render_pass,
-                .framebuffer       = swapchain_framebuffers[i],
-                .renderArea.offset = {0, 0},
-                .renderArea.extent = swapchain_extent,
-                .clearValueCount   = static_cast<uint32_t>(clearValues.size()),
-                .pClearValues      = clearValues.data()};
-
-            vkCmdBeginRenderPass(commandbuffers[i], &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
-
-            vkCmdBindPipeline(
-                commandbuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, graphics_pipeline);
-
-            VkBuffer     vertexBuffers[] = {vertexbuffer};
-            VkDeviceSize offsets[]       = {0};
-            vkCmdBindVertexBuffers(commandbuffers[i], 0, 1, vertexBuffers, offsets);
-            vkCmdBindIndexBuffer(commandbuffers[i], indexbuffer, 0, VK_INDEX_TYPE_UINT32);
-            /*
-            vkCmdBindDescriptorSets(commandbuffers[i],
-                                    VK_PIPELINE_BIND_POINT_GRAPHICS,
-                                    pipeline_layout,
-                                    0,
-                                    1,
-                                    &descriptorSets[i],
-                                    0,
-                                    nullptr);
-            */
-
-            vkCmdDrawIndexed(commandbuffers[i], static_cast<uint32_t>(indices.size()), 1, 0, 0, 0);
-
-            vkCmdEndRenderPass(commandbuffers[i]);
-
-            if (vkEndCommandBuffer(commandbuffers[i]) != VK_SUCCESS)
-            {
-                throw std::runtime_error("failed to record command buffer!");
-            }
+            return result;
         }
 
         return VK_SUCCESS;
     }
 
+    // SYNC OBJECTS
     VkResult createSyncObjects()
     {
         image_available_semaphores.resize(MAX_FRAMES_IN_FLIGHT);
