@@ -17,6 +17,7 @@
 struct Vertex
 {
     glm::vec3 pos;
+    glm::vec3 color;
 
     // binding description is what bound vertex binding it's coming from
     static VkVertexInputBindingDescription getBindingDescription()
@@ -28,13 +29,17 @@ struct Vertex
     }
 
     // attribute description is info about attribute and from which binding it comes from
-    static VkVertexInputAttributeDescription getAttributeDescriptions()
+    static std::array<VkVertexInputAttributeDescription, 2> getAttributeDescriptions()
     {
-        auto attributeDescriptions = VkVertexInputAttributeDescription{
-            .binding  = 0,
-            .location = 0,
-            .format   = VK_FORMAT_R32G32B32_SFLOAT,
-            .offset   = offsetof(Vertex, pos)};
+        auto attributeDescriptions = std::array<VkVertexInputAttributeDescription, 2>{
+            VkVertexInputAttributeDescription{.binding  = 0,
+                                              .location = 0,
+                                              .format   = VK_FORMAT_R32G32B32_SFLOAT,
+                                              .offset   = offsetof(Vertex, pos)},
+            VkVertexInputAttributeDescription{.binding  = 0,
+                                              .location = 1,
+                                              .format   = VK_FORMAT_R32G32B32_SFLOAT,
+                                              .offset   = offsetof(Vertex, color)}};
 
         return attributeDescriptions;
     }
@@ -249,7 +254,7 @@ public:
 
         if (result == VK_ERROR_OUT_OF_DATE_KHR)
         {
-            //recreateSwapChain();
+            // recreateSwapChain();
             return;
         }
         else if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR)
@@ -262,7 +267,7 @@ public:
 
         VkSemaphore signalSemaphores[] = {render_finished_semaphores[currentFrame]};
 
-        //updateUniformBuffer(imageIndex);
+        // updateUniformBuffer(imageIndex);
 
         auto submitInfo = VkSubmitInfo{.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
 
@@ -298,10 +303,11 @@ public:
 
         result = vkQueuePresentKHR(present_queue, &presentInfo);
 
-        if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR || framebuffer_resized)
+        if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR
+            || framebuffer_resized)
         {
             framebuffer_resized = false;
-            //recreateSwapChain();
+            // recreateSwapChain();
         }
         else if (result != VK_SUCCESS)
         {
@@ -1082,8 +1088,8 @@ private:
             .sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,
             .vertexBindingDescriptionCount   = 1,
             .pVertexBindingDescriptions      = &bindingDescription,
-            .vertexAttributeDescriptionCount = 1,
-            .pVertexAttributeDescriptions    = &attributeDescriptions};
+            .vertexAttributeDescriptionCount = static_cast<uint32_t>(attributeDescriptions.size()),
+            .pVertexAttributeDescriptions    = attributeDescriptions.data()};
 
         auto inputAssembly = VkPipelineInputAssemblyStateCreateInfo{
             .sType                  = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO,
@@ -1771,12 +1777,14 @@ private:
 
         for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++)
         {
-            if (vkCreateSemaphore(logical_device, &semaphoreInfo, nullptr, &image_available_semaphores[i])
+            if (vkCreateSemaphore(
+                    logical_device, &semaphoreInfo, nullptr, &image_available_semaphores[i])
                     != VK_SUCCESS
                 || vkCreateSemaphore(
                        logical_device, &semaphoreInfo, nullptr, &render_finished_semaphores[i])
                        != VK_SUCCESS
-                || vkCreateFence(logical_device, &fenceInfo, nullptr, &in_flight_fences[i]) != VK_SUCCESS)
+                || vkCreateFence(logical_device, &fenceInfo, nullptr, &in_flight_fences[i])
+                       != VK_SUCCESS)
             {
                 throw std::runtime_error("failed to create synchronization objects for a frame!");
             }
@@ -1842,10 +1850,10 @@ private:
     VkImageView    depth_image_view;
 
     // OBJECT VERTEX/INDEX BUFFER
-    std::vector<Vertex> vertices{{{-.5f, .5f, 0.0f}},
-                                 {{.5f, .5f, 0.0f}},
-                                 {{.5f, -.5f, 0.0f}},
-                                 {{-.5f, -.5f, 0.0f}}};
+    std::vector<Vertex> vertices{{{-.5f, .5f, 0.0f}, {1.f, 0.f, 0.f}},
+                                 {{.5f, .5f, 0.0f}, {1.f, 0.f, 0.f}},
+                                 {{.5f, -.5f, 0.0f}, {1.f, 0.f, 0.f}},
+                                 {{-.5f, -.5f, 0.0f}, {1.f, 0.f, 0.f}}};
     VkBuffer            vertexbuffer;
     VkDeviceMemory      vertexbuffer_memory;
 
