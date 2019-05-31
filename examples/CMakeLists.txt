@@ -8,7 +8,7 @@ message(STATUS "Examples included")
 # gather all example files
 set(SOURCES_SINGLE_FILE
 	# list test files here
-	simple.cpp
+	variable_vertex_buffers.cpp
 )
 
 # get base names of each file (strips off .cpp)

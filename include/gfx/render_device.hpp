@@ -48,8 +48,9 @@ struct Vertex
 enum class ObjectType
 {
     NONE,
-    STATIC,
-    DYNAMIC
+    STATIC,  // never updated
+    DYNAMIC, // updated infrequently through staging buffer
+    STREAMED // updated frequently with host visible/coherent buffer
 };
 
 struct StaticVertexData // can be edited with a
@@ -60,15 +61,15 @@ struct StaticVertexData // can be edited with a
 
     VkBuffer       indexbuffer;
     VkDeviceMemory indexbuffer_memory;
-    uint32_t       indexbuffer_offset;
-    uint32_t       indexbuffer_size;
+    size_t         indexbuffer_offset;
+    size_t         indexbuffer_size;
 };
 
-struct DynamicVertexData
+struct StreamedVertexData
 {
-    uint32_t vertex_count;
-    Vertex * vertices;
-    uint32_t index_count;
+    size_t     vertex_count;
+    Vertex *   vertices;
+    size_t     index_count;
     uint32_t * indices;
 };
 
@@ -77,8 +78,8 @@ struct Object
     ObjectType type{ObjectType::NONE};
     union
     {
-        StaticVertexData  s_vertex_data;
-        DynamicVertexData d_vertex_data;
+        StaticVertexData   s_vertex_data;
+        StreamedVertexData d_vertex_data;
     };
 };
 
@@ -93,7 +94,7 @@ public:
         getRequiredExtensions();
     }
 
-    bool init(char const * window_name)
+    bool init(char const * window_name, size_t dynamic_vertices_count, size_t dynamic_indices_count)
     {
         if (createInstance(window_name) != VK_SUCCESS)
         {
@@ -180,12 +181,29 @@ public:
             return false;
         }
 
+        if (createDynamicObjectResources(dynamic_vertices_count, dynamic_indices_count)
+            != VK_SUCCESS)
+        {
+            return false;
+        }
+
         return true;
     }
 
     void quit()
     {
         vkDeviceWaitIdle(logical_device);
+
+        for (size_t i = 0; i < swapchain_framebuffers.size(); ++i)
+        {
+            // DYNAMIC INDEXBUFFER
+            vkDestroyBuffer(logical_device, dynamic_indexbuffers[i], nullptr);
+            vkFreeMemory(logical_device, dynamic_indexbuffer_memories[i], nullptr);
+
+            // DYNAMIC VERTEXBUFFER
+            vkDestroyBuffer(logical_device, dynamic_vertexbuffers[i], nullptr);
+            vkFreeMemory(logical_device, dynamic_vertexbuffer_memories[i], nullptr);
+        }
 
         for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++)
         {
@@ -350,16 +368,14 @@ public:
                             uint32_t * indices)
 
     {
-        object.type = ObjectType::STATIC;
-        object.s_vertex_data = StaticVertexData{
-            .vertexbuffer = VK_NULL_HANDLE,
-            .vertexbuffer_memory = VK_NULL_HANDLE,
-            .vertexbuffer_offset = 0,
-            .indexbuffer = VK_NULL_HANDLE,
-            .indexbuffer_memory = VK_NULL_HANDLE,
-            .indexbuffer_offset = 0,
-            .indexbuffer_size = index_count
-        };
+        object.type          = ObjectType::STATIC;
+        object.s_vertex_data = StaticVertexData{.vertexbuffer        = VK_NULL_HANDLE,
+                                                .vertexbuffer_memory = VK_NULL_HANDLE,
+                                                .vertexbuffer_offset = 0,
+                                                .indexbuffer         = VK_NULL_HANDLE,
+                                                .indexbuffer_memory  = VK_NULL_HANDLE,
+                                                .indexbuffer_offset  = 0,
+                                                .indexbuffer_size    = index_count};
 
         if (createVertexbuffer(object.s_vertex_data.vertexbuffer,
                                object.s_vertex_data.vertexbuffer_memory,
@@ -671,7 +687,7 @@ private:
             device, &queueFamilyCount, device_info.queue_family_properties.data());
 
         int i = 0;
-        for (const auto & queueFamily: device_info.queue_family_properties)
+        for (auto const & queueFamily: device_info.queue_family_properties)
         {
             VkBool32 presentSupport = false;
             vkGetPhysicalDeviceSurfaceSupportKHR(device, i, surface, &presentSupport);
@@ -1784,6 +1800,12 @@ private:
     // COMMANDBUFFER
     VkResult createCommandbuffer(uint32_t resource_index, uint32_t object_count, Object * p_objects)
     {
+        auto & dynamic_vertexbuffer_offset = dynamic_vertexbuffer_offsets[resource_index];
+        auto & dynamic_indexbuffer_offset  = dynamic_indexbuffer_offsets[resource_index];
+
+        dynamic_vertexbuffer_offset = 0;
+        dynamic_indexbuffer_offset  = 0;
+
         auto beginInfo = VkCommandBufferBeginInfo{
             .sType            = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
             .flags            = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,
@@ -1810,9 +1832,11 @@ private:
             .clearValueCount   = static_cast<uint32_t>(clearValues.size()),
             .pClearValues      = clearValues.data()};
 
-        vkCmdBeginRenderPass(commandbuffers[resource_index], &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
+        vkCmdBeginRenderPass(
+            commandbuffers[resource_index], &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
 
-        vkCmdBindPipeline(commandbuffers[resource_index], VK_PIPELINE_BIND_POINT_GRAPHICS, graphics_pipeline);
+        vkCmdBindPipeline(
+            commandbuffers[resource_index], VK_PIPELINE_BIND_POINT_GRAPHICS, graphics_pipeline);
 
         for (uint32_t object_index = 0; object_index < object_count; ++object_index)
         {
@@ -1830,8 +1854,55 @@ private:
                                      object.s_vertex_data.indexbuffer_offset,
                                      VK_INDEX_TYPE_UINT32);
 
+                vkCmdDrawIndexed(commandbuffers[resource_index],
+                                 object.s_vertex_data.indexbuffer_size,
+                                 1,
+                                 0,
+                                 0,
+                                 0);
+            }
+            else if (object.type == ObjectType::STREAMED)
+            {
+                // mapped_*_data is the pointer to the next valid location to fill
+                auto mapped_vertex_data = static_cast<void *>(
+                    static_cast<char *>(dynamic_vertex_datas[resource_index])
+                    + dynamic_vertexbuffer_offset);
+                auto mapped_index_data = static_cast<void *>(
+                    static_cast<char *>(dynamic_index_datas[resource_index])
+                    + dynamic_indexbuffer_offset);
+
+                // assert there's enough space left in the buffers
+                assert(sizeof(Vertex) * object.d_vertex_data.vertex_count
+                       <= vertex_memory_size - dynamic_vertexbuffer_offset);
+                assert(sizeof(uint32_t) * object.d_vertex_data.index_count
+                       <= index_memory_size - dynamic_indexbuffer_offset);
+
+                // copy the data over
+                memcpy(mapped_vertex_data,
+                       object.d_vertex_data.vertices,
+                       sizeof(Vertex) * object.d_vertex_data.vertex_count);
+                memcpy(mapped_index_data,
+                       object.d_vertex_data.indices,
+                       sizeof(uint32_t) * object.d_vertex_data.index_count);
+
+                VkDeviceSize vertex_offset = dynamic_vertexbuffer_offset;
+
+                vkCmdBindVertexBuffers(commandbuffers[resource_index],
+                                       0,
+                                       1,
+                                       &dynamic_vertexbuffers[resource_index],
+                                       &vertex_offset);
+
+                vkCmdBindIndexBuffer(commandbuffers[resource_index],
+                                     dynamic_indexbuffers[resource_index],
+                                     dynamic_indexbuffer_offset,
+                                     VK_INDEX_TYPE_UINT32);
+
                 vkCmdDrawIndexed(
-                    commandbuffers[resource_index], object.s_vertex_data.indexbuffer_size, 1, 0, 0, 0);
+                    commandbuffers[resource_index], object.d_vertex_data.index_count, 1, 0, 0, 0);
+
+                dynamic_vertexbuffer_offset += sizeof(Vertex) * object.d_vertex_data.vertex_count;
+                dynamic_indexbuffer_offset += sizeof(uint32_t) * object.d_vertex_data.index_count;
             }
         }
 
@@ -1872,6 +1943,56 @@ private:
             {
                 throw std::runtime_error("failed to create synchronization objects for a frame!");
             }
+        }
+
+        return VK_SUCCESS;
+    }
+
+    VkResult createDynamicObjectResources(size_t dynamic_vertices_count,
+                                          size_t dynamic_indices_count)
+    {
+        vertex_memory_size = sizeof(Vertex) * dynamic_vertices_count;
+        index_memory_size  = sizeof(uint32_t) * dynamic_indices_count;
+
+        dynamic_vertexbuffers.resize(swapchain_framebuffers.size());
+        dynamic_vertexbuffer_memories.resize(swapchain_framebuffers.size());
+        dynamic_vertex_datas.resize(swapchain_framebuffers.size());
+        dynamic_vertexbuffer_offsets.resize(swapchain_framebuffers.size());
+
+        dynamic_indexbuffers.resize(swapchain_framebuffers.size());
+        dynamic_indexbuffer_memories.resize(swapchain_framebuffers.size());
+        dynamic_index_datas.resize(swapchain_framebuffers.size());
+        dynamic_indexbuffer_offsets.resize(swapchain_framebuffers.size());
+
+        for (uint32_t i = 0; i < swapchain_framebuffers.size(); ++i)
+        {
+            createBuffer(vertex_memory_size,
+                         VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+                         VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                         dynamic_vertexbuffers[i],
+                         dynamic_vertexbuffer_memories[i]);
+
+            vkMapMemory(logical_device,
+                        dynamic_vertexbuffer_memories[i],
+                        0,
+                        vertex_memory_size,
+                        0,
+                        &dynamic_vertex_datas[i]);
+            // vkUnmapMemory(logical_device, stagingBufferMemory);
+
+            createBuffer(index_memory_size,
+                         VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
+                         VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                         dynamic_indexbuffers[i],
+                         dynamic_indexbuffer_memories[i]);
+
+            vkMapMemory(logical_device,
+                        dynamic_indexbuffer_memories[i],
+                        0,
+                        index_memory_size,
+                        0,
+                        &dynamic_index_datas[i]);
+            // vkUnmapMemory(logical_device, stagingBufferMemory);
         }
 
         return VK_SUCCESS;
@@ -1943,6 +2064,19 @@ private:
     int32_t const MAX_FRAMES_IN_FLIGHT{2};
 
     bool framebuffer_resized;
+
+    // DYNAMIC OBJECT BUFFERS
+    std::vector<void *>         dynamic_vertex_datas;
+    std::vector<VkBuffer>       dynamic_vertexbuffers;
+    std::vector<VkDeviceMemory> dynamic_vertexbuffer_memories;
+    VkDeviceSize                vertex_memory_size;
+    std::vector<size_t> dynamic_vertexbuffer_offsets; // TODO: needs to be thread safe later on
+
+    std::vector<void *>         dynamic_index_datas;
+    std::vector<VkBuffer>       dynamic_indexbuffers;
+    std::vector<VkDeviceMemory> dynamic_indexbuffer_memories;
+    VkDeviceSize                index_memory_size;
+    std::vector<size_t> dynamic_indexbuffer_offsets; // TODO: needs to be thread safe later on
 
 }; // class RenderDevice
 
