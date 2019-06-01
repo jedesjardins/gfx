@@ -69,9 +69,27 @@ int main()
                                                   .index_count  = obj_indices.size(),
                                                   .indices      = obj_indices.data()};
 
+    uint32_t i = 0;
+
     while (!glfwWindowShouldClose(window))
     {
+        render_device.startFrame();
+
         glfwPollEvents();
+
+        // push changes to transfer command buffer then play those commands first when submitting to queue
+
+        if (++i%10 == 0)
+        {
+            obj1_vertices[0].pos.y -= .01f;
+
+            render_device.updateStaticObject(objects[0],
+                                     obj1_vertices.size(),
+                                     obj1_vertices.data(),
+                                     obj_indices.size(),
+                                     obj_indices.data());
+        }
+
         obj3_vertices[0].pos.y -= .01f;
         obj4_vertices[0].pos.y -= .01f;
         render_device.drawFrame(objects.size(), objects.data());

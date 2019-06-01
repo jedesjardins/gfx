@@ -176,12 +176,23 @@ public:
             return false;
         }
 
+        if (createSingleTimeUseBuffers() != VK_SUCCESS)
+        {
+            return false;
+        }
+
         if (createSyncObjects() != VK_SUCCESS)
         {
             return false;
         }
 
         if (createDynamicObjectResources(dynamic_vertices_count, dynamic_indices_count)
+            != VK_SUCCESS)
+        {
+            return false;
+        }
+
+        if (createStagingObjectResources(dynamic_vertices_count, dynamic_indices_count)
             != VK_SUCCESS)
         {
             return false;
@@ -194,7 +205,7 @@ public:
     {
         vkDeviceWaitIdle(logical_device);
 
-        for (size_t i = 0; i < swapchain_framebuffers.size(); ++i)
+        for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i)
         {
             // DYNAMIC INDEXBUFFER
             vkDestroyBuffer(logical_device, dynamic_indexbuffers[i], nullptr);
@@ -203,6 +214,14 @@ public:
             // DYNAMIC VERTEXBUFFER
             vkDestroyBuffer(logical_device, dynamic_vertexbuffers[i], nullptr);
             vkFreeMemory(logical_device, dynamic_vertexbuffer_memories[i], nullptr);
+
+            // STAGING INDEXBUFFER
+            vkDestroyBuffer(logical_device, staging_indexbuffers[i], nullptr);
+            vkFreeMemory(logical_device, staging_indexbuffer_memories[i], nullptr);
+
+            // STAGING VERTEXBUFFER
+            vkDestroyBuffer(logical_device, staging_vertexbuffers[i], nullptr);
+            vkFreeMemory(logical_device, staging_vertexbuffer_memories[i], nullptr);
         }
 
         for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++)
@@ -278,7 +297,7 @@ public:
         vkDeviceWaitIdle(logical_device);
     }
 
-    void drawFrame(uint32_t object_count, Object * p_objects)
+    void startFrame()
     {
         vkWaitForFences(logical_device,
                         1,
@@ -286,6 +305,41 @@ public:
                         VK_TRUE,
                         std::numeric_limits<uint64_t>::max());
 
+        // clear copy command buffers
+        if (!one_time_use_buffers[currentFrame].empty())
+        {
+            vkFreeCommandBuffers(logical_device,
+                                 command_pool,
+                                 one_time_use_buffers[currentFrame].size(),
+                                 one_time_use_buffers[currentFrame].data());
+        }
+
+        one_time_use_buffers[currentFrame].clear();
+
+        // reset buffer offsets for copies
+        dynamic_vertexbuffer_offsets[currentFrame] = 0;
+        dynamic_indexbuffer_offsets[currentFrame]  = 0;
+        staging_vertexbuffer_offsets[currentFrame] = 0;
+        staging_indexbuffer_offsets[currentFrame]  = 0;
+    }
+
+    void drawFrame(uint32_t object_count, Object * p_objects)
+    {
+        // TRANSFER OPERATIONS
+        // submit copy operations to the graphics queue
+
+        if (one_time_use_buffers[currentFrame].size())
+        {
+            auto submitCopyInfo = VkSubmitInfo{
+                .sType              = VK_STRUCTURE_TYPE_SUBMIT_INFO,
+                .commandBufferCount = static_cast<uint32_t>(
+                    one_time_use_buffers[currentFrame].size()),
+                .pCommandBuffers = one_time_use_buffers[currentFrame].data()};
+
+            vkQueueSubmit(graphics_queue, 1, &submitCopyInfo, VK_NULL_HANDLE);
+        }
+
+        // DRAW OPERATIONS
         uint32_t imageIndex;
         VkResult result = vkAcquireNextImageKHR(logical_device,
                                                 swapchain,
@@ -359,6 +413,8 @@ public:
         }
 
         currentFrame = (currentFrame + 1) % MAX_FRAMES_IN_FLIGHT;
+
+        // clear next frames single time use buffers
     }
 
     bool createStaticObject(Object &   object,
@@ -396,6 +452,74 @@ public:
         }
 
         return true;
+    }
+
+    void updateStaticObject(Object &   object,
+                            uint32_t   vertex_count,
+                            Vertex *   vertices,
+                            uint32_t   index_count,
+                            uint32_t * indices)
+    {
+        auto & staging_vertexbuffer_offset = staging_vertexbuffer_offsets[currentFrame];
+        auto & staging_indexbuffer_offset  = staging_indexbuffer_offsets[currentFrame];
+
+        // mapped_*_data is the pointer to the next valid location to fill
+        auto mapped_vertex_data = static_cast<void *>(
+            static_cast<char *>(staging_vertex_datas[currentFrame]) + staging_vertexbuffer_offset);
+        auto mapped_index_data = static_cast<void *>(
+            static_cast<char *>(staging_index_datas[currentFrame]) + staging_indexbuffer_offset);
+
+        // assert there's enough space left in the buffers
+        assert(sizeof(Vertex) * vertex_count <= vertex_memory_size - staging_vertexbuffer_offset);
+        assert(sizeof(uint32_t) * index_count <= index_memory_size - staging_indexbuffer_offset);
+
+        // copy the data over to the staging buffer
+        memcpy(mapped_vertex_data, vertices, sizeof(Vertex) * vertex_count);
+        memcpy(mapped_index_data, indices, sizeof(uint32_t) * index_count);
+
+        VkDeviceSize vertex_offset = staging_vertexbuffer_offset;
+
+        auto allocInfo = VkCommandBufferAllocateInfo{
+            .sType              = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
+            .level              = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
+            .commandPool        = command_pool,
+            .commandBufferCount = 1};
+
+        VkCommandBuffer commandBuffer;
+        vkAllocateCommandBuffers(logical_device, &allocInfo, &commandBuffer);
+
+        auto beginInfo = VkCommandBufferBeginInfo{
+            .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
+            .flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT};
+
+        vkBeginCommandBuffer(commandBuffer, &beginInfo);
+
+        auto copyRegion = VkBufferCopy{.srcOffset = staging_vertexbuffer_offset,
+                                       .dstOffset = 0,
+                                       .size      = sizeof(Vertex) * vertex_count};
+
+        vkCmdCopyBuffer(commandBuffer,
+                        staging_vertexbuffers[currentFrame],
+                        object.s_vertex_data.vertexbuffer,
+                        1,
+                        &copyRegion);
+
+        copyRegion = VkBufferCopy{.srcOffset = staging_indexbuffer_offset,
+                                  .dstOffset = 0,
+                                  .size      = sizeof(Vertex) * vertex_count};
+
+        vkCmdCopyBuffer(commandBuffer,
+                        staging_indexbuffers[currentFrame],
+                        object.s_vertex_data.indexbuffer,
+                        1,
+                        &copyRegion);
+
+        vkEndCommandBuffer(commandBuffer);
+
+        one_time_use_buffers[currentFrame].push_back(commandBuffer);
+
+        staging_vertexbuffer_offset += sizeof(Vertex) * vertex_count;
+        staging_indexbuffer_offset += sizeof(uint32_t) * index_count;
     }
 
     void destroyStaticObject(Object & object)
@@ -1210,7 +1334,7 @@ private:
             .rasterizerDiscardEnable = VK_FALSE,
             .polygonMode             = VK_POLYGON_MODE_FILL,
             .lineWidth               = 1.0f,
-            .cullMode                = VK_CULL_MODE_BACK_BIT,
+            .cullMode                = VK_CULL_MODE_NONE,
             .frontFace               = VK_FRONT_FACE_COUNTER_CLOCKWISE,
 
             .depthBiasEnable         = VK_FALSE,
@@ -1797,14 +1921,17 @@ private:
         return vkAllocateCommandBuffers(logical_device, &allocInfo, commandbuffers.data());
     }
 
+    VkResult createSingleTimeUseBuffers()
+    {
+        one_time_use_buffers.resize(MAX_FRAMES_IN_FLIGHT);
+        return VK_SUCCESS;
+    }
+
     // COMMANDBUFFER
     VkResult createCommandbuffer(uint32_t resource_index, uint32_t object_count, Object * p_objects)
     {
-        auto & dynamic_vertexbuffer_offset = dynamic_vertexbuffer_offsets[resource_index];
-        auto & dynamic_indexbuffer_offset  = dynamic_indexbuffer_offsets[resource_index];
-
-        dynamic_vertexbuffer_offset = 0;
-        dynamic_indexbuffer_offset  = 0;
+        auto & dynamic_vertexbuffer_offset = dynamic_vertexbuffer_offsets[currentFrame];
+        auto & dynamic_indexbuffer_offset  = dynamic_indexbuffer_offsets[currentFrame];
 
         auto beginInfo = VkCommandBufferBeginInfo{
             .sType            = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
@@ -1865,10 +1992,10 @@ private:
             {
                 // mapped_*_data is the pointer to the next valid location to fill
                 auto mapped_vertex_data = static_cast<void *>(
-                    static_cast<char *>(dynamic_vertex_datas[resource_index])
+                    static_cast<char *>(dynamic_vertex_datas[currentFrame])
                     + dynamic_vertexbuffer_offset);
                 auto mapped_index_data = static_cast<void *>(
-                    static_cast<char *>(dynamic_index_datas[resource_index])
+                    static_cast<char *>(dynamic_index_datas[currentFrame])
                     + dynamic_indexbuffer_offset);
 
                 // assert there's enough space left in the buffers
@@ -1885,16 +2012,16 @@ private:
                        object.d_vertex_data.indices,
                        sizeof(uint32_t) * object.d_vertex_data.index_count);
 
-                VkDeviceSize vertex_offset = dynamic_vertexbuffer_offset;
+                VkDeviceSize vertex_offset{dynamic_vertexbuffer_offset};
 
                 vkCmdBindVertexBuffers(commandbuffers[resource_index],
                                        0,
                                        1,
-                                       &dynamic_vertexbuffers[resource_index],
+                                       &dynamic_vertexbuffers[currentFrame],
                                        &vertex_offset);
 
                 vkCmdBindIndexBuffer(commandbuffers[resource_index],
-                                     dynamic_indexbuffers[resource_index],
+                                     dynamic_indexbuffers[currentFrame],
                                      dynamic_indexbuffer_offset,
                                      VK_INDEX_TYPE_UINT32);
 
@@ -1954,17 +2081,17 @@ private:
         vertex_memory_size = sizeof(Vertex) * dynamic_vertices_count;
         index_memory_size  = sizeof(uint32_t) * dynamic_indices_count;
 
-        dynamic_vertexbuffers.resize(swapchain_framebuffers.size());
-        dynamic_vertexbuffer_memories.resize(swapchain_framebuffers.size());
-        dynamic_vertex_datas.resize(swapchain_framebuffers.size());
-        dynamic_vertexbuffer_offsets.resize(swapchain_framebuffers.size());
+        dynamic_vertexbuffers.resize(MAX_FRAMES_IN_FLIGHT);
+        dynamic_vertexbuffer_memories.resize(MAX_FRAMES_IN_FLIGHT);
+        dynamic_vertex_datas.resize(MAX_FRAMES_IN_FLIGHT);
+        dynamic_vertexbuffer_offsets.resize(MAX_FRAMES_IN_FLIGHT);
 
-        dynamic_indexbuffers.resize(swapchain_framebuffers.size());
-        dynamic_indexbuffer_memories.resize(swapchain_framebuffers.size());
-        dynamic_index_datas.resize(swapchain_framebuffers.size());
-        dynamic_indexbuffer_offsets.resize(swapchain_framebuffers.size());
+        dynamic_indexbuffers.resize(MAX_FRAMES_IN_FLIGHT);
+        dynamic_indexbuffer_memories.resize(MAX_FRAMES_IN_FLIGHT);
+        dynamic_index_datas.resize(MAX_FRAMES_IN_FLIGHT);
+        dynamic_indexbuffer_offsets.resize(MAX_FRAMES_IN_FLIGHT);
 
-        for (uint32_t i = 0; i < swapchain_framebuffers.size(); ++i)
+        for (uint32_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i)
         {
             createBuffer(vertex_memory_size,
                          VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
@@ -1992,6 +2119,56 @@ private:
                         index_memory_size,
                         0,
                         &dynamic_index_datas[i]);
+            // vkUnmapMemory(logical_device, stagingBufferMemory);
+        }
+
+        return VK_SUCCESS;
+    }
+
+    VkResult createStagingObjectResources(size_t dynamic_vertices_count,
+                                          size_t dynamic_indices_count)
+    {
+        vertex_memory_size = sizeof(Vertex) * dynamic_vertices_count;
+        index_memory_size  = sizeof(uint32_t) * dynamic_indices_count;
+
+        staging_vertexbuffers.resize(MAX_FRAMES_IN_FLIGHT);
+        staging_vertexbuffer_memories.resize(MAX_FRAMES_IN_FLIGHT);
+        staging_vertex_datas.resize(MAX_FRAMES_IN_FLIGHT);
+        staging_vertexbuffer_offsets.resize(MAX_FRAMES_IN_FLIGHT);
+
+        staging_indexbuffers.resize(MAX_FRAMES_IN_FLIGHT);
+        staging_indexbuffer_memories.resize(MAX_FRAMES_IN_FLIGHT);
+        staging_index_datas.resize(MAX_FRAMES_IN_FLIGHT);
+        staging_indexbuffer_offsets.resize(MAX_FRAMES_IN_FLIGHT);
+
+        for (uint32_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i)
+        {
+            createBuffer(vertex_memory_size,
+                         VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+                         VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                         staging_vertexbuffers[i],
+                         staging_vertexbuffer_memories[i]);
+
+            vkMapMemory(logical_device,
+                        staging_vertexbuffer_memories[i],
+                        0,
+                        vertex_memory_size,
+                        0,
+                        &staging_vertex_datas[i]);
+            // vkUnmapMemory(logical_device, stagingBufferMemory);
+
+            createBuffer(index_memory_size,
+                         VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+                         VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                         staging_indexbuffers[i],
+                         staging_indexbuffer_memories[i]);
+
+            vkMapMemory(logical_device,
+                        staging_indexbuffer_memories[i],
+                        0,
+                        index_memory_size,
+                        0,
+                        &staging_index_datas[i]);
             // vkUnmapMemory(logical_device, stagingBufferMemory);
         }
 
@@ -2064,6 +2241,35 @@ private:
     int32_t const MAX_FRAMES_IN_FLIGHT{2};
 
     bool framebuffer_resized;
+
+    std::vector<std::vector<VkCommandBuffer>> one_time_use_buffers;
+
+    // STAGING BUFFERS
+
+    struct MappedBuffer
+    {
+        void *         data;
+        VkBuffer       buffer;
+        VkDeviceMemory memory;
+        size_t         offset;
+        VkDeviceSize   memory_size;
+    };
+
+    std::vector<MappedBuffer> dynamic_mapped_vertices;
+    std::vector<MappedBuffer> dynamic_mapped_indices;
+
+    std::vector<MappedBuffer> staging_mapped_vertices;
+    std::vector<MappedBuffer> staging_mapped_indices;
+
+    std::vector<void *>         staging_vertex_datas;
+    std::vector<VkBuffer>       staging_vertexbuffers;
+    std::vector<VkDeviceMemory> staging_vertexbuffer_memories;
+    std::vector<size_t> staging_vertexbuffer_offsets; // TODO: needs to be thread safe later on
+
+    std::vector<void *>         staging_index_datas;
+    std::vector<VkBuffer>       staging_indexbuffers;
+    std::vector<VkDeviceMemory> staging_indexbuffer_memories;
+    std::vector<size_t> staging_indexbuffer_offsets; // TODO: needs to be thread safe later on
 
     // DYNAMIC OBJECT BUFFERS
     std::vector<void *>         dynamic_vertex_datas;
