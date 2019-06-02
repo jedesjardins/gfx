@@ -51,6 +51,8 @@ int main()
                                      obj_indices.size(),
                                      obj_indices.data());
 
+    objects[0].transform = glm::scale(glm::mat4{1.f}, glm::vec3{.5f, .5f, .5f});
+
     render_device.createStaticObject(objects[1],
                                      obj2_vertices.size(),
                                      obj2_vertices.data(),

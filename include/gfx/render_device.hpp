@@ -4,6 +4,7 @@
 #define GLM_FORCE_RADIANS
 #define GLM_FORCE_DEPTH_ZERO_TO_ONE
 #include <glm/glm.hpp>
+#include <glm/gtc/type_ptr.hpp>
 
 #include <vulkan/vulkan.h>
 #include <glfw/glfw3.h>
@@ -76,6 +77,7 @@ struct StreamedVertexData
 struct Object
 {
     ObjectType type{ObjectType::NONE};
+    glm::mat4 transform{1.0f};
     union
     {
         StaticVertexData   s_vertex_data;
@@ -318,9 +320,9 @@ public:
 
         // reset buffer offsets for copies
         dynamic_mapped_vertices[currentFrame].offset = 0;
-        dynamic_mapped_indices[currentFrame].offset = 0;
+        dynamic_mapped_indices[currentFrame].offset  = 0;
         staging_mapped_vertices[currentFrame].offset = 0;
-        staging_mapped_indices[currentFrame].offset = 0;
+        staging_mapped_indices[currentFrame].offset  = 0;
     }
 
     void drawFrame(uint32_t object_count, Object * p_objects)
@@ -461,17 +463,19 @@ public:
                             uint32_t * indices)
     {
         auto & mapped_vertices = staging_mapped_vertices[currentFrame];
-        auto & mapped_indices = staging_mapped_indices[currentFrame];
+        auto & mapped_indices  = staging_mapped_indices[currentFrame];
 
         // mapped_*_data is the pointer to the next valid location to fill
-        auto mapped_vertex_data = static_cast<void *>(
-            static_cast<char *>(mapped_vertices.data) + mapped_vertices.offset);
-        auto mapped_index_data = static_cast<void *>(
-            static_cast<char *>(mapped_indices.data) + mapped_indices.offset);
+        auto mapped_vertex_data = static_cast<void *>(static_cast<char *>(mapped_vertices.data)
+                                                      + mapped_vertices.offset);
+        auto mapped_index_data  = static_cast<void *>(static_cast<char *>(mapped_indices.data)
+                                                     + mapped_indices.offset);
 
         // assert there's enough space left in the buffers
-        assert(sizeof(Vertex) * vertex_count <= mapped_vertices.memory_size - mapped_vertices.offset);
-        assert(sizeof(uint32_t) * index_count <= mapped_indices.memory_size - mapped_indices.offset);
+        assert(sizeof(Vertex) * vertex_count
+               <= mapped_vertices.memory_size - mapped_vertices.offset);
+        assert(sizeof(uint32_t) * index_count
+               <= mapped_indices.memory_size - mapped_indices.offset);
 
         // copy the data over to the staging buffer
         memcpy(mapped_vertex_data, vertices, sizeof(Vertex) * vertex_count);
@@ -508,11 +512,8 @@ public:
                                   .dstOffset = 0,
                                   .size      = sizeof(uint32_t) * index_count};
 
-        vkCmdCopyBuffer(commandBuffer,
-                        mapped_indices.buffer,
-                        object.s_vertex_data.indexbuffer,
-                        1,
-                        &copyRegion);
+        vkCmdCopyBuffer(
+            commandBuffer, mapped_indices.buffer, object.s_vertex_data.indexbuffer, 1, &copyRegion);
 
         vkEndCommandBuffer(commandBuffer);
 
@@ -1395,13 +1396,15 @@ private:
             .dynamicStateCount = 2,
             .pDynamicStates    = dynamicStates};
 
+        auto pushConstantRange = VkPushConstantRange{
+            .stageFlags = VK_SHADER_STAGE_VERTEX_BIT, .offset = 0, .size = sizeof(glm::mat4)};
+
         auto pipelineLayoutInfo = VkPipelineLayoutCreateInfo{
             .sType                  = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
-            .setLayoutCount         = 0,       // 1,                     // Optional
-            .pSetLayouts            = nullptr, //&descriptorset_layout, // Optional
-            .pushConstantRangeCount = 0,       // Optional
-            .pPushConstantRanges    = nullptr  // Optional
-        };
+            .setLayoutCount         = 0,       // 1,
+            .pSetLayouts            = nullptr, //&descriptorset_layout,
+            .pushConstantRangeCount = 1,
+            .pPushConstantRanges    = &pushConstantRange};
 
         auto result = vkCreatePipelineLayout(
             logical_device, &pipelineLayoutInfo, nullptr, &pipeline_layout);
@@ -1931,7 +1934,7 @@ private:
     VkResult createCommandbuffer(uint32_t resource_index, uint32_t object_count, Object * p_objects)
     {
         auto & mapped_vertices = dynamic_mapped_vertices[currentFrame];
-        auto & mapped_indices = dynamic_mapped_indices[currentFrame];
+        auto & mapped_indices  = dynamic_mapped_indices[currentFrame];
 
         auto beginInfo = VkCommandBufferBeginInfo{
             .sType            = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
@@ -1997,6 +2000,17 @@ private:
                                      object.s_vertex_data.indexbuffer_offset,
                                      VK_INDEX_TYPE_UINT32);
 
+                auto view_matrix = glm::scale(glm::mat4(1.0), glm::vec3(1.f, -1.f, 1.f));
+
+                auto uniform_matrix = view_matrix * object.transform;
+
+                vkCmdPushConstants(commandbuffers[resource_index],
+                                   pipeline_layout,
+                                   VK_SHADER_STAGE_VERTEX_BIT,
+                                   0,
+                                   sizeof(glm::mat4),
+                                   glm::value_ptr(uniform_matrix));
+
                 vkCmdDrawIndexed(commandbuffers[resource_index],
                                  object.s_vertex_data.indexbuffer_size,
                                  1,
@@ -2008,11 +2022,9 @@ private:
             {
                 // mapped_*_data is the pointer to the next valid location to fill
                 auto mapped_vertex_data = static_cast<void *>(
-                    static_cast<char *>(mapped_vertices.data)
-                    + mapped_vertices.offset);
+                    static_cast<char *>(mapped_vertices.data) + mapped_vertices.offset);
                 auto mapped_index_data = static_cast<void *>(
-                    static_cast<char *>(mapped_indices.data)
-                    + mapped_indices.offset);
+                    static_cast<char *>(mapped_indices.data) + mapped_indices.offset);
 
                 // assert there's enough space left in the buffers
                 assert(sizeof(Vertex) * object.d_vertex_data.vertex_count
@@ -2030,16 +2042,24 @@ private:
 
                 VkDeviceSize vertex_offset{mapped_vertices.offset};
 
-                vkCmdBindVertexBuffers(commandbuffers[resource_index],
-                                       0,
-                                       1,
-                                       &mapped_vertices.buffer,
-                                       &vertex_offset);
+                vkCmdBindVertexBuffers(
+                    commandbuffers[resource_index], 0, 1, &mapped_vertices.buffer, &vertex_offset);
 
                 vkCmdBindIndexBuffer(commandbuffers[resource_index],
                                      mapped_indices.buffer,
                                      mapped_indices.offset,
                                      VK_INDEX_TYPE_UINT32);
+
+                auto view_matrix = glm::scale(glm::mat4(1.0), glm::vec3(1.f, -1.f, 1.f));
+
+                auto uniform_matrix = view_matrix * object.transform;
+
+                vkCmdPushConstants(commandbuffers[resource_index],
+                                   pipeline_layout,
+                                   VK_SHADER_STAGE_VERTEX_BIT,
+                                   0,
+                                   sizeof(glm::mat4),
+                                   glm::value_ptr(uniform_matrix));
 
                 vkCmdDrawIndexed(
                     commandbuffers[resource_index], object.d_vertex_data.index_count, 1, 0, 0, 0);
