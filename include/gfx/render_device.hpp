@@ -77,7 +77,7 @@ struct StreamedVertexData
 struct Object
 {
     ObjectType type{ObjectType::NONE};
-    glm::mat4 transform{1.0f};
+    glm::mat4  transform{1.0f};
     union
     {
         StaticVertexData   s_vertex_data;
@@ -1988,6 +1988,17 @@ private:
         {
             auto & object = p_objects[object_index];
 
+            auto view_matrix = glm::scale(glm::mat4(1.0), glm::vec3(1.f, -1.f, 1.f));
+
+            auto uniform_matrix = view_matrix * object.transform;
+
+            vkCmdPushConstants(commandbuffers[resource_index],
+                               pipeline_layout,
+                               VK_SHADER_STAGE_VERTEX_BIT,
+                               0,
+                               sizeof(glm::mat4),
+                               glm::value_ptr(uniform_matrix));
+
             if (object.type == ObjectType::STATIC)
             {
                 vkCmdBindVertexBuffers(commandbuffers[resource_index],
@@ -1999,17 +2010,6 @@ private:
                                      object.s_vertex_data.indexbuffer,
                                      object.s_vertex_data.indexbuffer_offset,
                                      VK_INDEX_TYPE_UINT32);
-
-                auto view_matrix = glm::scale(glm::mat4(1.0), glm::vec3(1.f, -1.f, 1.f));
-
-                auto uniform_matrix = view_matrix * object.transform;
-
-                vkCmdPushConstants(commandbuffers[resource_index],
-                                   pipeline_layout,
-                                   VK_SHADER_STAGE_VERTEX_BIT,
-                                   0,
-                                   sizeof(glm::mat4),
-                                   glm::value_ptr(uniform_matrix));
 
                 vkCmdDrawIndexed(commandbuffers[resource_index],
                                  object.s_vertex_data.indexbuffer_size,
@@ -2049,17 +2049,6 @@ private:
                                      mapped_indices.buffer,
                                      mapped_indices.offset,
                                      VK_INDEX_TYPE_UINT32);
-
-                auto view_matrix = glm::scale(glm::mat4(1.0), glm::vec3(1.f, -1.f, 1.f));
-
-                auto uniform_matrix = view_matrix * object.transform;
-
-                vkCmdPushConstants(commandbuffers[resource_index],
-                                   pipeline_layout,
-                                   VK_SHADER_STAGE_VERTEX_BIT,
-                                   0,
-                                   sizeof(glm::mat4),
-                                   glm::value_ptr(uniform_matrix));
 
                 vkCmdDrawIndexed(
                     commandbuffers[resource_index], object.d_vertex_data.index_count, 1, 0, 0, 0);
