@@ -2026,7 +2026,7 @@ private:
 
         auto result = vkAllocateCommandBuffers(logical_device, &allocInfo, commandbuffers.data());
 
-        for (auto const& cb : commandbuffers)
+        for (auto const & cb: commandbuffers)
         {
             std::cout << "Buffer " << cb << "\n";
         }
