@@ -51,6 +51,8 @@ int main()
                                      obj_indices.size(),
                                      obj_indices.data());
 
+    objects[0].transform = glm::scale(glm::mat4{1.f}, glm::vec3{.5f, .5f, .5f});
+
     render_device.createStaticObject(objects[1],
                                      obj2_vertices.size(),
                                      obj2_vertices.data(),
@@ -59,9 +61,9 @@ int main()
 
     objects[2].type          = ObjectType::STREAMED;
     objects[2].d_vertex_data = StreamedVertexData{.vertex_count = 4,
-                                                 .vertices     = obj3_vertices.data(),
-                                                 .index_count  = obj_indices.size(),
-                                                 .indices      = obj_indices.data()};
+                                                  .vertices     = obj3_vertices.data(),
+                                                  .index_count  = obj_indices.size(),
+                                                  .indices      = obj_indices.data()};
 
     objects[3].type          = ObjectType::STREAMED;
     objects[3].d_vertex_data = StreamedVertexData{.vertex_count = 4,
@@ -71,23 +73,25 @@ int main()
 
     uint32_t i = 0;
 
+    glm::mat4 view = glm::scale(glm::mat4(1.0), glm::vec3(1.f, -1.f, 1.f));
+
     while (!glfwWindowShouldClose(window))
     {
         render_device.startFrame();
 
         glfwPollEvents();
 
-        // push changes to transfer command buffer then play those commands first when submitting to queue
+        render_device.updateUniformBuffer(view);
 
-        if (++i%10 == 0)
+        if (++i % 10 == 0)
         {
             obj1_vertices[0].pos.y -= .01f;
 
             render_device.updateStaticObject(objects[0],
-                                     obj1_vertices.size(),
-                                     obj1_vertices.data(),
-                                     obj_indices.size(),
-                                     obj_indices.data());
+                                             obj1_vertices.size(),
+                                             obj1_vertices.data(),
+                                             obj_indices.size(),
+                                             obj_indices.data());
         }
 
         obj3_vertices[0].pos.y -= .01f;

@@ -4,6 +4,7 @@
 #define GLM_FORCE_RADIANS
 #define GLM_FORCE_DEPTH_ZERO_TO_ONE
 #include <glm/glm.hpp>
+#include <glm/gtc/type_ptr.hpp>
 
 #include <vulkan/vulkan.h>
 #include <glfw/glfw3.h>
@@ -76,6 +77,7 @@ struct StreamedVertexData
 struct Object
 {
     ObjectType type{ObjectType::NONE};
+    glm::mat4  transform{1.0f};
     union
     {
         StaticVertexData   s_vertex_data;
@@ -146,6 +148,18 @@ public:
             return false;
         }
 
+        createUniformBuffers();
+
+        if (createDescriptorPool() != VK_SUCCESS)
+        {
+            return false;
+        }
+
+        if (createDescriptorSets() != VK_SUCCESS)
+        {
+            return false;
+        }
+
         if (createGraphicsPipeline() != VK_SUCCESS)
         {
             return false;
@@ -204,6 +218,14 @@ public:
     void quit()
     {
         vkDeviceWaitIdle(logical_device);
+
+        for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i)
+        {
+            vkDestroyBuffer(logical_device, uniforms[i].buffer, nullptr);
+            vkFreeMemory(logical_device, uniforms[i].memory, nullptr);
+        }
+
+        vkDestroyDescriptorPool(logical_device, descriptor_pool, nullptr);
 
         for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i)
         {
@@ -318,9 +340,27 @@ public:
 
         // reset buffer offsets for copies
         dynamic_mapped_vertices[currentFrame].offset = 0;
-        dynamic_mapped_indices[currentFrame].offset = 0;
+        dynamic_mapped_indices[currentFrame].offset  = 0;
         staging_mapped_vertices[currentFrame].offset = 0;
-        staging_mapped_indices[currentFrame].offset = 0;
+        staging_mapped_indices[currentFrame].offset  = 0;
+
+        // DRAW OPERATIONS
+        auto result = vkAcquireNextImageKHR(logical_device,
+                                            swapchain,
+                                            std::numeric_limits<uint64_t>::max(),
+                                            image_available_semaphores[currentFrame],
+                                            VK_NULL_HANDLE,
+                                            &currentImage);
+
+        if (result == VK_ERROR_OUT_OF_DATE_KHR)
+        {
+            // recreateSwapChain();
+            return;
+        }
+        else if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR)
+        {
+            throw std::runtime_error("failed to acquire swap chain image!");
+        }
     }
 
     void drawFrame(uint32_t object_count, Object * p_objects)
@@ -339,33 +379,12 @@ public:
             vkQueueSubmit(graphics_queue, 1, &submitCopyInfo, VK_NULL_HANDLE);
         }
 
-        // DRAW OPERATIONS
-        uint32_t imageIndex;
-        VkResult result = vkAcquireNextImageKHR(logical_device,
-                                                swapchain,
-                                                std::numeric_limits<uint64_t>::max(),
-                                                image_available_semaphores[currentFrame],
-                                                VK_NULL_HANDLE,
-                                                &imageIndex);
-
-        if (result == VK_ERROR_OUT_OF_DATE_KHR)
-        {
-            // recreateSwapChain();
-            return;
-        }
-        else if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR)
-        {
-            throw std::runtime_error("failed to acquire swap chain image!");
-        }
-
         VkSemaphore          waitSemaphores[] = {image_available_semaphores[currentFrame]};
         VkPipelineStageFlags waitStages[]     = {VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT};
 
         VkSemaphore signalSemaphores[] = {render_finished_semaphores[currentFrame]};
 
-        // updateUniformBuffer(imageIndex);
-
-        createCommandbuffer(imageIndex, object_count, p_objects);
+        createCommandbuffer(currentImage, object_count, p_objects);
 
         auto submitInfo = VkSubmitInfo{.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
 
@@ -374,7 +393,7 @@ public:
                                        .pWaitDstStageMask  = waitStages,
 
                                        .commandBufferCount = 1,
-                                       .pCommandBuffers    = &commandbuffers[imageIndex],
+                                       .pCommandBuffers    = &commandbuffers[currentFrame],
 
                                        .signalSemaphoreCount = 1,
                                        .pSignalSemaphores    = signalSemaphores};
@@ -395,11 +414,11 @@ public:
 
                                             .swapchainCount = 1,
                                             .pSwapchains    = swapChains,
-                                            .pImageIndices  = &imageIndex,
+                                            .pImageIndices  = &currentImage,
 
                                             .pResults = nullptr};
 
-        result = vkQueuePresentKHR(present_queue, &presentInfo);
+        auto result = vkQueuePresentKHR(present_queue, &presentInfo);
 
         if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR
             || framebuffer_resized)
@@ -461,17 +480,19 @@ public:
                             uint32_t * indices)
     {
         auto & mapped_vertices = staging_mapped_vertices[currentFrame];
-        auto & mapped_indices = staging_mapped_indices[currentFrame];
+        auto & mapped_indices  = staging_mapped_indices[currentFrame];
 
         // mapped_*_data is the pointer to the next valid location to fill
-        auto mapped_vertex_data = static_cast<void *>(
-            static_cast<char *>(mapped_vertices.data) + mapped_vertices.offset);
-        auto mapped_index_data = static_cast<void *>(
-            static_cast<char *>(mapped_indices.data) + mapped_indices.offset);
+        auto mapped_vertex_data = static_cast<void *>(static_cast<char *>(mapped_vertices.data)
+                                                      + mapped_vertices.offset);
+        auto mapped_index_data  = static_cast<void *>(static_cast<char *>(mapped_indices.data)
+                                                     + mapped_indices.offset);
 
         // assert there's enough space left in the buffers
-        assert(sizeof(Vertex) * vertex_count <= mapped_vertices.memory_size - mapped_vertices.offset);
-        assert(sizeof(uint32_t) * index_count <= mapped_indices.memory_size - mapped_indices.offset);
+        assert(sizeof(Vertex) * vertex_count
+               <= mapped_vertices.memory_size - mapped_vertices.offset);
+        assert(sizeof(uint32_t) * index_count
+               <= mapped_indices.memory_size - mapped_indices.offset);
 
         // copy the data over to the staging buffer
         memcpy(mapped_vertex_data, vertices, sizeof(Vertex) * vertex_count);
@@ -508,11 +529,8 @@ public:
                                   .dstOffset = 0,
                                   .size      = sizeof(uint32_t) * index_count};
 
-        vkCmdCopyBuffer(commandBuffer,
-                        mapped_indices.buffer,
-                        object.s_vertex_data.indexbuffer,
-                        1,
-                        &copyRegion);
+        vkCmdCopyBuffer(
+            commandBuffer, mapped_indices.buffer, object.s_vertex_data.indexbuffer, 1, &copyRegion);
 
         vkEndCommandBuffer(commandBuffer);
 
@@ -531,6 +549,11 @@ public:
         // VERTEXBUFFER
         vkDestroyBuffer(logical_device, object.s_vertex_data.vertexbuffer, nullptr);
         vkFreeMemory(logical_device, object.s_vertex_data.vertexbuffer_memory, nullptr);
+    }
+
+    void updateUniformBuffer(glm::mat4 const & data)
+    {
+        memcpy(uniforms[currentFrame].data, glm::value_ptr(data), sizeof(glm::mat4));
     }
 
 private:
@@ -1259,7 +1282,7 @@ private:
     {
         auto uboLayoutBinding = VkDescriptorSetLayoutBinding{
             .binding            = 0,
-            .descriptorType     = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+            .descriptorType     = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC,
             .descriptorCount    = 1,
             .stageFlags         = VK_SHADER_STAGE_VERTEX_BIT,
             .pImmutableSamplers = nullptr // for image sampling
@@ -1272,6 +1295,87 @@ private:
 
         return vkCreateDescriptorSetLayout(
             logical_device, &layoutInfo, nullptr, &descriptorset_layout);
+    }
+
+    void createUniformBuffers()
+    {
+        VkDeviceSize bufferSize = sizeof(glm::mat4);
+
+        uniforms.resize(MAX_FRAMES_IN_FLIGHT);
+
+        for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++)
+        {
+            uniforms[i].memory_size = bufferSize;
+
+            createBuffer(uniforms[i].memory_size,
+                         VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+                         VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                         uniforms[i].buffer,
+                         uniforms[i].memory);
+
+            vkMapMemory(logical_device,
+                        uniforms[i].memory,
+                        0,
+                        uniforms[i].memory_size,
+                        0,
+                        &uniforms[i].data);
+        }
+    }
+
+    VkResult createDescriptorPool()
+    {
+        auto poolsize = VkDescriptorPoolSize{
+            .type            = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC,
+            .descriptorCount = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT)};
+
+        auto poolInfo = VkDescriptorPoolCreateInfo{
+            .sType         = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
+            .poolSizeCount = 1,
+            .pPoolSizes    = &poolsize,
+            .maxSets       = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT)};
+
+        return vkCreateDescriptorPool(logical_device, &poolInfo, nullptr, &descriptor_pool);
+    }
+
+    VkResult createDescriptorSets()
+    {
+        std::vector<VkDescriptorSetLayout> layouts{static_cast<size_t>(MAX_FRAMES_IN_FLIGHT),
+                                                   descriptorset_layout};
+
+        auto allocInfo = VkDescriptorSetAllocateInfo{
+            .sType              = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
+            .descriptorPool     = descriptor_pool,
+            .descriptorSetCount = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT),
+            .pSetLayouts        = layouts.data()};
+
+        descriptorsets.resize(MAX_FRAMES_IN_FLIGHT);
+
+        auto result = vkAllocateDescriptorSets(logical_device, &allocInfo, descriptorsets.data());
+        if (result != VK_SUCCESS)
+        {
+            return result;
+        }
+
+        for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i)
+        {
+            auto bufferInfo = VkDescriptorBufferInfo{
+                .buffer = uniforms[i].buffer, .offset = 0, .range = sizeof(glm::mat4)};
+
+            auto descriptorWrite = VkWriteDescriptorSet{
+                .sType            = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+                .dstSet           = descriptorsets[i],
+                .dstBinding       = 0,
+                .dstArrayElement  = 0,
+                .descriptorType   = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC,
+                .descriptorCount  = 1,
+                .pBufferInfo      = &bufferInfo,
+                .pImageInfo       = nullptr,
+                .pTexelBufferView = nullptr};
+
+            vkUpdateDescriptorSets(logical_device, 1, &descriptorWrite, 0, nullptr);
+        }
+
+        return VK_SUCCESS;
     }
 
     // GRAPHICS PIPELINE
@@ -1395,13 +1499,15 @@ private:
             .dynamicStateCount = 2,
             .pDynamicStates    = dynamicStates};
 
+        auto pushConstantRange = VkPushConstantRange{
+            .stageFlags = VK_SHADER_STAGE_VERTEX_BIT, .offset = 0, .size = sizeof(glm::mat4)};
+
         auto pipelineLayoutInfo = VkPipelineLayoutCreateInfo{
             .sType                  = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
-            .setLayoutCount         = 0,       // 1,                     // Optional
-            .pSetLayouts            = nullptr, //&descriptorset_layout, // Optional
-            .pushConstantRangeCount = 0,       // Optional
-            .pPushConstantRanges    = nullptr  // Optional
-        };
+            .setLayoutCount         = 1,
+            .pSetLayouts            = &descriptorset_layout,
+            .pushConstantRangeCount = 1,
+            .pPushConstantRanges    = &pushConstantRange};
 
         auto result = vkCreatePipelineLayout(
             logical_device, &pipelineLayoutInfo, nullptr, &pipeline_layout);
@@ -1910,7 +2016,7 @@ private:
     // TODO: rewrite to return VkResult
     VkResult createCommandbuffers()
     {
-        commandbuffers.resize(swapchain_framebuffers.size());
+        commandbuffers.resize(MAX_FRAMES_IN_FLIGHT);
 
         auto allocInfo = VkCommandBufferAllocateInfo{
             .sType              = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
@@ -1918,7 +2024,14 @@ private:
             .level              = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
             .commandBufferCount = (uint32_t)commandbuffers.size()};
 
-        return vkAllocateCommandBuffers(logical_device, &allocInfo, commandbuffers.data());
+        auto result = vkAllocateCommandBuffers(logical_device, &allocInfo, commandbuffers.data());
+
+        for (auto const& cb : commandbuffers)
+        {
+            std::cout << "Buffer " << cb << "\n";
+        }
+
+        return result;
     }
 
     VkResult createSingleTimeUseBuffers()
@@ -1931,14 +2044,14 @@ private:
     VkResult createCommandbuffer(uint32_t resource_index, uint32_t object_count, Object * p_objects)
     {
         auto & mapped_vertices = dynamic_mapped_vertices[currentFrame];
-        auto & mapped_indices = dynamic_mapped_indices[currentFrame];
+        auto & mapped_indices  = dynamic_mapped_indices[currentFrame];
 
         auto beginInfo = VkCommandBufferBeginInfo{
             .sType            = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
             .flags            = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,
             .pInheritanceInfo = nullptr};
 
-        auto result = vkBeginCommandBuffer(commandbuffers[resource_index], &beginInfo);
+        auto result = vkBeginCommandBuffer(commandbuffers[currentFrame], &beginInfo);
         if (result != VK_SUCCESS)
         {
             return result;
@@ -1949,7 +2062,7 @@ private:
                                        .srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT,
                                        .dstAccessMask = VK_ACCESS_VERTEX_ATTRIBUTE_READ_BIT};
 
-        vkCmdPipelineBarrier(commandbuffers[resource_index],
+        vkCmdPipelineBarrier(commandbuffers[currentFrame],
                              VK_PIPELINE_STAGE_TRANSFER_BIT,
                              VK_PIPELINE_STAGE_VERTEX_INPUT_BIT,
                              0,
@@ -1976,28 +2089,46 @@ private:
             .pClearValues      = clearValues.data()};
 
         vkCmdBeginRenderPass(
-            commandbuffers[resource_index], &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
+            commandbuffers[currentFrame], &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
 
         vkCmdBindPipeline(
-            commandbuffers[resource_index], VK_PIPELINE_BIND_POINT_GRAPHICS, graphics_pipeline);
+            commandbuffers[currentFrame], VK_PIPELINE_BIND_POINT_GRAPHICS, graphics_pipeline);
+
+        uint32_t dynamic_offset{0};
+
+        vkCmdBindDescriptorSets(commandbuffers[currentFrame],
+                                VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                pipeline_layout,
+                                0,
+                                1,
+                                &descriptorsets[currentFrame],
+                                1,
+                                &dynamic_offset);
 
         for (uint32_t object_index = 0; object_index < object_count; ++object_index)
         {
             auto & object = p_objects[object_index];
 
+            vkCmdPushConstants(commandbuffers[currentFrame],
+                               pipeline_layout,
+                               VK_SHADER_STAGE_VERTEX_BIT,
+                               0,
+                               sizeof(glm::mat4),
+                               glm::value_ptr(object.transform));
+
             if (object.type == ObjectType::STATIC)
             {
-                vkCmdBindVertexBuffers(commandbuffers[resource_index],
+                vkCmdBindVertexBuffers(commandbuffers[currentFrame],
                                        0,
                                        1,
                                        &object.s_vertex_data.vertexbuffer,
                                        &object.s_vertex_data.vertexbuffer_offset);
-                vkCmdBindIndexBuffer(commandbuffers[resource_index],
+                vkCmdBindIndexBuffer(commandbuffers[currentFrame],
                                      object.s_vertex_data.indexbuffer,
                                      object.s_vertex_data.indexbuffer_offset,
                                      VK_INDEX_TYPE_UINT32);
 
-                vkCmdDrawIndexed(commandbuffers[resource_index],
+                vkCmdDrawIndexed(commandbuffers[currentFrame],
                                  object.s_vertex_data.indexbuffer_size,
                                  1,
                                  0,
@@ -2008,11 +2139,9 @@ private:
             {
                 // mapped_*_data is the pointer to the next valid location to fill
                 auto mapped_vertex_data = static_cast<void *>(
-                    static_cast<char *>(mapped_vertices.data)
-                    + mapped_vertices.offset);
+                    static_cast<char *>(mapped_vertices.data) + mapped_vertices.offset);
                 auto mapped_index_data = static_cast<void *>(
-                    static_cast<char *>(mapped_indices.data)
-                    + mapped_indices.offset);
+                    static_cast<char *>(mapped_indices.data) + mapped_indices.offset);
 
                 // assert there's enough space left in the buffers
                 assert(sizeof(Vertex) * object.d_vertex_data.vertex_count
@@ -2030,28 +2159,25 @@ private:
 
                 VkDeviceSize vertex_offset{mapped_vertices.offset};
 
-                vkCmdBindVertexBuffers(commandbuffers[resource_index],
-                                       0,
-                                       1,
-                                       &mapped_vertices.buffer,
-                                       &vertex_offset);
+                vkCmdBindVertexBuffers(
+                    commandbuffers[currentFrame], 0, 1, &mapped_vertices.buffer, &vertex_offset);
 
-                vkCmdBindIndexBuffer(commandbuffers[resource_index],
+                vkCmdBindIndexBuffer(commandbuffers[currentFrame],
                                      mapped_indices.buffer,
                                      mapped_indices.offset,
                                      VK_INDEX_TYPE_UINT32);
 
                 vkCmdDrawIndexed(
-                    commandbuffers[resource_index], object.d_vertex_data.index_count, 1, 0, 0, 0);
+                    commandbuffers[currentFrame], object.d_vertex_data.index_count, 1, 0, 0, 0);
 
                 mapped_vertices.offset += sizeof(Vertex) * object.d_vertex_data.vertex_count;
                 mapped_indices.offset += sizeof(uint32_t) * object.d_vertex_data.index_count;
             }
         }
 
-        vkCmdEndRenderPass(commandbuffers[resource_index]);
+        vkCmdEndRenderPass(commandbuffers[currentFrame]);
 
-        result = vkEndCommandBuffer(commandbuffers[resource_index]);
+        result = vkEndCommandBuffer(commandbuffers[currentFrame]);
         if (result != VK_SUCCESS)
         {
             return result;
@@ -2239,6 +2365,7 @@ private:
     std::vector<VkSemaphore> render_finished_semaphores;
     std::vector<VkFence>     in_flight_fences;
 
+    uint32_t      currentImage{0};
     size_t        currentFrame{0};
     int32_t const MAX_FRAMES_IN_FLIGHT{2};
 
@@ -2260,6 +2387,12 @@ private:
 
     std::vector<MappedBuffer> staging_mapped_vertices;
     std::vector<MappedBuffer> staging_mapped_indices;
+
+    std::vector<MappedBuffer> uniforms;
+
+    VkDescriptorPool             descriptor_pool;
+    std::vector<VkDescriptorSet> descriptorsets;
+
 }; // class RenderDevice
 
 }; // namespace gfx
