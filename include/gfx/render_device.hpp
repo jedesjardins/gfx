@@ -148,6 +148,18 @@ public:
             return false;
         }
 
+        createUniformBuffers();
+
+        if (createDescriptorPool() != VK_SUCCESS)
+        {
+            return false;
+        }
+
+        if (createDescriptorSets() != VK_SUCCESS)
+        {
+            return false;
+        }
+
         if (createGraphicsPipeline() != VK_SUCCESS)
         {
             return false;
@@ -206,6 +218,14 @@ public:
     void quit()
     {
         vkDeviceWaitIdle(logical_device);
+
+        for (size_t i = 0; i < swapchain_images.size(); ++i)
+        {
+            vkDestroyBuffer(logical_device, uniforms[i].buffer, nullptr);
+            vkFreeMemory(logical_device, uniforms[i].memory, nullptr);
+        }
+
+        vkDestroyDescriptorPool(logical_device, descriptor_pool, nullptr);
 
         for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i)
         {
@@ -323,6 +343,24 @@ public:
         dynamic_mapped_indices[currentFrame].offset  = 0;
         staging_mapped_vertices[currentFrame].offset = 0;
         staging_mapped_indices[currentFrame].offset  = 0;
+
+        // DRAW OPERATIONS
+        auto result = vkAcquireNextImageKHR(logical_device,
+                                            swapchain,
+                                            std::numeric_limits<uint64_t>::max(),
+                                            image_available_semaphores[currentFrame],
+                                            VK_NULL_HANDLE,
+                                            &currentImage);
+
+        if (result == VK_ERROR_OUT_OF_DATE_KHR)
+        {
+            // recreateSwapChain();
+            return;
+        }
+        else if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR)
+        {
+            throw std::runtime_error("failed to acquire swap chain image!");
+        }
     }
 
     void drawFrame(uint32_t object_count, Object * p_objects)
@@ -341,33 +379,12 @@ public:
             vkQueueSubmit(graphics_queue, 1, &submitCopyInfo, VK_NULL_HANDLE);
         }
 
-        // DRAW OPERATIONS
-        uint32_t imageIndex;
-        VkResult result = vkAcquireNextImageKHR(logical_device,
-                                                swapchain,
-                                                std::numeric_limits<uint64_t>::max(),
-                                                image_available_semaphores[currentFrame],
-                                                VK_NULL_HANDLE,
-                                                &imageIndex);
-
-        if (result == VK_ERROR_OUT_OF_DATE_KHR)
-        {
-            // recreateSwapChain();
-            return;
-        }
-        else if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR)
-        {
-            throw std::runtime_error("failed to acquire swap chain image!");
-        }
-
         VkSemaphore          waitSemaphores[] = {image_available_semaphores[currentFrame]};
         VkPipelineStageFlags waitStages[]     = {VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT};
 
         VkSemaphore signalSemaphores[] = {render_finished_semaphores[currentFrame]};
 
-        // updateUniformBuffer(imageIndex);
-
-        createCommandbuffer(imageIndex, object_count, p_objects);
+        createCommandbuffer(currentImage, object_count, p_objects);
 
         auto submitInfo = VkSubmitInfo{.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
 
@@ -376,7 +393,7 @@ public:
                                        .pWaitDstStageMask  = waitStages,
 
                                        .commandBufferCount = 1,
-                                       .pCommandBuffers    = &commandbuffers[imageIndex],
+                                       .pCommandBuffers    = &commandbuffers[currentImage],
 
                                        .signalSemaphoreCount = 1,
                                        .pSignalSemaphores    = signalSemaphores};
@@ -397,11 +414,11 @@ public:
 
                                             .swapchainCount = 1,
                                             .pSwapchains    = swapChains,
-                                            .pImageIndices  = &imageIndex,
+                                            .pImageIndices  = &currentImage,
 
                                             .pResults = nullptr};
 
-        result = vkQueuePresentKHR(present_queue, &presentInfo);
+        auto result = vkQueuePresentKHR(present_queue, &presentInfo);
 
         if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR
             || framebuffer_resized)
@@ -532,6 +549,11 @@ public:
         // VERTEXBUFFER
         vkDestroyBuffer(logical_device, object.s_vertex_data.vertexbuffer, nullptr);
         vkFreeMemory(logical_device, object.s_vertex_data.vertexbuffer_memory, nullptr);
+    }
+
+    void updateUniformBuffer(glm::mat4 const & data)
+    {
+        memcpy(uniforms[currentImage].data, glm::value_ptr(data), sizeof(glm::mat4));
     }
 
 private:
@@ -1260,7 +1282,7 @@ private:
     {
         auto uboLayoutBinding = VkDescriptorSetLayoutBinding{
             .binding            = 0,
-            .descriptorType     = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+            .descriptorType     = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC,
             .descriptorCount    = 1,
             .stageFlags         = VK_SHADER_STAGE_VERTEX_BIT,
             .pImmutableSamplers = nullptr // for image sampling
@@ -1273,6 +1295,87 @@ private:
 
         return vkCreateDescriptorSetLayout(
             logical_device, &layoutInfo, nullptr, &descriptorset_layout);
+    }
+
+    void createUniformBuffers()
+    {
+        VkDeviceSize bufferSize = sizeof(glm::mat4);
+
+        uniforms.resize(swapchain_images.size());
+
+        for (size_t i = 0; i < swapchain_images.size(); i++)
+        {
+            uniforms[i].memory_size = bufferSize;
+
+            createBuffer(uniforms[i].memory_size,
+                         VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+                         VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                         uniforms[i].buffer,
+                         uniforms[i].memory);
+
+            vkMapMemory(logical_device,
+                        uniforms[i].memory,
+                        0,
+                        uniforms[i].memory_size,
+                        0,
+                        &uniforms[i].data);
+        }
+    }
+
+    VkResult createDescriptorPool()
+    {
+        auto poolsize = VkDescriptorPoolSize{
+            .type            = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC,
+            .descriptorCount = static_cast<uint32_t>(swapchain_images.size())};
+
+        auto poolInfo = VkDescriptorPoolCreateInfo{
+            .sType         = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
+            .poolSizeCount = 1,
+            .pPoolSizes    = &poolsize,
+            .maxSets       = static_cast<uint32_t>(swapchain_images.size())};
+
+        return vkCreateDescriptorPool(logical_device, &poolInfo, nullptr, &descriptor_pool);
+    }
+
+    VkResult createDescriptorSets()
+    {
+        std::vector<VkDescriptorSetLayout> layouts{static_cast<size_t>(swapchain_images.size()),
+                                                   descriptorset_layout};
+
+        auto allocInfo = VkDescriptorSetAllocateInfo{
+            .sType              = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
+            .descriptorPool     = descriptor_pool,
+            .descriptorSetCount = static_cast<uint32_t>(swapchain_images.size()),
+            .pSetLayouts        = layouts.data()};
+
+        descriptorsets.resize(swapchain_images.size());
+
+        auto result = vkAllocateDescriptorSets(logical_device, &allocInfo, descriptorsets.data());
+        if (result != VK_SUCCESS)
+        {
+            return result;
+        }
+
+        for (size_t i = 0; i < swapchain_images.size(); ++i)
+        {
+            auto bufferInfo = VkDescriptorBufferInfo{
+                .buffer = uniforms[i].buffer, .offset = 0, .range = sizeof(glm::mat4)};
+
+            auto descriptorWrite = VkWriteDescriptorSet{
+                .sType            = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+                .dstSet           = descriptorsets[i],
+                .dstBinding       = 0,
+                .dstArrayElement  = 0,
+                .descriptorType   = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC,
+                .descriptorCount  = 1,
+                .pBufferInfo      = &bufferInfo,
+                .pImageInfo       = nullptr,
+                .pTexelBufferView = nullptr};
+
+            vkUpdateDescriptorSets(logical_device, 1, &descriptorWrite, 0, nullptr);
+        }
+
+        return VK_SUCCESS;
     }
 
     // GRAPHICS PIPELINE
@@ -1401,8 +1504,8 @@ private:
 
         auto pipelineLayoutInfo = VkPipelineLayoutCreateInfo{
             .sType                  = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
-            .setLayoutCount         = 0,       // 1,
-            .pSetLayouts            = nullptr, //&descriptorset_layout,
+            .setLayoutCount         = 1,
+            .pSetLayouts            = &descriptorset_layout,
             .pushConstantRangeCount = 1,
             .pPushConstantRanges    = &pushConstantRange};
 
@@ -1984,20 +2087,27 @@ private:
         vkCmdBindPipeline(
             commandbuffers[resource_index], VK_PIPELINE_BIND_POINT_GRAPHICS, graphics_pipeline);
 
+        uint32_t dynamic_offset{0};
+
+        vkCmdBindDescriptorSets(commandbuffers[resource_index],
+                                VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                pipeline_layout,
+                                0,
+                                1,
+                                &descriptorsets[resource_index],
+                                1,
+                                &dynamic_offset);
+
         for (uint32_t object_index = 0; object_index < object_count; ++object_index)
         {
             auto & object = p_objects[object_index];
-
-            auto view_matrix = glm::scale(glm::mat4(1.0), glm::vec3(1.f, -1.f, 1.f));
-
-            auto uniform_matrix = view_matrix * object.transform;
 
             vkCmdPushConstants(commandbuffers[resource_index],
                                pipeline_layout,
                                VK_SHADER_STAGE_VERTEX_BIT,
                                0,
                                sizeof(glm::mat4),
-                               glm::value_ptr(uniform_matrix));
+                               glm::value_ptr(object.transform));
 
             if (object.type == ObjectType::STATIC)
             {
@@ -2248,6 +2358,7 @@ private:
     std::vector<VkSemaphore> render_finished_semaphores;
     std::vector<VkFence>     in_flight_fences;
 
+    uint32_t      currentImage{0};
     size_t        currentFrame{0};
     int32_t const MAX_FRAMES_IN_FLIGHT{2};
 
@@ -2269,6 +2380,12 @@ private:
 
     std::vector<MappedBuffer> staging_mapped_vertices;
     std::vector<MappedBuffer> staging_mapped_indices;
+
+    std::vector<MappedBuffer> uniforms;
+
+    VkDescriptorPool             descriptor_pool;
+    std::vector<VkDescriptorSet> descriptorsets;
+
 }; // class RenderDevice
 
 }; // namespace gfx
