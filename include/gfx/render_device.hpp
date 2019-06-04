@@ -219,7 +219,7 @@ public:
     {
         vkDeviceWaitIdle(logical_device);
 
-        for (size_t i = 0; i < swapchain_images.size(); ++i)
+        for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i)
         {
             vkDestroyBuffer(logical_device, uniforms[i].buffer, nullptr);
             vkFreeMemory(logical_device, uniforms[i].memory, nullptr);
@@ -393,7 +393,7 @@ public:
                                        .pWaitDstStageMask  = waitStages,
 
                                        .commandBufferCount = 1,
-                                       .pCommandBuffers    = &commandbuffers[currentImage],
+                                       .pCommandBuffers    = &commandbuffers[currentFrame],
 
                                        .signalSemaphoreCount = 1,
                                        .pSignalSemaphores    = signalSemaphores};
@@ -553,7 +553,7 @@ public:
 
     void updateUniformBuffer(glm::mat4 const & data)
     {
-        memcpy(uniforms[currentImage].data, glm::value_ptr(data), sizeof(glm::mat4));
+        memcpy(uniforms[currentFrame].data, glm::value_ptr(data), sizeof(glm::mat4));
     }
 
 private:
@@ -1301,9 +1301,9 @@ private:
     {
         VkDeviceSize bufferSize = sizeof(glm::mat4);
 
-        uniforms.resize(swapchain_images.size());
+        uniforms.resize(MAX_FRAMES_IN_FLIGHT);
 
-        for (size_t i = 0; i < swapchain_images.size(); i++)
+        for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++)
         {
             uniforms[i].memory_size = bufferSize;
 
@@ -1326,29 +1326,29 @@ private:
     {
         auto poolsize = VkDescriptorPoolSize{
             .type            = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC,
-            .descriptorCount = static_cast<uint32_t>(swapchain_images.size())};
+            .descriptorCount = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT)};
 
         auto poolInfo = VkDescriptorPoolCreateInfo{
             .sType         = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
             .poolSizeCount = 1,
             .pPoolSizes    = &poolsize,
-            .maxSets       = static_cast<uint32_t>(swapchain_images.size())};
+            .maxSets       = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT)};
 
         return vkCreateDescriptorPool(logical_device, &poolInfo, nullptr, &descriptor_pool);
     }
 
     VkResult createDescriptorSets()
     {
-        std::vector<VkDescriptorSetLayout> layouts{static_cast<size_t>(swapchain_images.size()),
+        std::vector<VkDescriptorSetLayout> layouts{static_cast<size_t>(MAX_FRAMES_IN_FLIGHT),
                                                    descriptorset_layout};
 
         auto allocInfo = VkDescriptorSetAllocateInfo{
             .sType              = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
             .descriptorPool     = descriptor_pool,
-            .descriptorSetCount = static_cast<uint32_t>(swapchain_images.size()),
+            .descriptorSetCount = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT),
             .pSetLayouts        = layouts.data()};
 
-        descriptorsets.resize(swapchain_images.size());
+        descriptorsets.resize(MAX_FRAMES_IN_FLIGHT);
 
         auto result = vkAllocateDescriptorSets(logical_device, &allocInfo, descriptorsets.data());
         if (result != VK_SUCCESS)
@@ -1356,7 +1356,7 @@ private:
             return result;
         }
 
-        for (size_t i = 0; i < swapchain_images.size(); ++i)
+        for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i)
         {
             auto bufferInfo = VkDescriptorBufferInfo{
                 .buffer = uniforms[i].buffer, .offset = 0, .range = sizeof(glm::mat4)};
@@ -2016,7 +2016,7 @@ private:
     // TODO: rewrite to return VkResult
     VkResult createCommandbuffers()
     {
-        commandbuffers.resize(swapchain_framebuffers.size());
+        commandbuffers.resize(MAX_FRAMES_IN_FLIGHT);
 
         auto allocInfo = VkCommandBufferAllocateInfo{
             .sType              = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
@@ -2024,7 +2024,14 @@ private:
             .level              = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
             .commandBufferCount = (uint32_t)commandbuffers.size()};
 
-        return vkAllocateCommandBuffers(logical_device, &allocInfo, commandbuffers.data());
+        auto result = vkAllocateCommandBuffers(logical_device, &allocInfo, commandbuffers.data());
+
+        for (auto const& cb : commandbuffers)
+        {
+            std::cout << "Buffer " << cb << "\n";
+        }
+
+        return result;
     }
 
     VkResult createSingleTimeUseBuffers()
@@ -2044,7 +2051,7 @@ private:
             .flags            = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,
             .pInheritanceInfo = nullptr};
 
-        auto result = vkBeginCommandBuffer(commandbuffers[resource_index], &beginInfo);
+        auto result = vkBeginCommandBuffer(commandbuffers[currentFrame], &beginInfo);
         if (result != VK_SUCCESS)
         {
             return result;
@@ -2055,7 +2062,7 @@ private:
                                        .srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT,
                                        .dstAccessMask = VK_ACCESS_VERTEX_ATTRIBUTE_READ_BIT};
 
-        vkCmdPipelineBarrier(commandbuffers[resource_index],
+        vkCmdPipelineBarrier(commandbuffers[currentFrame],
                              VK_PIPELINE_STAGE_TRANSFER_BIT,
                              VK_PIPELINE_STAGE_VERTEX_INPUT_BIT,
                              0,
@@ -2082,19 +2089,19 @@ private:
             .pClearValues      = clearValues.data()};
 
         vkCmdBeginRenderPass(
-            commandbuffers[resource_index], &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
+            commandbuffers[currentFrame], &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
 
         vkCmdBindPipeline(
-            commandbuffers[resource_index], VK_PIPELINE_BIND_POINT_GRAPHICS, graphics_pipeline);
+            commandbuffers[currentFrame], VK_PIPELINE_BIND_POINT_GRAPHICS, graphics_pipeline);
 
         uint32_t dynamic_offset{0};
 
-        vkCmdBindDescriptorSets(commandbuffers[resource_index],
+        vkCmdBindDescriptorSets(commandbuffers[currentFrame],
                                 VK_PIPELINE_BIND_POINT_GRAPHICS,
                                 pipeline_layout,
                                 0,
                                 1,
-                                &descriptorsets[resource_index],
+                                &descriptorsets[currentFrame],
                                 1,
                                 &dynamic_offset);
 
@@ -2102,7 +2109,7 @@ private:
         {
             auto & object = p_objects[object_index];
 
-            vkCmdPushConstants(commandbuffers[resource_index],
+            vkCmdPushConstants(commandbuffers[currentFrame],
                                pipeline_layout,
                                VK_SHADER_STAGE_VERTEX_BIT,
                                0,
@@ -2111,17 +2118,17 @@ private:
 
             if (object.type == ObjectType::STATIC)
             {
-                vkCmdBindVertexBuffers(commandbuffers[resource_index],
+                vkCmdBindVertexBuffers(commandbuffers[currentFrame],
                                        0,
                                        1,
                                        &object.s_vertex_data.vertexbuffer,
                                        &object.s_vertex_data.vertexbuffer_offset);
-                vkCmdBindIndexBuffer(commandbuffers[resource_index],
+                vkCmdBindIndexBuffer(commandbuffers[currentFrame],
                                      object.s_vertex_data.indexbuffer,
                                      object.s_vertex_data.indexbuffer_offset,
                                      VK_INDEX_TYPE_UINT32);
 
-                vkCmdDrawIndexed(commandbuffers[resource_index],
+                vkCmdDrawIndexed(commandbuffers[currentFrame],
                                  object.s_vertex_data.indexbuffer_size,
                                  1,
                                  0,
@@ -2153,24 +2160,24 @@ private:
                 VkDeviceSize vertex_offset{mapped_vertices.offset};
 
                 vkCmdBindVertexBuffers(
-                    commandbuffers[resource_index], 0, 1, &mapped_vertices.buffer, &vertex_offset);
+                    commandbuffers[currentFrame], 0, 1, &mapped_vertices.buffer, &vertex_offset);
 
-                vkCmdBindIndexBuffer(commandbuffers[resource_index],
+                vkCmdBindIndexBuffer(commandbuffers[currentFrame],
                                      mapped_indices.buffer,
                                      mapped_indices.offset,
                                      VK_INDEX_TYPE_UINT32);
 
                 vkCmdDrawIndexed(
-                    commandbuffers[resource_index], object.d_vertex_data.index_count, 1, 0, 0, 0);
+                    commandbuffers[currentFrame], object.d_vertex_data.index_count, 1, 0, 0, 0);
 
                 mapped_vertices.offset += sizeof(Vertex) * object.d_vertex_data.vertex_count;
                 mapped_indices.offset += sizeof(uint32_t) * object.d_vertex_data.index_count;
             }
         }
 
-        vkCmdEndRenderPass(commandbuffers[resource_index]);
+        vkCmdEndRenderPass(commandbuffers[currentFrame]);
 
-        result = vkEndCommandBuffer(commandbuffers[resource_index]);
+        result = vkEndCommandBuffer(commandbuffers[currentFrame]);
         if (result != VK_SUCCESS)
         {
             return result;
