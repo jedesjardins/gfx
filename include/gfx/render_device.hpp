@@ -379,6 +379,8 @@ public:
             vkQueueSubmit(graphics_queue, 1, &submitCopyInfo, VK_NULL_HANDLE);
         }
 
+        // the graphics queue will wait to do anything in the color_attachment_output stage
+        // until the waitSemaphore is signalled by vkAcquireNextImageKHR
         VkSemaphore          waitSemaphores[] = {image_available_semaphores[currentFrame]};
         VkPipelineStageFlags waitStages[]     = {VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT};
 
@@ -1184,6 +1186,7 @@ private:
             .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
             .finalLayout   = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL};
 
+        // used in subpass
         auto colorAttachmentRef = VkAttachmentReference{
             .attachment = 0, .layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL};
 
@@ -1197,6 +1200,7 @@ private:
             .initialLayout  = VK_IMAGE_LAYOUT_UNDEFINED,
             .finalLayout    = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR};
 
+        // used in subpass
         auto colorAttachmentResolveRef = VkAttachmentReference{
             .attachment = 2, .layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL};
 
@@ -1210,6 +1214,7 @@ private:
             .initialLayout  = VK_IMAGE_LAYOUT_UNDEFINED,
             .finalLayout    = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL};
 
+        // used in subpass
         auto depthAttachmentRef = VkAttachmentReference{
             .attachment = 1, .layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL};
 
@@ -1219,12 +1224,17 @@ private:
                                             .pDepthStencilAttachment = &depthAttachmentRef,
                                             .pResolveAttachments     = &colorAttachmentResolveRef};
 
+        // This dependency is for making sure the swapchain image isn't read or
+        // written to before it's acquired with vkAcquireNextImageKHR.
+        // This is usually implicit to the beginning of the renderpass
+        // This would not be necessary if not for the fact that we submit to
+        // the graphics queue before we wait on the image_available semaphore.
         auto dependency = VkSubpassDependency{
             .srcSubpass    = VK_SUBPASS_EXTERNAL,
             .dstSubpass    = 0,
             .srcStageMask  = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
-            .srcAccessMask = 0,
             .dstStageMask  = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+            .srcAccessMask = 0,
             .dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT
                              | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT};
 
@@ -2026,11 +2036,6 @@ private:
 
         auto result = vkAllocateCommandBuffers(logical_device, &allocInfo, commandbuffers.data());
 
-        for (auto const & cb: commandbuffers)
-        {
-            std::cout << "Buffer " << cb << "\n";
-        }
-
         return result;
     }
 
@@ -2329,6 +2334,7 @@ private:
 
     VkQueue graphics_queue;
     VkQueue present_queue;
+    VkQueue transfer_queue;
 
     VkFormat   swapchain_image_format;
     VkFormat   depth_format;
@@ -2342,6 +2348,8 @@ private:
     VkRenderPass render_pass;
 
     VkDescriptorSetLayout descriptorset_layout;
+    VkDescriptorPool             descriptor_pool;
+    std::vector<VkDescriptorSet> descriptorsets;
 
     VkPipelineLayout pipeline_layout;
     VkPipeline       graphics_pipeline;
@@ -2390,8 +2398,38 @@ private:
 
     std::vector<MappedBuffer> uniforms;
 
-    VkDescriptorPool             descriptor_pool;
-    std::vector<VkDescriptorSet> descriptorsets;
+
+
+
+    // list of attachment info
+    class AttachmentInfo{};
+    std::vector<AttachmentInfo> attachment_infos;
+
+    // list of renderpasses
+    class Renderpass{};
+    std::vector<Renderpass> renderpasses;
+
+    // list of attachments
+    class Attachment{};
+    std::vector<Attachment> attachments;
+
+    // list of framebuffers
+    class Framebuffer{};
+    std::vector<Framebuffer> framebuffers;
+
+    // list of descriptor layouts
+    class UniformLayout{};
+    std::vector<UniformLayout> uniform_layouts;
+
+    // list of descriptors
+    class Uniform{};
+    std::vector<Uniform> uniforms;
+
+    // list of pipelines
+    class Pipeline{};
+    std::vector<Pipeline> pipelines;
+
+
 
 }; // class RenderDevice
 
