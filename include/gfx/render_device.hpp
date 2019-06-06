@@ -282,7 +282,13 @@ public:
         vkDestroyDescriptorSetLayout(logical_device, descriptorset_layout, nullptr);
 
         // RENDER PASS
-        vkDestroyRenderPass(logical_device, render_pass, nullptr);
+
+        for (auto & renderpass: renderpasses)
+        {
+            vkDestroyRenderPass(logical_device, renderpass.vk_renderpass, nullptr);
+            renderpass.vk_renderpass = VK_NULL_HANDLE;
+        }
+        
 
         for (size_t i = 0; i < swapchain_image_views.size(); i++)
         {
@@ -848,7 +854,8 @@ private:
                 device_info.present_queue = i;
             }
 
-            if (device_info.graphics_queue == -1 && queueFamily.queueCount > 0 && queueFamily.queueFlags & VK_QUEUE_GRAPHICS_BIT)
+            if (device_info.graphics_queue == -1 && queueFamily.queueCount > 0
+                && queueFamily.queueFlags & VK_QUEUE_GRAPHICS_BIT)
             {
                 device_info.graphics_queue = i;
             }
@@ -968,8 +975,7 @@ private:
         std::set<uint32_t>                   uniqueQueueFamilies = {
             static_cast<uint32_t>(physical_device_info.present_queue),
             static_cast<uint32_t>(physical_device_info.graphics_queue),
-            static_cast<uint32_t>(physical_device_info.transfer_queue)
-        };
+            static_cast<uint32_t>(physical_device_info.transfer_queue)};
 
         float queuePriority = 1.0f;
         for (uint32_t queueFamily: uniqueQueueFamilies)
@@ -1189,86 +1195,75 @@ private:
     // RENDER PASS & ATTACHMENT DESCRIPTIONS
     VkResult createRenderPass()
     {
-        auto colorAttachment = VkAttachmentDescription{
-            .format  = swapchain_image_format,
-            .samples = physical_device_info.msaa_samples,
+        for (uint32_t r_i = 0; r_i < renderpasses.size(); ++r_i)
+        {
+            // attachment descriptions
+            auto attachments = std::vector<VkAttachmentDescription>(
+                renderpasses[r_i].attachments.size());
 
-            .loadOp  = VK_ATTACHMENT_LOAD_OP_CLEAR,
-            .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
+            for (uint32_t a_i = 0; a_i < attachments.size(); ++a_i)
+            {
+                auto const & attachment_info = attachment_infos[renderpasses[r_i].attachments[a_i]];
 
-            .stencilLoadOp  = VK_ATTACHMENT_LOAD_OP_DONT_CARE,
-            .stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
+                attachments[a_i] = attachment_info.description;
 
-            .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
-            .finalLayout   = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL};
+                switch (attachment_info.format)
+                {
+                case Format::USE_COLOR:
+                    attachments[a_i].format = swapchain_image_format;
+                    break;
+                case Format::USE_DEPTH:
+                    attachments[a_i].format = depth_format;
+                    break;
+                }
 
-        // used in subpass
-        auto colorAttachmentRef = VkAttachmentReference{
-            .attachment = 0, .layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL};
+                if (attachment_info.use_samples)
+                {
+                    attachments[a_i].samples = physical_device_info.msaa_samples;
+                }
+                else
+                {
+                    attachments[a_i].samples = VK_SAMPLE_COUNT_1_BIT;
+                }
+            }
 
-        auto colorAttachmentResolve = VkAttachmentDescription{
-            .format         = swapchain_image_format,
-            .samples        = VK_SAMPLE_COUNT_1_BIT,
-            .loadOp         = VK_ATTACHMENT_LOAD_OP_DONT_CARE,
-            .storeOp        = VK_ATTACHMENT_STORE_OP_STORE,
-            .stencilLoadOp  = VK_ATTACHMENT_LOAD_OP_DONT_CARE,
-            .stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
-            .initialLayout  = VK_IMAGE_LAYOUT_UNDEFINED,
-            .finalLayout    = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR};
+            // subpass descriptions
+            auto subpasses = std::vector<VkSubpassDescription>(renderpasses[r_i].subpasses.size());
 
-        // used in subpass
-        auto colorAttachmentResolveRef = VkAttachmentReference{
-            .attachment = 2, .layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL};
+            for (uint32_t s_i = 0; s_i < subpasses.size(); ++s_i)
+            {
+                subpasses[s_i] = VkSubpassDescription{
+                    .pipelineBindPoint    = VK_PIPELINE_BIND_POINT_GRAPHICS,
+                    .colorAttachmentCount = static_cast<uint32_t>(
+                        renderpasses[r_i].subpasses[s_i].color_attachments.size()),
+                    .pColorAttachments = renderpasses[r_i].subpasses[s_i].color_attachments.data(),
+                    .pDepthStencilAttachment
+                    = &renderpasses[r_i].subpasses[s_i].depth_stencil_attachment,
+                    .pResolveAttachments
+                    = &renderpasses[r_i].subpasses[s_i].color_resolve_attachment};
+            }
 
-        auto depthAttachment = VkAttachmentDescription{
-            .format         = depth_format,
-            .samples        = physical_device_info.msaa_samples,
-            .loadOp         = VK_ATTACHMENT_LOAD_OP_CLEAR,
-            .storeOp        = VK_ATTACHMENT_STORE_OP_DONT_CARE,
-            .stencilLoadOp  = VK_ATTACHMENT_LOAD_OP_DONT_CARE,
-            .stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
-            .initialLayout  = VK_IMAGE_LAYOUT_UNDEFINED,
-            .finalLayout    = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL};
+            auto const & dependencies = renderpasses[r_i].subpass_dependencies;
 
-        // used in subpass
-        auto depthAttachmentRef = VkAttachmentReference{
-            .attachment = 1, .layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL};
+            auto renderPassInfo = VkRenderPassCreateInfo{
+                .sType           = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO,
+                .attachmentCount = static_cast<uint32_t>(attachments.size()),
+                .pAttachments    = attachments.data(),
 
-        auto subpass = VkSubpassDescription{.pipelineBindPoint    = VK_PIPELINE_BIND_POINT_GRAPHICS,
-                                            .colorAttachmentCount = 1,
-                                            .pColorAttachments    = &colorAttachmentRef,
-                                            .pDepthStencilAttachment = &depthAttachmentRef,
-                                            .pResolveAttachments     = &colorAttachmentResolveRef};
+                .subpassCount = static_cast<uint32_t>(subpasses.size()),
+                .pSubpasses   = subpasses.data(),
 
-        // This dependency is for making sure the swapchain image isn't read or
-        // written to before it's acquired with vkAcquireNextImageKHR.
-        // This is usually implicit to the beginning of the renderpass
-        // This would not be necessary if not for the fact that we submit to
-        // the graphics queue before we wait on the image_available semaphore.
-        auto dependency = VkSubpassDependency{
-            .srcSubpass    = VK_SUBPASS_EXTERNAL,
-            .dstSubpass    = 0,
-            .srcStageMask  = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
-            .dstStageMask  = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
-            .srcAccessMask = 0,
-            .dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT
-                             | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT};
+                .dependencyCount = static_cast<uint32_t>(dependencies.size()),
+                .pDependencies   = dependencies.data()};
 
-        auto attachments = std::array<VkAttachmentDescription, 3>{
-            colorAttachment, depthAttachment, colorAttachmentResolve};
+            auto result = vkCreateRenderPass(logical_device, &renderPassInfo, nullptr, &renderpasses[r_i].vk_renderpass);
+            if (result != VK_SUCCESS)
+            {
+                return result;
+            }
+        }
 
-        auto renderPassInfo = VkRenderPassCreateInfo{
-            .sType           = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO,
-            .attachmentCount = static_cast<uint32_t>(attachments.size()),
-            .pAttachments    = attachments.data(),
-
-            .subpassCount = 1,
-            .pSubpasses   = &subpass,
-
-            .dependencyCount = 1,
-            .pDependencies   = &dependency};
-
-        return vkCreateRenderPass(logical_device, &renderPassInfo, nullptr, &render_pass);
+        return VK_SUCCESS;
     }
 
     VkFormat findDepthFormat()
@@ -1555,7 +1550,7 @@ private:
             .pColorBlendState    = &colorBlending,
             .pDynamicState       = nullptr, // Optional
             .layout              = pipeline_layout,
-            .renderPass          = render_pass,
+            .renderPass          = renderpasses[0].vk_renderpass,//render_pass,
             .subpass             = 0,
             .basePipelineHandle  = VK_NULL_HANDLE, // Optional
             .basePipelineIndex   = -1              // Optional
@@ -1899,7 +1894,7 @@ private:
 
             auto framebufferInfo = VkFramebufferCreateInfo{
                 .sType           = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO,
-                .renderPass      = render_pass,
+                .renderPass      = renderpasses[0].vk_renderpass,
                 .attachmentCount = static_cast<uint32_t>(attachments.size()),
                 .pAttachments    = attachments.data(),
                 .width           = swapchain_extent.width,
@@ -2102,7 +2097,7 @@ private:
 
         auto renderPassInfo = VkRenderPassBeginInfo{
             .sType             = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
-            .renderPass        = render_pass,
+            .renderPass        = renderpasses[0].vk_renderpass,
             .framebuffer       = swapchain_framebuffers[resource_index],
             .renderArea.offset = {0, 0},
             .renderArea.extent = swapchain_extent,
@@ -2361,8 +2356,6 @@ private:
     std::vector<VkImage>     swapchain_images;
     std::vector<VkImageView> swapchain_image_views;
 
-    VkRenderPass render_pass;
-
     VkDescriptorSetLayout        descriptorset_layout;
     VkDescriptorPool             descriptor_pool;
     std::vector<VkDescriptorSet> descriptorsets;
@@ -2414,48 +2407,112 @@ private:
 
     std::vector<MappedBuffer> uniforms;
 
-
     // PRIMARY COMMANDBUFFERS
     std::vector<VkCommandBuffer> primary_commandbuffers; // one per swapchain image
-    std::vector<std::vector<VkCommandBuffer>> secondary_commandbuffers; // one per swapchain image per renderpass
+    std::vector<std::vector<VkCommandBuffer>>
+        secondary_commandbuffers; // one per swapchain image per renderpass
     // secondary_commandbuffers[current_frame][current renderpass]
     using CommandbufferHandle = size_t;
 
+    enum class Format
+    {
+        USE_DEPTH,
+        USE_COLOR
+    };
+
     // ATTACHMENT INFOS
-    class AttachmentInfo
+    struct AttachmentInfo
     {
         VkAttachmentDescription description;
-        bool                    depends_on_framebuffer;
+        Format                  format;
+        bool use_samples;
+        // bool                    depends_on_swapchain;
     };
-    std::vector<AttachmentInfo> attachment_infos;
+
     using AttachmentInfoHandle = size_t;
 
+    std::vector<AttachmentInfo> attachment_infos
+    {
+        AttachmentInfo{
+            .format = Format::USE_COLOR,
+            .use_samples = true,
+            .description = VkAttachmentDescription{
+                           //.format  = swapchain_image_format,
+                           //.samples        = physical_device_info.msaa_samples,
+                           .loadOp         = VK_ATTACHMENT_LOAD_OP_CLEAR,
+                           .storeOp        = VK_ATTACHMENT_STORE_OP_STORE,
+                           .stencilLoadOp  = VK_ATTACHMENT_LOAD_OP_DONT_CARE,
+                           .stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
+                           .initialLayout  = VK_IMAGE_LAYOUT_UNDEFINED,
+                           .finalLayout    = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL}},
+        AttachmentInfo{
+            .format = Format::USE_DEPTH,
+            .use_samples = true,
+            .description = VkAttachmentDescription{
+                            //.format         = swapchain_image_format,
+                            //.samples        = VK_SAMPLE_COUNT_1_BIT,
+                            .loadOp         = VK_ATTACHMENT_LOAD_OP_CLEAR,
+                            .storeOp        = VK_ATTACHMENT_STORE_OP_DONT_CARE,
+                            .stencilLoadOp  = VK_ATTACHMENT_LOAD_OP_DONT_CARE,
+                            .stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
+                            .initialLayout  = VK_IMAGE_LAYOUT_UNDEFINED,
+                            .finalLayout    = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL}},
+        AttachmentInfo{
+            .format = Format::USE_COLOR,
+            .use_samples = false,
+            .description = VkAttachmentDescription{
+                            //.format       = depth_format,
+                            //.samples        = physical_device_info.msaa_samples,
+                            .loadOp         = VK_ATTACHMENT_LOAD_OP_DONT_CARE,
+                            .storeOp        = VK_ATTACHMENT_STORE_OP_STORE,
+                            .stencilLoadOp  = VK_ATTACHMENT_LOAD_OP_DONT_CARE,
+                            .stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
+                            .initialLayout  = VK_IMAGE_LAYOUT_UNDEFINED,
+                            .finalLayout    = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR}}
+    };
+
     // SUBPASS INFO
-    class SubpassInfo
+    struct SubpassInfo
     {
         std::vector<VkAttachmentReference> color_attachments;
+        VkAttachmentReference              color_resolve_attachment;
         VkAttachmentReference              depth_stencil_attachment;
     };
 
     // RENDERPASSES
-    class Renderpass
+    struct Renderpass
     {
-        std::vector<AttachmentInfoHandle> color_attachments;
-        AttachmentInfoHandle              depth_stencil_attachment;
+        std::vector<AttachmentInfoHandle> attachments;
 
-        std::vector<VkSubpassDescription>
-            subpasses; // tightly packed VkSubpassDescription for creating renderpass
         std::vector<SubpassInfo>
-            subpass_infos; // attachment references for creating subpass description
-
-        CommandbufferHandle commandbuffer;
+            subpasses; // attachment references for creating subpass description
 
         std::vector<VkSubpassDependency> subpass_dependencies;
 
+        std::vector<CommandbufferHandle> subpass_commandbuffers;
+
         VkRenderPass vk_renderpass{VK_NULL_HANDLE};
     };
-    std::vector<Renderpass> renderpasses;
+
     using RenderpassHandle = size_t;
+
+    std::vector<Renderpass> renderpasses{Renderpass{
+        .attachments          = {0, 1, 2},
+        .subpasses            = {SubpassInfo{
+            .color_attachments = {VkAttachmentReference{0,
+                                                        VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL}},
+            .color_resolve_attachment
+            = VkAttachmentReference{2, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL},
+            .depth_stencil_attachment
+            = VkAttachmentReference{1, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL}}},
+        .subpass_dependencies = {
+            VkSubpassDependency{.srcSubpass    = VK_SUBPASS_EXTERNAL,
+                                .dstSubpass    = 0,
+                                .srcStageMask  = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+                                .dstStageMask  = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+                                .srcAccessMask = 0,
+                                .dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT
+                                                 | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT}}}};
 
     // ATTACHMENTS
     // need a way of handling the swapchain images
@@ -2542,8 +2599,7 @@ private:
         std::vector<AttachmentHandle> attachments;
 
         RenderpassHandle renderpass;
-        size_t subpass;
-
+        size_t           subpass;
 
         VkPipeline       vk_pipeline;
         VkPipelineLayout vk_pipeline_layout;
@@ -2551,9 +2607,7 @@ private:
     std::vector<Pipeline> pipelines;
     using PipelineHandle = size_t;
 
-
 }; // class RenderDevice
-
 }; // namespace gfx
 
 #endif
