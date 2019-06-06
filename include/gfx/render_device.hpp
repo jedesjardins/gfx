@@ -123,8 +123,9 @@ public:
             return false;
         }
 
-        vkGetDeviceQueue(logical_device, physical_device_info.graphics_queue, 0, &graphics_queue);
         vkGetDeviceQueue(logical_device, physical_device_info.present_queue, 0, &present_queue);
+        vkGetDeviceQueue(logical_device, physical_device_info.graphics_queue, 0, &graphics_queue);
+        vkGetDeviceQueue(logical_device, physical_device_info.transfer_queue, 0, &transfer_queue);
 
         if (createSwapChain() != VK_SUCCESS)
         {
@@ -727,10 +728,11 @@ private:
         std::vector<VkQueueFamilyProperties> queue_family_properties{};
         int32_t                              present_queue{-1};
         int32_t                              graphics_queue{-1};
+        int32_t                              transfer_queue{-1};
 
         bool queues_complete() const
         {
-            return present_queue != -1 && graphics_queue != -1;
+            return present_queue != -1 && graphics_queue != -1 && transfer_queue != -1;
         }
 
         std::vector<VkExtensionProperties> available_extensions{};
@@ -841,14 +843,21 @@ private:
             VkBool32 presentSupport = false;
             vkGetPhysicalDeviceSurfaceSupportKHR(device, i, surface, &presentSupport);
 
-            if (queueFamily.queueCount > 0 && presentSupport)
+            if (device_info.present_queue == -1 && queueFamily.queueCount > 0 && presentSupport)
             {
                 device_info.present_queue = i;
             }
 
-            if (queueFamily.queueCount > 0 && queueFamily.queueFlags & VK_QUEUE_GRAPHICS_BIT)
+            if (device_info.graphics_queue == -1 && queueFamily.queueCount > 0 && queueFamily.queueFlags & VK_QUEUE_GRAPHICS_BIT)
             {
                 device_info.graphics_queue = i;
+            }
+
+            if (queueFamily.queueCount > 0 && (i != device_info.graphics_queue)
+                && (queueFamily.queueFlags & VK_QUEUE_TRANSFER_BIT
+                    || queueFamily.queueFlags & VK_QUEUE_GRAPHICS_BIT))
+            {
+                device_info.transfer_queue = i;
             }
 
             if (device_info.queues_complete())
@@ -857,6 +866,11 @@ private:
             }
 
             i++;
+        }
+
+        if (device_info.transfer_queue == -1)
+        {
+            device_info.transfer_queue = device_info.graphics_queue;
         }
     }
 
@@ -952,8 +966,10 @@ private:
         // create queue info for graphics and present queues
         std::vector<VkDeviceQueueCreateInfo> queueCreateInfos;
         std::set<uint32_t>                   uniqueQueueFamilies = {
+            static_cast<uint32_t>(physical_device_info.present_queue),
             static_cast<uint32_t>(physical_device_info.graphics_queue),
-            static_cast<uint32_t>(physical_device_info.graphics_queue)};
+            static_cast<uint32_t>(physical_device_info.transfer_queue)
+        };
 
         float queuePriority = 1.0f;
         for (uint32_t queueFamily: uniqueQueueFamilies)
@@ -2347,7 +2363,7 @@ private:
 
     VkRenderPass render_pass;
 
-    VkDescriptorSetLayout descriptorset_layout;
+    VkDescriptorSetLayout        descriptorset_layout;
     VkDescriptorPool             descriptor_pool;
     std::vector<VkDescriptorSet> descriptorsets;
 
@@ -2399,36 +2415,141 @@ private:
     std::vector<MappedBuffer> uniforms;
 
 
+    // PRIMARY COMMANDBUFFERS
+    std::vector<VkCommandBuffer> primary_commandbuffers; // one per swapchain image
+    std::vector<std::vector<VkCommandBuffer>> secondary_commandbuffers; // one per swapchain image per renderpass
+    // secondary_commandbuffers[current_frame][current renderpass]
+    using CommandbufferHandle = size_t;
 
-
-    // list of attachment info
-    class AttachmentInfo{};
+    // ATTACHMENT INFOS
+    class AttachmentInfo
+    {
+        VkAttachmentDescription description;
+        bool                    depends_on_framebuffer;
+    };
     std::vector<AttachmentInfo> attachment_infos;
+    using AttachmentInfoHandle = size_t;
 
-    // list of renderpasses
-    class Renderpass{};
+    // SUBPASS INFO
+    class SubpassInfo
+    {
+        std::vector<VkAttachmentReference> color_attachments;
+        VkAttachmentReference              depth_stencil_attachment;
+    };
+
+    // RENDERPASSES
+    class Renderpass
+    {
+        std::vector<AttachmentInfoHandle> color_attachments;
+        AttachmentInfoHandle              depth_stencil_attachment;
+
+        std::vector<VkSubpassDescription>
+            subpasses; // tightly packed VkSubpassDescription for creating renderpass
+        std::vector<SubpassInfo>
+            subpass_infos; // attachment references for creating subpass description
+
+        CommandbufferHandle commandbuffer;
+
+        std::vector<VkSubpassDependency> subpass_dependencies;
+
+        VkRenderPass vk_renderpass{VK_NULL_HANDLE};
+    };
     std::vector<Renderpass> renderpasses;
+    using RenderpassHandle = size_t;
 
-    // list of attachments
-    class Attachment{};
+    // ATTACHMENTS
+    // need a way of handling the swapchain images
+    class Attachment
+    {
+        VkDeviceMemory vk_image_memory{VK_NULL_HANDLE};
+        VkImage        vk_image{VK_NULL_HANDLE};
+        VkImageView    vk_image_view{VK_NULL_HANDLE};
+    };
     std::vector<Attachment> attachments;
+    using AttachmentHandle = size_t;
 
-    // list of framebuffers
-    class Framebuffer{};
+    // FRAMEBUFFERS
+    // need a way of handling framebuffers for each swapchain image
+    class Framebuffer
+    {
+        RenderpassHandle              renderpass;
+        std::vector<AttachmentHandle> attachments;
+        uint32_t                      width;
+        uint32_t                      height;
+        uint32_t                      depth;
+        VkFramebuffer                 vk_framebuffer;
+    };
     std::vector<Framebuffer> framebuffers;
+    using FramebufferHandle = size_t;
 
-    // list of descriptor layouts
-    class UniformLayout{};
+    // UNIFORMS
+    class Uniform
+    {};
+    std::vector<Uniform> n_uniforms;
+    using UniformHandle = size_t;
+
+    // UNIFORM LAYOUTS
+    class UniformLayout
+    {
+        std::vector<VkDescriptorSetLayoutBinding> uniform_bindings;
+        std::vector<UniformHandle>                uniforms; // this layout owns these uniforms
+
+        VkDescriptorSetLayout vk_descriptorset_layout{VK_NULL_HANDLE};
+    };
     std::vector<UniformLayout> uniform_layouts;
+    using UniformLayoutHandle = size_t;
 
-    // list of descriptors
-    class Uniform{};
-    std::vector<Uniform> uniforms;
+    VkDescriptorPool vk_descriptor_pool;
 
-    // list of pipelines
-    class Pipeline{};
+    // PUSH CONSTANTS
+    std::vector<VkPushConstantRange> push_constants;
+    using PushConstantHandle = size_t;
+
+    // VERTICES
+    std::vector<VkVertexInputBindingDescription> vertex_bindings;
+    using VertexBindingHandle = size_t;
+
+    std::vector<VkVertexInputBindingDescription> vertex_attributes;
+    using VertexAttributeHandle = size_t;
+
+    // SHADERS
+    class Shader
+    {
+        std::string shader_name;
+
+        VkShaderModule vk_shader_module{VK_NULL_HANDLE};
+    };
+    std::vector<Shader> shaders;
+    using ShaderHandle = size_t;
+
+    // PIPELINES
+    class Pipeline
+    {
+        std::string vertex_shader;
+        std::string fragment_shader;
+
+        // vertex binding stuff
+        std::vector<VertexBindingHandle>   vertex_bindings;
+        std::vector<VertexAttributeHandle> vertex_attributes;
+
+        // uniform layouts
+        std::vector<UniformLayoutHandle> uniform_layouts;
+        // push constants
+        std::vector<PushConstantHandle> push_constants;
+
+        // viewports
+        // attachment usage
+        std::vector<AttachmentHandle> attachments;
+
+        RenderpassHandle renderpass;
+        size_t subpass;
+
+
+        VkPipeline       vk_pipeline;
+        VkPipelineLayout vk_pipeline_layout;
+    };
     std::vector<Pipeline> pipelines;
-
+    using PipelineHandle = size_t;
 
 
 }; // class RenderDevice
