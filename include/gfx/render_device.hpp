@@ -288,7 +288,6 @@ public:
             vkDestroyRenderPass(logical_device, renderpass.vk_renderpass, nullptr);
             renderpass.vk_renderpass = VK_NULL_HANDLE;
         }
-        
 
         for (size_t i = 0; i < swapchain_image_views.size(); i++)
         {
@@ -1256,7 +1255,8 @@ private:
                 .dependencyCount = static_cast<uint32_t>(dependencies.size()),
                 .pDependencies   = dependencies.data()};
 
-            auto result = vkCreateRenderPass(logical_device, &renderPassInfo, nullptr, &renderpasses[r_i].vk_renderpass);
+            auto result = vkCreateRenderPass(
+                logical_device, &renderPassInfo, nullptr, &renderpasses[r_i].vk_renderpass);
             if (result != VK_SUCCESS)
             {
                 return result;
@@ -1550,7 +1550,7 @@ private:
             .pColorBlendState    = &colorBlending,
             .pDynamicState       = nullptr, // Optional
             .layout              = pipeline_layout,
-            .renderPass          = renderpasses[0].vk_renderpass,//render_pass,
+            .renderPass          = renderpasses[0].vk_renderpass, // render_pass,
             .subpass             = 0,
             .basePipelineHandle  = VK_NULL_HANDLE, // Optional
             .basePipelineIndex   = -1              // Optional
@@ -2425,7 +2425,7 @@ private:
     {
         VkAttachmentDescription description;
         Format                  format;
-        bool use_samples;
+        bool                    use_samples;
         // bool                    depends_on_swapchain;
     };
 
