@@ -171,12 +171,7 @@ public:
             return false;
         }
 
-        if (createColorResources() != VK_SUCCESS)
-        {
-            return false;
-        }
-
-        if (createDepthResources() != VK_SUCCESS)
+        if (createAttachments() != VK_SUCCESS)
         {
             return false;
         }
@@ -254,14 +249,12 @@ public:
             vkDestroyFence(logical_device, in_flight_fences[i], nullptr);
         }
 
-        // COLOR/DEPTH ATTACHMENTS
-        vkDestroyImageView(logical_device, depth_image_view, nullptr);
-        vkDestroyImage(logical_device, depth_image, nullptr);
-        vkFreeMemory(logical_device, depth_image_memory, nullptr);
-
-        vkDestroyImageView(logical_device, color_image_view, nullptr);
-        vkDestroyImage(logical_device, color_image, nullptr);
-        vkFreeMemory(logical_device, color_image_memory, nullptr);
+        for (auto & attachment: attachments)
+        {
+            vkDestroyImageView(logical_device, attachment.vk_image_view, nullptr);
+            vkDestroyImage(logical_device, attachment.vk_image, nullptr);
+            vkFreeMemory(logical_device, attachment.vk_image_memory, nullptr);
+        }
 
         // FRAMEBUFFER
         for (size_t i = 0; i < swapchain_framebuffers.size(); i++)
@@ -1612,75 +1605,70 @@ private:
         return vkCreateCommandPool(logical_device, &poolInfo, nullptr, &command_pool);
     }
 
-    // COLOR ATTACHMENT
-    VkResult createColorResources()
+    VkResult createAttachments()
     {
-        auto result = createImage(
-            swapchain_extent.width,
-            swapchain_extent.height,
-            1,
-            physical_device_info.msaa_samples,
-            swapchain_image_format,
-            VK_IMAGE_TILING_OPTIMAL,
-            VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
-            VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-            color_image,
-            color_image_memory);
-
-        if (result != VK_SUCCESS)
+        for (uint32_t i = 0; i < attachments.size(); ++i)
         {
-            return result;
+            auto & attachment = attachments[i];
+
+            VkFormat           format;
+            VkImageUsageFlags  usage;
+            VkImageAspectFlags aspect;
+            VkImageLayout      final_layout;
+
+            if (attachment.format == Format::USE_COLOR)
+            {
+                format       = swapchain_image_format;
+                usage        = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+                aspect       = VK_IMAGE_ASPECT_COLOR_BIT;
+                final_layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+            }
+            else if (attachment.format == Format::USE_DEPTH)
+            {
+                format       = depth_format;
+                usage        = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
+                aspect       = VK_IMAGE_ASPECT_DEPTH_BIT;
+                final_layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+            }
+
+            VkSampleCountFlagBits samples;
+
+            if (attachment.use_samples)
+            {
+                samples = physical_device_info.msaa_samples;
+            }
+            else
+            {
+                samples = VK_SAMPLE_COUNT_1_BIT;
+            }
+
+            auto result = createImage(swapchain_extent.width,
+                                      swapchain_extent.height,
+                                      1,
+                                      samples,
+                                      format,
+                                      VK_IMAGE_TILING_OPTIMAL,
+                                      VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT | usage,
+                                      VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+                                      attachment.vk_image,
+                                      attachment.vk_image_memory);
+
+            if (result != VK_SUCCESS)
+            {
+                return result;
+            }
+
+            result = createImageView(
+                attachment.vk_image, attachment.vk_image_view, format, aspect, 1);
+
+            if (result != VK_SUCCESS)
+            {
+                return result;
+            }
+
+            transitionImageLayout(
+                attachment.vk_image, format, VK_IMAGE_LAYOUT_UNDEFINED, final_layout, 1);
         }
-
-        result = createImageView(
-            color_image, color_image_view, swapchain_image_format, VK_IMAGE_ASPECT_COLOR_BIT, 1);
-
-        if (result != VK_SUCCESS)
-        {
-            return result;
-        }
-
-        transitionImageLayout(color_image,
-                              swapchain_image_format,
-                              VK_IMAGE_LAYOUT_UNDEFINED,
-                              VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-                              1);
-        return VK_SUCCESS;
-    }
-
-    // DEPTH ATTACHMENT
-    VkResult createDepthResources()
-    {
-        auto result = createImage(
-            swapchain_extent.width,
-            swapchain_extent.height,
-            1,
-            physical_device_info.msaa_samples,
-            depth_format,
-            VK_IMAGE_TILING_OPTIMAL,
-            VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT | VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT,
-            VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-            depth_image,
-            depth_image_memory);
-
-        if (result != VK_SUCCESS)
-        {
-            return result;
-        }
-
-        result = createImageView(
-            depth_image, depth_image_view, depth_format, VK_IMAGE_ASPECT_DEPTH_BIT, 1);
-
-        if (result != VK_SUCCESS)
-        {
-            return result;
-        }
-
-        transitionImageLayout(depth_image,
-                              depth_format,
-                              VK_IMAGE_LAYOUT_UNDEFINED,
-                              VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
-                              1);
 
         return VK_SUCCESS;
     }
@@ -1886,17 +1874,17 @@ private:
 
         for (size_t i = 0; i < swapchain_image_views.size(); i++)
         {
-            auto attachments = std::array<VkImageView, 3>{
-                color_image_view,        // color atachment
-                depth_image_view,        // depth attachment
-                swapchain_image_views[i] // this is the resolve attachment, used for msaa
+            auto fb_attachments = std::array<VkImageView, 3>{
+                attachments[0].vk_image_view, // color atachment
+                attachments[1].vk_image_view, // depth attachment
+                swapchain_image_views[i]      // this is the resolve attachment, used for msaa
             };
 
             auto framebufferInfo = VkFramebufferCreateInfo{
                 .sType           = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO,
                 .renderPass      = renderpasses[0].vk_renderpass,
-                .attachmentCount = static_cast<uint32_t>(attachments.size()),
-                .pAttachments    = attachments.data(),
+                .attachmentCount = static_cast<uint32_t>(fb_attachments.size()),
+                .pAttachments    = fb_attachments.data(),
                 .width           = swapchain_extent.width,
                 .height          = swapchain_extent.height,
                 .layers          = 1};
@@ -2440,7 +2428,7 @@ private:
                            //.format  = swapchain_image_format,
                            //.samples        = physical_device_info.msaa_samples,
                            .loadOp         = VK_ATTACHMENT_LOAD_OP_CLEAR,
-                           .storeOp        = VK_ATTACHMENT_STORE_OP_STORE,
+                           .storeOp        = VK_ATTACHMENT_STORE_OP_DONT_CARE, // not needed for storing, result is stored in color resolve
                            .stencilLoadOp  = VK_ATTACHMENT_LOAD_OP_DONT_CARE,
                            .stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
                            .initialLayout  = VK_IMAGE_LAYOUT_UNDEFINED,
@@ -2516,14 +2504,23 @@ private:
 
     // ATTACHMENTS
     // need a way of handling the swapchain images
-    class Attachment
+    // attachments that are used after this frame need to be double buffered etc (i.e. like
+    // swapchain) if Store op is DONT_CARE, it doesn't need to be buffered
+    struct Attachment
     {
+        Format format;
+        bool   use_samples;
+
         VkDeviceMemory vk_image_memory{VK_NULL_HANDLE};
         VkImage        vk_image{VK_NULL_HANDLE};
         VkImageView    vk_image_view{VK_NULL_HANDLE};
     };
-    std::vector<Attachment> attachments;
-    using AttachmentHandle = size_t;
+
+    using AttachmentHandle = int32_t; // -1 signifies the swapchain images
+
+    std::vector<Attachment> attachments{
+        Attachment{.format = Format::USE_COLOR, .use_samples = true},
+        Attachment{.format = Format::USE_DEPTH, .use_samples = true}};
 
     // FRAMEBUFFERS
     // need a way of handling framebuffers for each swapchain image
