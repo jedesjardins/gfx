@@ -256,10 +256,13 @@ public:
             vkFreeMemory(logical_device, attachment.vk_image_memory, nullptr);
         }
 
-        // FRAMEBUFFER
-        for (size_t i = 0; i < swapchain_framebuffers.size(); i++)
+        // FRAMEBUFFERS
+        for (auto & framebuffer_list: framebuffers)
         {
-            vkDestroyFramebuffer(logical_device, swapchain_framebuffers[i], nullptr);
+            for (auto & framebuffer: framebuffer_list)
+            {
+                vkDestroyFramebuffer(logical_device, framebuffer.vk_framebuffer, nullptr);
+            }
         }
 
         // COMMAND POOL
@@ -1870,30 +1873,41 @@ private:
     // FRAMEBUFFER
     VkResult createFramebuffers()
     {
-        swapchain_framebuffers.resize(swapchain_image_views.size());
+        framebuffers.resize(swapchain_image_count);
 
-        for (size_t i = 0; i < swapchain_image_views.size(); i++)
+        for (size_t i = 0; i < swapchain_image_count; ++i)
         {
-            auto fb_attachments = std::array<VkImageView, 3>{
-                attachments[0].vk_image_view, // color atachment
-                attachments[1].vk_image_view, // depth attachment
-                swapchain_image_views[i]      // this is the resolve attachment, used for msaa
-            };
-
-            auto framebufferInfo = VkFramebufferCreateInfo{
-                .sType           = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO,
-                .renderPass      = renderpasses[0].vk_renderpass,
-                .attachmentCount = static_cast<uint32_t>(fb_attachments.size()),
-                .pAttachments    = fb_attachments.data(),
-                .width           = swapchain_extent.width,
-                .height          = swapchain_extent.height,
-                .layers          = 1};
-
-            auto result = vkCreateFramebuffer(
-                logical_device, &framebufferInfo, nullptr, &swapchain_framebuffers[i]);
-            if (result != VK_SUCCESS)
+            for (auto & framebuffer: framebuffers[i])
             {
-                return result;
+                auto fb_attachments = std::vector<VkImageView>{};
+
+                for (auto attachment_id: framebuffer.attachments)
+                {
+                    if (attachment_id == -1)
+                    {
+                        fb_attachments.push_back(swapchain_image_views[i]);
+                    }
+                    else
+                    {
+                        fb_attachments.push_back(attachments[attachment_id].vk_image_view);
+                    }
+                }
+
+                auto framebufferInfo = VkFramebufferCreateInfo{
+                    .sType           = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO,
+                    .renderPass      = renderpasses[framebuffer.renderpass].vk_renderpass,
+                    .attachmentCount = static_cast<uint32_t>(fb_attachments.size()),
+                    .pAttachments    = fb_attachments.data(),
+                    .width           = swapchain_extent.width,
+                    .height          = swapchain_extent.height,
+                    .layers          = 1};
+
+                auto result = vkCreateFramebuffer(
+                    logical_device, &framebufferInfo, nullptr, &framebuffer.vk_framebuffer);
+                if (result != VK_SUCCESS)
+                {
+                    return result;
+                }
             }
         }
 
@@ -2086,7 +2100,7 @@ private:
         auto renderPassInfo = VkRenderPassBeginInfo{
             .sType             = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
             .renderPass        = renderpasses[0].vk_renderpass,
-            .framebuffer       = swapchain_framebuffers[resource_index],
+            .framebuffer       = framebuffers[resource_index][0].vk_framebuffer,
             .renderArea.offset = {0, 0},
             .renderArea.extent = swapchain_extent,
             .clearValueCount   = static_cast<uint32_t>(clearValues.size()),
@@ -2524,7 +2538,7 @@ private:
 
     // FRAMEBUFFERS
     // need a way of handling framebuffers for each swapchain image
-    class Framebuffer
+    struct Framebuffer
     {
         RenderpassHandle              renderpass;
         std::vector<AttachmentHandle> attachments;
@@ -2533,8 +2547,14 @@ private:
         uint32_t                      depth;
         VkFramebuffer                 vk_framebuffer;
     };
-    std::vector<Framebuffer> framebuffers;
+
     using FramebufferHandle = size_t;
+
+    std::vector<std::vector<Framebuffer>> framebuffers{
+        std::vector<Framebuffer>{Framebuffer{.renderpass = 0, .attachments = {0, 1, -1}}},
+        std::vector<Framebuffer>{Framebuffer{.renderpass = 0, .attachments = {0, 1, -1}}},
+        std::vector<Framebuffer>{Framebuffer{.renderpass = 0, .attachments = {0, 1, -1}}}};
+    // framebuffers[current_frame][current FramebufferHandle]
 
     // UNIFORMS
     class Uniform
