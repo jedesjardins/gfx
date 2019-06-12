@@ -14,6 +14,7 @@
 #include <set>
 #include <iostream>
 #include <fstream>
+#include <variant>
 
 struct Vertex
 {
@@ -87,6 +88,126 @@ struct Object
 
 namespace gfx
 {
+enum class Format
+{
+    USE_DEPTH,
+    USE_COLOR
+};
+
+struct AttachmentInfo
+{
+    VkAttachmentDescription description;
+    Format                  format;
+    bool                    use_samples;
+};
+
+using AttachmentInfoHandle = size_t;
+
+struct MappedBuffer
+{
+    void *         data;
+    VkBuffer       buffer;
+    VkDeviceMemory memory;
+    VkDeviceSize   memory_size;
+    size_t         offset;
+};
+
+struct DynamicUniformBuffer
+{
+    VkDescriptorSet           vk_descriptorset;
+    std::vector<MappedBuffer> uniform_buffers;
+};
+
+using AttachmentHandle = int32_t; // -1 signifies the swapchain images
+struct Attachment
+{
+    Format format;
+    bool   use_samples;
+
+    VkDeviceMemory vk_image_memory{VK_NULL_HANDLE};
+    VkImage        vk_image{VK_NULL_HANDLE};
+    VkImageView    vk_image_view{VK_NULL_HANDLE};
+};
+
+struct SubpassInfo
+{
+    std::vector<VkAttachmentReference> color_attachments;
+    VkAttachmentReference              color_resolve_attachment;
+    VkAttachmentReference              depth_stencil_attachment;
+};
+
+using CommandbufferHandle = size_t;
+
+using RenderpassHandle = size_t;
+struct Renderpass
+{
+    std::vector<AttachmentInfoHandle> attachments;
+
+    std::vector<SubpassInfo> subpasses; // attachment references for creating subpass description
+
+    std::vector<VkSubpassDependency> subpass_dependencies;
+
+    std::vector<CommandbufferHandle> subpass_commandbuffers;
+
+    VkRenderPass vk_renderpass{VK_NULL_HANDLE};
+};
+
+using FramebufferHandle = size_t;
+struct Framebuffer
+{
+    RenderpassHandle              renderpass;
+    std::vector<AttachmentHandle> attachments;
+    uint32_t                      width;
+    uint32_t                      height;
+    uint32_t                      depth;
+    VkFramebuffer                 vk_framebuffer;
+};
+
+using UniformLayoutHandle = size_t;
+struct UniformLayout
+{
+    VkDescriptorSetLayoutBinding        binding;
+    VkDescriptorSetLayout               vk_descriptorset_layout{VK_NULL_HANDLE};
+    VkDescriptorPool                    vk_descriptor_pool{VK_NULL_HANDLE};
+    std::variant<int, std::vector<int>> uniforms;
+};
+
+using PushConstantHandle    = size_t;
+using VertexBindingHandle   = size_t;
+using VertexAttributeHandle = size_t;
+
+struct Shader
+{
+    std::string shader_name;
+
+    VkShaderModule vk_shader_module{VK_NULL_HANDLE};
+};
+
+using ShaderHandle = size_t;
+
+struct Pipeline
+{
+    ShaderHandle vertex_shader;
+    ShaderHandle fragment_shader;
+
+    // vertex binding stuff
+    std::vector<VertexBindingHandle>   vertex_bindings;
+    std::vector<VertexAttributeHandle> vertex_attributes;
+
+    // uniform layouts
+    std::vector<UniformLayoutHandle> uniform_layouts;
+    // push constants
+    std::vector<PushConstantHandle> push_constants;
+
+    RenderpassHandle renderpass;
+    size_t           subpass;
+
+    VkPipeline       vk_pipeline;
+    VkPipelineLayout vk_pipeline_layout;
+};
+
+using PipelineHandle = size_t;
+
 class RenderDevice
 {
 public:
@@ -144,17 +265,12 @@ public:
             return false;
         }
 
-        if (createDescriptorSetLayout() != VK_SUCCESS)
+        if (createUniformLayouts() != VK_SUCCESS)
         {
             return false;
         }
 
         createUniformBuffers();
-
-        if (createDescriptorPool() != VK_SUCCESS)
-        {
-            return false;
-        }
 
         if (createDescriptorSets() != VK_SUCCESS)
         {
@@ -222,11 +338,9 @@ public:
 
         for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i)
         {
-            vkDestroyBuffer(logical_device, uniforms[i].buffer, nullptr);
-            vkFreeMemory(logical_device, uniforms[i].memory, nullptr);
+            vkDestroyBuffer(logical_device, mapped_uniforms[i].buffer, nullptr);
+            vkFreeMemory(logical_device, mapped_uniforms[i].memory, nullptr);
         }
-
-        vkDestroyDescriptorPool(logical_device, descriptor_pool, nullptr);
 
         for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i)
         {
@@ -286,7 +400,12 @@ public:
         }
 
         // DESCRIPTORSET LAYOUT
-        vkDestroyDescriptorSetLayout(logical_device, descriptorset_layout, nullptr);
+        for (auto & uniform_layout: uniform_layouts)
+        {
+            vkDestroyDescriptorPool(logical_device, uniform_layout.vk_descriptor_pool, nullptr);
+            vkDestroyDescriptorSetLayout(
+                logical_device, uniform_layout.vk_descriptorset_layout, nullptr);
+        }
 
         // RENDER PASS
 
@@ -568,7 +687,7 @@ public:
 
     void updateUniformBuffer(glm::mat4 const & data)
     {
-        memcpy(uniforms[currentFrame].data, glm::value_ptr(data), sizeof(glm::mat4));
+        memcpy(mapped_uniforms[currentFrame].data, glm::value_ptr(data), sizeof(glm::mat4));
     }
 
 private:
@@ -1305,74 +1424,76 @@ private:
         throw std::runtime_error("failed to find supported format!");
     }
 
-    // DESCRIPTORSET LAYOUT
-    VkResult createDescriptorSetLayout()
+    VkResult createUniformLayouts()
     {
-        auto uboLayoutBinding = VkDescriptorSetLayoutBinding{
-            .binding            = 0,
-            .descriptorType     = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC,
-            .descriptorCount    = 1,
-            .stageFlags         = VK_SHADER_STAGE_VERTEX_BIT,
-            .pImmutableSamplers = nullptr // for image sampling
-        };
+        for (auto & uniform_layout: uniform_layouts)
+        {
+            auto layoutInfo = VkDescriptorSetLayoutCreateInfo{
+                .sType        = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
+                .bindingCount = 1,
+                .pBindings    = &uniform_layout.binding};
 
-        auto layoutInfo = VkDescriptorSetLayoutCreateInfo{
-            .sType        = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
-            .bindingCount = 1,
-            .pBindings    = &uboLayoutBinding};
+            auto result = vkCreateDescriptorSetLayout(
+                logical_device, &layoutInfo, nullptr, &uniform_layout.vk_descriptorset_layout);
+            if (result != VK_SUCCESS)
+            {
+                return result;
+            }
 
-        return vkCreateDescriptorSetLayout(
-            logical_device, &layoutInfo, nullptr, &descriptorset_layout);
+            auto poolsize = VkDescriptorPoolSize{
+                .type            = uniform_layout.binding.descriptorType,
+                .descriptorCount = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT)};
+
+            auto poolInfo = VkDescriptorPoolCreateInfo{
+                .sType         = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
+                .poolSizeCount = 1,
+                .pPoolSizes    = &poolsize,
+                .maxSets       = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT)};
+
+            result = vkCreateDescriptorPool(
+                logical_device, &poolInfo, nullptr, &uniform_layout.vk_descriptor_pool);
+            if (result != VK_SUCCESS)
+            {
+                return result;
+            }
+        }
+
+        return VK_SUCCESS;
     }
 
     void createUniformBuffers()
     {
         VkDeviceSize bufferSize = sizeof(glm::mat4);
 
-        uniforms.resize(MAX_FRAMES_IN_FLIGHT);
+        mapped_uniforms.resize(MAX_FRAMES_IN_FLIGHT);
 
         for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++)
         {
-            uniforms[i].memory_size = bufferSize;
+            mapped_uniforms[i].memory_size = bufferSize;
 
-            createBuffer(uniforms[i].memory_size,
+            createBuffer(mapped_uniforms[i].memory_size,
                          VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
                          VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-                         uniforms[i].buffer,
-                         uniforms[i].memory);
+                         mapped_uniforms[i].buffer,
+                         mapped_uniforms[i].memory);
 
             vkMapMemory(logical_device,
-                        uniforms[i].memory,
+                        mapped_uniforms[i].memory,
                         0,
-                        uniforms[i].memory_size,
+                        mapped_uniforms[i].memory_size,
                         0,
-                        &uniforms[i].data);
+                        &mapped_uniforms[i].data);
         }
-    }
-
-    VkResult createDescriptorPool()
-    {
-        auto poolsize = VkDescriptorPoolSize{
-            .type            = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC,
-            .descriptorCount = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT)};
-
-        auto poolInfo = VkDescriptorPoolCreateInfo{
-            .sType         = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
-            .poolSizeCount = 1,
-            .pPoolSizes    = &poolsize,
-            .maxSets       = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT)};
-
-        return vkCreateDescriptorPool(logical_device, &poolInfo, nullptr, &descriptor_pool);
     }
 
     VkResult createDescriptorSets()
     {
         std::vector<VkDescriptorSetLayout> layouts{static_cast<size_t>(MAX_FRAMES_IN_FLIGHT),
-                                                   descriptorset_layout};
+                                                   uniform_layouts[0].vk_descriptorset_layout};
 
         auto allocInfo = VkDescriptorSetAllocateInfo{
             .sType              = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
-            .descriptorPool     = descriptor_pool,
+            .descriptorPool     = uniform_layouts[0].vk_descriptor_pool,
             .descriptorSetCount = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT),
             .pSetLayouts        = layouts.data()};
 
@@ -1387,7 +1508,7 @@ private:
         for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i)
         {
             auto bufferInfo = VkDescriptorBufferInfo{
-                .buffer = uniforms[i].buffer, .offset = 0, .range = sizeof(glm::mat4)};
+                .buffer = mapped_uniforms[i].buffer, .offset = 0, .range = sizeof(glm::mat4)};
 
             auto descriptorWrite = VkWriteDescriptorSet{
                 .sType            = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
@@ -1574,7 +1695,7 @@ private:
             auto pipelineLayoutInfo = VkPipelineLayoutCreateInfo{
                 .sType                  = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
                 .setLayoutCount         = 1,
-                .pSetLayouts            = &descriptorset_layout,
+                .pSetLayouts            = &uniform_layouts[0].vk_descriptorset_layout,
                 .pushConstantRangeCount = static_cast<uint32_t>(pushConstantRanges.size()),
                 .pPushConstantRanges    = pushConstantRanges.data()};
 
@@ -1586,7 +1707,7 @@ private:
             }
 
             VkRenderPass renderpass = renderpasses[pipeline.renderpass].vk_renderpass;
-            uint32_t subpass = pipeline.subpass;
+            uint32_t     subpass    = pipeline.subpass;
 
             auto pipelineInfo = VkGraphicsPipelineCreateInfo{
                 .sType               = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO,
@@ -2151,8 +2272,9 @@ private:
         vkCmdBeginRenderPass(
             commandbuffers[currentFrame], &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
 
-        vkCmdBindPipeline(
-            commandbuffers[currentFrame], VK_PIPELINE_BIND_POINT_GRAPHICS, pipelines[0].vk_pipeline);
+        vkCmdBindPipeline(commandbuffers[currentFrame],
+                          VK_PIPELINE_BIND_POINT_GRAPHICS,
+                          pipelines[0].vk_pipeline);
 
         uint32_t dynamic_offset{0};
 
@@ -2400,8 +2522,6 @@ private:
     std::vector<VkImage>     swapchain_images;
     std::vector<VkImageView> swapchain_image_views;
 
-    VkDescriptorSetLayout        descriptorset_layout;
-    VkDescriptorPool             descriptor_pool;
     std::vector<VkDescriptorSet> descriptorsets;
 
     VkCommandPool command_pool;
@@ -2420,46 +2540,13 @@ private:
 
     std::vector<std::vector<VkCommandBuffer>> one_time_use_buffers;
 
-    struct MappedBuffer
-    {
-        void *         data;
-        VkBuffer       buffer;
-        VkDeviceMemory memory;
-        VkDeviceSize   memory_size;
-        size_t         offset;
-    };
-
     std::vector<MappedBuffer> dynamic_mapped_vertices;
     std::vector<MappedBuffer> dynamic_mapped_indices;
 
     std::vector<MappedBuffer> staging_mapped_vertices;
     std::vector<MappedBuffer> staging_mapped_indices;
 
-    std::vector<MappedBuffer> uniforms;
-
-    // PRIMARY COMMANDBUFFERS
-    std::vector<VkCommandBuffer> primary_commandbuffers; // one per swapchain image
-    std::vector<std::vector<VkCommandBuffer>>
-        secondary_commandbuffers; // one per swapchain image per renderpass
-    // secondary_commandbuffers[current_frame][current renderpass]
-    using CommandbufferHandle = size_t;
-
-    enum class Format
-    {
-        USE_DEPTH,
-        USE_COLOR
-    };
-
-    // ATTACHMENT INFOS
-    struct AttachmentInfo
-    {
-        VkAttachmentDescription description;
-        Format                  format;
-        bool                    use_samples;
-        // bool                    depends_on_swapchain;
-    };
-
-    using AttachmentInfoHandle = size_t;
+    std::vector<MappedBuffer> mapped_uniforms;
 
     std::vector<AttachmentInfo> attachment_infos
     {
@@ -2501,31 +2588,6 @@ private:
                             .finalLayout    = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR}}
     };
 
-    // SUBPASS INFO
-    struct SubpassInfo
-    {
-        std::vector<VkAttachmentReference> color_attachments;
-        VkAttachmentReference              color_resolve_attachment;
-        VkAttachmentReference              depth_stencil_attachment;
-    };
-
-    // RENDERPASSES
-    struct Renderpass
-    {
-        std::vector<AttachmentInfoHandle> attachments;
-
-        std::vector<SubpassInfo>
-            subpasses; // attachment references for creating subpass description
-
-        std::vector<VkSubpassDependency> subpass_dependencies;
-
-        std::vector<CommandbufferHandle> subpass_commandbuffers;
-
-        VkRenderPass vk_renderpass{VK_NULL_HANDLE};
-    };
-
-    using RenderpassHandle = size_t;
-
     std::vector<Renderpass> renderpasses{Renderpass{
         .attachments          = {0, 1, 2},
         .subpasses            = {SubpassInfo{
@@ -2544,82 +2606,34 @@ private:
                                 .dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT
                                                  | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT}}}};
 
-    // ATTACHMENTS
     // need a way of handling the swapchain images
     // attachments that are used after this frame need to be double buffered etc (i.e. like
     // swapchain) if Store op is DONT_CARE, it doesn't need to be buffered
-    struct Attachment
-    {
-        Format format;
-        bool   use_samples;
-
-        VkDeviceMemory vk_image_memory{VK_NULL_HANDLE};
-        VkImage        vk_image{VK_NULL_HANDLE};
-        VkImageView    vk_image_view{VK_NULL_HANDLE};
-    };
-
-    using AttachmentHandle = int32_t; // -1 signifies the swapchain images
-
     std::vector<Attachment> attachments{
         Attachment{.format = Format::USE_COLOR, .use_samples = true},
         Attachment{.format = Format::USE_DEPTH, .use_samples = true}};
-
-    // FRAMEBUFFERS
-    // need a way of handling framebuffers for each swapchain image
-    struct Framebuffer
-    {
-        RenderpassHandle              renderpass;
-        std::vector<AttachmentHandle> attachments;
-        uint32_t                      width;
-        uint32_t                      height;
-        uint32_t                      depth;
-        VkFramebuffer                 vk_framebuffer;
-    };
-
-    using FramebufferHandle = size_t;
 
     std::vector<std::vector<Framebuffer>> framebuffers{
         std::vector<Framebuffer>{Framebuffer{.renderpass = 0, .attachments = {0, 1, -1}}},
         std::vector<Framebuffer>{Framebuffer{.renderpass = 0, .attachments = {0, 1, -1}}},
         std::vector<Framebuffer>{Framebuffer{.renderpass = 0, .attachments = {0, 1, -1}}}};
-    // framebuffers[current_frame][current FramebufferHandle]
 
-    // UNIFORMS
-    class Uniform
-    {};
-    std::vector<Uniform> n_uniforms;
-    using UniformHandle = size_t;
-
-    // UNIFORM LAYOUTS
-    class UniformLayout
-    {
-        std::vector<VkDescriptorSetLayoutBinding> uniform_bindings;
-        std::vector<UniformHandle>                uniforms; // this layout owns these uniforms
-
-        VkDescriptorSetLayout vk_descriptorset_layout{VK_NULL_HANDLE};
-    };
-    std::vector<UniformLayout> uniform_layouts;
-    using UniformLayoutHandle = size_t;
-
-    VkDescriptorPool vk_descriptor_pool;
-
-    // PUSH CONSTANTS
-    using PushConstantHandle = size_t;
+    std::vector<UniformLayout> uniform_layouts{
+        UniformLayout{.binding = {.binding            = 0,
+                                  .descriptorType     = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC,
+                                  .descriptorCount    = 1,
+                                  .stageFlags         = VK_SHADER_STAGE_VERTEX_BIT,
+                                  .pImmutableSamplers = nullptr}}};
 
     std::vector<VkPushConstantRange> push_constants{
         VkPushConstantRange{.stageFlags = VK_SHADER_STAGE_VERTEX_BIT,
                             .offset     = 0,
                             .size       = sizeof(glm::mat4)}};
 
-    // VERTICES
-    using VertexBindingHandle = size_t;
-
     std::vector<VkVertexInputBindingDescription> vertex_bindings{
         VkVertexInputBindingDescription{.binding   = 0,
                                         .stride    = sizeof(Vertex),
                                         .inputRate = VK_VERTEX_INPUT_RATE_VERTEX}};
-
-    using VertexAttributeHandle = size_t;
 
     std::vector<VkVertexInputAttributeDescription> vertex_attributes = {
         VkVertexInputAttributeDescription{.binding  = 0,
@@ -2631,42 +2645,8 @@ private:
                                           .format   = VK_FORMAT_R32G32B32_SFLOAT,
                                           .offset   = offsetof(Vertex, color)}};
 
-    // SHADERS
-    struct Shader
-    {
-        std::string shader_name;
-
-        VkShaderModule vk_shader_module{VK_NULL_HANDLE};
-    };
-
-    using ShaderHandle = size_t;
-
     std::vector<Shader> shaders{Shader{.shader_name = "shaders/vert.spv"},
                                 Shader{.shader_name = "shaders/frag.spv"}};
-
-    // PIPELINES
-    struct Pipeline
-    {
-        ShaderHandle vertex_shader;
-        ShaderHandle fragment_shader;
-
-        // vertex binding stuff
-        std::vector<VertexBindingHandle>   vertex_bindings;
-        std::vector<VertexAttributeHandle> vertex_attributes;
-
-        // uniform layouts
-        std::vector<UniformLayoutHandle> uniform_layouts;
-        // push constants
-        std::vector<PushConstantHandle> push_constants;
-
-        RenderpassHandle renderpass;
-        size_t           subpass;
-
-        VkPipeline       vk_pipeline;
-        VkPipelineLayout vk_pipeline_layout;
-    };
-
-    using PipelineHandle = size_t;
 
     std::vector<Pipeline> pipelines{Pipeline{.vertex_shader     = 0,
                                              .fragment_shader   = 1,
