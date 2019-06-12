@@ -110,6 +110,28 @@ struct MappedBuffer
     VkDeviceMemory memory;
     VkDeviceSize   memory_size;
     size_t         offset;
+
+    size_t copy(size_t size, void * src_data)
+    {
+        auto * dest_data = static_cast<void *>(static_cast<char *>(data) + offset);
+
+        // assert there's enough space left in the buffers
+        assert(size <= memory_size - offset);
+
+        // copy the data over
+        memcpy(dest_data,
+               src_data,
+               size);
+
+        auto prev_offset = offset;
+        offset += size;
+        return prev_offset;
+    }
+
+    void reset()
+    {
+        offset = 0;
+    }
 };
 
 struct DynamicUniformBuffer
@@ -471,10 +493,10 @@ public:
         one_time_use_buffers[currentFrame].clear();
 
         // reset buffer offsets for copies
-        dynamic_mapped_vertices[currentFrame].offset = 0;
-        dynamic_mapped_indices[currentFrame].offset  = 0;
-        staging_mapped_vertices[currentFrame].offset = 0;
-        staging_mapped_indices[currentFrame].offset  = 0;
+        dynamic_mapped_vertices[currentFrame].reset();
+        dynamic_mapped_indices[currentFrame].reset();
+        staging_mapped_vertices[currentFrame].reset();
+        staging_mapped_indices[currentFrame].reset();
 
         // DRAW OPERATIONS
         auto result = vkAcquireNextImageKHR(logical_device,
@@ -616,23 +638,11 @@ public:
         auto & mapped_vertices = staging_mapped_vertices[currentFrame];
         auto & mapped_indices  = staging_mapped_indices[currentFrame];
 
-        // mapped_*_data is the pointer to the next valid location to fill
-        auto mapped_vertex_data = static_cast<void *>(static_cast<char *>(mapped_vertices.data)
-                                                      + mapped_vertices.offset);
-        auto mapped_index_data  = static_cast<void *>(static_cast<char *>(mapped_indices.data)
-                                                     + mapped_indices.offset);
+        size_t vertex_data_size = sizeof(Vertex) * vertex_count;
+        size_t index_data_size = sizeof(uint32_t) * index_count;
 
-        // assert there's enough space left in the buffers
-        assert(sizeof(Vertex) * vertex_count
-               <= mapped_vertices.memory_size - mapped_vertices.offset);
-        assert(sizeof(uint32_t) * index_count
-               <= mapped_indices.memory_size - mapped_indices.offset);
-
-        // copy the data over to the staging buffer
-        memcpy(mapped_vertex_data, vertices, sizeof(Vertex) * vertex_count);
-        memcpy(mapped_index_data, indices, sizeof(uint32_t) * index_count);
-
-        VkDeviceSize vertex_offset = mapped_vertices.offset;
+        VkDeviceSize vertex_offset = mapped_vertices.copy(vertex_data_size, vertices);
+        VkDeviceSize index_offset = mapped_indices.copy(index_data_size, indices);
 
         auto allocInfo = VkCommandBufferAllocateInfo{
             .sType              = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
@@ -649,9 +659,9 @@ public:
 
         vkBeginCommandBuffer(commandBuffer, &beginInfo);
 
-        auto copyRegion = VkBufferCopy{.srcOffset = mapped_vertices.offset,
+        auto copyRegion = VkBufferCopy{.srcOffset = vertex_offset,
                                        .dstOffset = 0,
-                                       .size      = sizeof(Vertex) * vertex_count};
+                                       .size      = vertex_data_size};
 
         vkCmdCopyBuffer(commandBuffer,
                         mapped_vertices.buffer,
@@ -659,9 +669,9 @@ public:
                         1,
                         &copyRegion);
 
-        copyRegion = VkBufferCopy{.srcOffset = mapped_indices.offset,
+        copyRegion = VkBufferCopy{.srcOffset = index_offset,
                                   .dstOffset = 0,
-                                  .size      = sizeof(uint32_t) * index_count};
+                                  .size      = index_data_size};
 
         vkCmdCopyBuffer(
             commandBuffer, mapped_indices.buffer, object.s_vertex_data.indexbuffer, 1, &copyRegion);
@@ -669,9 +679,6 @@ public:
         vkEndCommandBuffer(commandBuffer);
 
         one_time_use_buffers[currentFrame].push_back(commandBuffer);
-
-        mapped_vertices.offset += sizeof(Vertex) * vertex_count;
-        mapped_indices.offset += sizeof(uint32_t) * index_count;
     }
 
     void destroyStaticObject(Object & object)
@@ -2319,41 +2326,19 @@ private:
             }
             else if (object.type == ObjectType::STREAMED)
             {
-                // mapped_*_data is the pointer to the next valid location to fill
-                auto mapped_vertex_data = static_cast<void *>(
-                    static_cast<char *>(mapped_vertices.data) + mapped_vertices.offset);
-                auto mapped_index_data = static_cast<void *>(
-                    static_cast<char *>(mapped_indices.data) + mapped_indices.offset);
-
-                // assert there's enough space left in the buffers
-                assert(sizeof(Vertex) * object.d_vertex_data.vertex_count
-                       <= mapped_vertices.memory_size - mapped_vertices.offset);
-                assert(sizeof(uint32_t) * object.d_vertex_data.index_count
-                       <= mapped_indices.memory_size - mapped_indices.offset);
-
-                // copy the data over
-                memcpy(mapped_vertex_data,
-                       object.d_vertex_data.vertices,
-                       sizeof(Vertex) * object.d_vertex_data.vertex_count);
-                memcpy(mapped_index_data,
-                       object.d_vertex_data.indices,
-                       sizeof(uint32_t) * object.d_vertex_data.index_count);
-
-                VkDeviceSize vertex_offset{mapped_vertices.offset};
+                VkDeviceSize vertex_offset = mapped_vertices.copy(sizeof(Vertex) * object.d_vertex_data.vertex_count, object.d_vertex_data.vertices);
+                VkDeviceSize index_offset = mapped_indices.copy(sizeof(uint32_t) * object.d_vertex_data.index_count, object.d_vertex_data.indices);
 
                 vkCmdBindVertexBuffers(
                     commandbuffers[currentFrame], 0, 1, &mapped_vertices.buffer, &vertex_offset);
 
                 vkCmdBindIndexBuffer(commandbuffers[currentFrame],
                                      mapped_indices.buffer,
-                                     mapped_indices.offset,
+                                     index_offset,
                                      VK_INDEX_TYPE_UINT32);
 
                 vkCmdDrawIndexed(
                     commandbuffers[currentFrame], object.d_vertex_data.index_count, 1, 0, 0, 0);
-
-                mapped_vertices.offset += sizeof(Vertex) * object.d_vertex_data.vertex_count;
-                mapped_indices.offset += sizeof(uint32_t) * object.d_vertex_data.index_count;
             }
         }
 
