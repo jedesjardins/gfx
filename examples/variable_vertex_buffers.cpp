@@ -75,13 +75,17 @@ int main()
 
     glm::mat4 view = glm::scale(glm::mat4(1.0), glm::vec3(1.f, -1.f, 1.f));
 
+    auto opt_view_handle = render_device.newUniform();
+
+    gfx::UniformHandle view_handle = opt_view_handle.value();
+
     while (!glfwWindowShouldClose(window))
     {
         render_device.startFrame();
 
         glfwPollEvents();
 
-        render_device.updateUniformBuffer(view);
+        render_device.updateUniform(view_handle, view);
 
         if (++i % 10 == 0)
         {
@@ -96,7 +100,7 @@ int main()
 
         obj3_vertices[0].pos.y -= .01f;
         obj4_vertices[0].pos.y -= .01f;
-        render_device.drawFrame(objects.size(), objects.data());
+        render_device.drawFrame(1, &view_handle, objects.size(), objects.data());
     }
 
     render_device.waitForIdle();

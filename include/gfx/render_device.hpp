@@ -15,6 +15,7 @@
 #include <iostream>
 #include <fstream>
 #include <variant>
+#include <optional>
 
 struct Vertex
 {
@@ -103,43 +104,6 @@ struct AttachmentInfo
 
 using AttachmentInfoHandle = size_t;
 
-struct MappedBuffer
-{
-    void *         data;
-    VkBuffer       buffer;
-    VkDeviceMemory memory;
-    VkDeviceSize   memory_size;
-    size_t         offset;
-
-    size_t copy(size_t size, void * src_data)
-    {
-        auto * dest_data = static_cast<void *>(static_cast<char *>(data) + offset);
-
-        // assert there's enough space left in the buffers
-        assert(size <= memory_size - offset);
-
-        // copy the data over
-        memcpy(dest_data,
-               src_data,
-               size);
-
-        auto prev_offset = offset;
-        offset += size;
-        return prev_offset;
-    }
-
-    void reset()
-    {
-        offset = 0;
-    }
-};
-
-struct DynamicUniformBuffer
-{
-    VkDescriptorSet           vk_descriptorset;
-    std::vector<MappedBuffer> uniform_buffers;
-};
-
 using AttachmentHandle = int32_t; // -1 signifies the swapchain images
 struct Attachment
 {
@@ -185,13 +149,92 @@ struct Framebuffer
     VkFramebuffer                 vk_framebuffer;
 };
 
+struct MappedBuffer
+{
+    void *         data;
+    VkBuffer       buffer;
+    VkDeviceMemory memory;
+    VkDeviceSize   memory_size;
+    size_t         offset;
+
+    size_t copy(size_t size, void const* src_data)
+    {
+        auto * dest_data = static_cast<void *>(static_cast<char *>(data) + offset);
+
+        // assert there's enough space left in the buffers
+        assert(size <= memory_size - offset);
+
+        // copy the data over
+        memcpy(dest_data, src_data, size);
+
+        auto prev_offset = offset;
+        offset += size;
+        return prev_offset;
+    }
+
+    void reset()
+    {
+        offset = 0;
+    }
+};
+
+struct DynamicUniformBuffer
+{
+    VkDescriptorSet const &   vk_descriptorset;
+    std::vector<MappedBuffer> uniform_buffers;
+};
+
+struct UniformHandle
+{
+    uint64_t uniform_layout_id : 32;
+    uint64_t uniform_id : 32;
+};
+
 using UniformLayoutHandle = size_t;
 struct UniformLayout
 {
-    VkDescriptorSetLayoutBinding        binding;
-    VkDescriptorSetLayout               vk_descriptorset_layout{VK_NULL_HANDLE};
-    VkDescriptorPool                    vk_descriptor_pool{VK_NULL_HANDLE};
-    std::variant<int, std::vector<int>> uniforms;
+    VkDescriptorSetLayoutBinding binding;
+    VkDescriptorSetLayout        vk_descriptorset_layout{VK_NULL_HANDLE};
+    VkDescriptorPool             vk_descriptor_pool{VK_NULL_HANDLE};
+    size_t                       uniform_count;
+    VkDeviceSize                 uniform_size;
+    std::vector<VkDescriptorSet> vk_descriptorsets; // currentFrame
+    std::vector<MappedBuffer>    uniform_buffers;   // currentFrame
+
+    std::optional<UniformHandle> newUniform()
+    {
+        if (uniform_buffers[0].offset >= uniform_buffers[0].memory_size)
+        {
+            return std::nullopt;
+        }
+
+        auto next_id = uniform_buffers[0].offset / uniform_size;
+
+        for (auto & uniform_buffer: uniform_buffers)
+        {
+            uniform_buffer.offset += uniform_size;
+        }
+
+        return UniformHandle{.uniform_layout_id = 0, .uniform_id = next_id};
+    }
+
+    std::optional<DynamicUniformBuffer> getUniform(UniformHandle handle)
+    {
+        if (handle.uniform_id >= uniform_count)
+        {
+            return std::nullopt;
+        }
+
+        auto uniform = DynamicUniformBuffer{.vk_descriptorset = vk_descriptorsets[0],
+                                            .uniform_buffers  = uniform_buffers};
+
+        for (auto & uniform_buffer: uniform.uniform_buffers)
+        {
+            uniform_buffer.offset = handle.uniform_id * uniform_size;
+        }
+
+        return uniform;
+    }
 };
 
 using PushConstantHandle    = size_t;
@@ -292,13 +335,6 @@ public:
             return false;
         }
 
-        createUniformBuffers();
-
-        if (createDescriptorSets() != VK_SUCCESS)
-        {
-            return false;
-        }
-
         if (createShaders() != VK_SUCCESS)
         {
             return false;
@@ -360,12 +396,6 @@ public:
 
         for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i)
         {
-            vkDestroyBuffer(logical_device, mapped_uniforms[i].buffer, nullptr);
-            vkFreeMemory(logical_device, mapped_uniforms[i].memory, nullptr);
-        }
-
-        for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i)
-        {
             // DYNAMIC INDEXBUFFER
             vkDestroyBuffer(logical_device, dynamic_mapped_indices[i].buffer, nullptr);
             vkFreeMemory(logical_device, dynamic_mapped_indices[i].memory, nullptr);
@@ -424,6 +454,12 @@ public:
         // DESCRIPTORSET LAYOUT
         for (auto & uniform_layout: uniform_layouts)
         {
+            for (auto & uniform_buffer: uniform_layout.uniform_buffers)
+            {
+                vkDestroyBuffer(logical_device, uniform_buffer.buffer, nullptr);
+                vkFreeMemory(logical_device, uniform_buffer.memory, nullptr);
+            }
+
             vkDestroyDescriptorPool(logical_device, uniform_layout.vk_descriptor_pool, nullptr);
             vkDestroyDescriptorSetLayout(
                 logical_device, uniform_layout.vk_descriptorset_layout, nullptr);
@@ -517,7 +553,7 @@ public:
         }
     }
 
-    void drawFrame(uint32_t object_count, Object * p_objects)
+    void drawFrame(uint32_t uniform_count, UniformHandle * p_uniforms, uint32_t object_count, Object * p_objects)
     {
         // TRANSFER OPERATIONS
         // submit copy operations to the graphics queue
@@ -540,7 +576,7 @@ public:
 
         VkSemaphore signalSemaphores[] = {render_finished_semaphores[currentFrame]};
 
-        createCommandbuffer(currentImage, object_count, p_objects);
+        createCommandbuffer(uniform_count, p_uniforms, currentImage, object_count, p_objects);
 
         auto submitInfo = VkSubmitInfo{.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
 
@@ -639,10 +675,10 @@ public:
         auto & mapped_indices  = staging_mapped_indices[currentFrame];
 
         size_t vertex_data_size = sizeof(Vertex) * vertex_count;
-        size_t index_data_size = sizeof(uint32_t) * index_count;
+        size_t index_data_size  = sizeof(uint32_t) * index_count;
 
         VkDeviceSize vertex_offset = mapped_vertices.copy(vertex_data_size, vertices);
-        VkDeviceSize index_offset = mapped_indices.copy(index_data_size, indices);
+        VkDeviceSize index_offset  = mapped_indices.copy(index_data_size, indices);
 
         auto allocInfo = VkCommandBufferAllocateInfo{
             .sType              = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
@@ -659,9 +695,8 @@ public:
 
         vkBeginCommandBuffer(commandBuffer, &beginInfo);
 
-        auto copyRegion = VkBufferCopy{.srcOffset = vertex_offset,
-                                       .dstOffset = 0,
-                                       .size      = vertex_data_size};
+        auto copyRegion = VkBufferCopy{
+            .srcOffset = vertex_offset, .dstOffset = 0, .size = vertex_data_size};
 
         vkCmdCopyBuffer(commandBuffer,
                         mapped_vertices.buffer,
@@ -669,9 +704,8 @@ public:
                         1,
                         &copyRegion);
 
-        copyRegion = VkBufferCopy{.srcOffset = index_offset,
-                                  .dstOffset = 0,
-                                  .size      = index_data_size};
+        copyRegion = VkBufferCopy{
+            .srcOffset = index_offset, .dstOffset = 0, .size = index_data_size};
 
         vkCmdCopyBuffer(
             commandBuffer, mapped_indices.buffer, object.s_vertex_data.indexbuffer, 1, &copyRegion);
@@ -692,9 +726,34 @@ public:
         vkFreeMemory(logical_device, object.s_vertex_data.vertexbuffer_memory, nullptr);
     }
 
-    void updateUniformBuffer(glm::mat4 const & data)
+    std::optional<UniformHandle> newUniform()
     {
-        memcpy(mapped_uniforms[currentFrame].data, glm::value_ptr(data), sizeof(glm::mat4));
+        auto handle = uniform_layouts[0].newUniform();
+        if (!handle.has_value())
+        {
+            return std::nullopt;
+        }
+
+        handle.value().uniform_layout_id = 0;
+        return handle;
+    }
+
+    void updateUniform(UniformHandle handle, glm::mat4 const & data)
+    {
+        UniformLayout layout = uniform_layouts[handle.uniform_layout_id];
+
+        auto opt_uniform = layout.getUniform(handle);
+
+        if (!opt_uniform.has_value())
+        {
+            throw std::runtime_error("in updateUniform, no uniform returned from getUniform!");
+        }
+
+        auto uniform = opt_uniform.value();
+
+        // copy into this uniform buffer slot, don't increase offset (use it later to draw)
+        uniform.uniform_buffers[currentFrame].offset
+            = uniform.uniform_buffers[currentFrame].copy(sizeof(glm::mat4), static_cast<void const*>(glm::value_ptr(data)));
     }
 
 private:
@@ -1435,6 +1494,10 @@ private:
     {
         for (auto & uniform_layout: uniform_layouts)
         {
+            uniform_layout.uniform_size
+                = physical_device_info.properties.limits.maxUniformBufferRange
+                  / physical_device_info.properties.limits.minUniformBufferOffsetAlignment;
+
             auto layoutInfo = VkDescriptorSetLayoutCreateInfo{
                 .sType        = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
                 .bindingCount = 1,
@@ -1463,11 +1526,77 @@ private:
             {
                 return result;
             }
+
+            // create the uniforms
+            VkDeviceSize bufferSize = sizeof(glm::mat4);
+
+            auto & uniforms = uniform_layout.uniform_buffers;
+
+            uniforms.resize(MAX_FRAMES_IN_FLIGHT);
+
+            for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i)
+            {
+                uniforms[i].memory_size = bufferSize;
+
+                createBuffer(
+                    uniforms[i].memory_size,
+                    VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+                    VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                    uniforms[i].buffer,
+                    uniforms[i].memory);
+
+                vkMapMemory(logical_device,
+                            uniforms[i].memory,
+                            0,
+                            uniforms[i].memory_size,
+                            0,
+                            &uniforms[i].data);
+            }
+
+            // create the descriptors
+            std::vector<VkDescriptorSetLayout> layouts{static_cast<size_t>(MAX_FRAMES_IN_FLIGHT),
+                                                       uniform_layout.vk_descriptorset_layout};
+
+            auto allocInfo = VkDescriptorSetAllocateInfo{
+                .sType              = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
+                .descriptorPool     = uniform_layout.vk_descriptor_pool,
+                .descriptorSetCount = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT),
+                .pSetLayouts        = layouts.data()};
+
+            auto & descriptorsets = uniform_layout.vk_descriptorsets;
+
+            descriptorsets.resize(MAX_FRAMES_IN_FLIGHT);
+
+            result = vkAllocateDescriptorSets(logical_device, &allocInfo, descriptorsets.data());
+            if (result != VK_SUCCESS)
+            {
+                return result;
+            }
+
+            for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i)
+            {
+                auto bufferInfo = VkDescriptorBufferInfo{
+                    .buffer = uniforms[i].buffer, .offset = 0, .range = sizeof(glm::mat4)};
+
+                auto descriptorWrite = VkWriteDescriptorSet{
+                    .sType            = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+                    .dstSet           = descriptorsets[i],
+                    .dstBinding       = 0,
+                    .dstArrayElement  = 0,
+                    .descriptorType   = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC,
+                    .descriptorCount  = 1,
+                    .pBufferInfo      = &bufferInfo,
+                    .pImageInfo       = nullptr,
+                    .pTexelBufferView = nullptr};
+
+                vkUpdateDescriptorSets(logical_device, 1, &descriptorWrite, 0, nullptr);
+            }
         }
 
         return VK_SUCCESS;
     }
 
+    /*
     void createUniformBuffers()
     {
         VkDeviceSize bufferSize = sizeof(glm::mat4);
@@ -1533,6 +1662,7 @@ private:
 
         return VK_SUCCESS;
     }
+    */
 
     // SHADERS
     VkResult createShaders()
@@ -2229,7 +2359,7 @@ private:
     }
 
     // COMMANDBUFFER
-    VkResult createCommandbuffer(uint32_t resource_index, uint32_t object_count, Object * p_objects)
+    VkResult createCommandbuffer(uint32_t uniform_count, UniformHandle * p_uniforms, uint32_t resource_index, uint32_t object_count, Object * p_objects)
     {
         auto & mapped_vertices = dynamic_mapped_vertices[currentFrame];
         auto & mapped_indices  = dynamic_mapped_indices[currentFrame];
@@ -2283,16 +2413,27 @@ private:
                           VK_PIPELINE_BIND_POINT_GRAPHICS,
                           pipelines[0].vk_pipeline);
 
-        uint32_t dynamic_offset{0};
+        std::vector<VkDescriptorSet> descriptorsets;
+        std::vector<uint32_t> dynamic_offsets;
+
+        for (size_t i = 0; i < uniform_count; ++i)
+        {
+            auto uniform_handle = p_uniforms[i];
+            auto opt_uniform = uniform_layouts[uniform_handle.uniform_layout_id].getUniform(uniform_handle);
+            auto const& uniform = opt_uniform.value();
+
+            descriptorsets.push_back(uniform.vk_descriptorset);
+            dynamic_offsets.push_back(uniform.uniform_buffers[currentFrame].offset);
+        }
 
         vkCmdBindDescriptorSets(commandbuffers[currentFrame],
                                 VK_PIPELINE_BIND_POINT_GRAPHICS,
                                 pipelines[0].vk_pipeline_layout,
                                 0,
-                                1,
-                                &descriptorsets[currentFrame],
-                                1,
-                                &dynamic_offset);
+                                static_cast<uint32_t>(descriptorsets.size()),
+                                descriptorsets.data(),
+                                static_cast<uint32_t>(dynamic_offsets.size()),
+                                dynamic_offsets.data());
 
         for (uint32_t object_index = 0; object_index < object_count; ++object_index)
         {
@@ -2326,8 +2467,12 @@ private:
             }
             else if (object.type == ObjectType::STREAMED)
             {
-                VkDeviceSize vertex_offset = mapped_vertices.copy(sizeof(Vertex) * object.d_vertex_data.vertex_count, object.d_vertex_data.vertices);
-                VkDeviceSize index_offset = mapped_indices.copy(sizeof(uint32_t) * object.d_vertex_data.index_count, object.d_vertex_data.indices);
+                VkDeviceSize vertex_offset = mapped_vertices.copy(
+                    sizeof(Vertex) * object.d_vertex_data.vertex_count,
+                    object.d_vertex_data.vertices);
+                VkDeviceSize index_offset = mapped_indices.copy(
+                    sizeof(uint32_t) * object.d_vertex_data.index_count,
+                    object.d_vertex_data.indices);
 
                 vkCmdBindVertexBuffers(
                     commandbuffers[currentFrame], 0, 1, &mapped_vertices.buffer, &vertex_offset);
@@ -2507,8 +2652,6 @@ private:
     std::vector<VkImage>     swapchain_images;
     std::vector<VkImageView> swapchain_image_views;
 
-    std::vector<VkDescriptorSet> descriptorsets;
-
     VkCommandPool command_pool;
 
     std::vector<VkCommandBuffer> commandbuffers;
@@ -2530,8 +2673,6 @@ private:
 
     std::vector<MappedBuffer> staging_mapped_vertices;
     std::vector<MappedBuffer> staging_mapped_indices;
-
-    std::vector<MappedBuffer> mapped_uniforms;
 
     std::vector<AttachmentInfo> attachment_infos
     {
@@ -2604,11 +2745,12 @@ private:
         std::vector<Framebuffer>{Framebuffer{.renderpass = 0, .attachments = {0, 1, -1}}}};
 
     std::vector<UniformLayout> uniform_layouts{
-        UniformLayout{.binding = {.binding            = 0,
+        UniformLayout{.binding       = {.binding            = 0,
                                   .descriptorType     = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC,
                                   .descriptorCount    = 1,
                                   .stageFlags         = VK_SHADER_STAGE_VERTEX_BIT,
-                                  .pImmutableSamplers = nullptr}}};
+                                  .pImmutableSamplers = nullptr},
+                      .uniform_count = 1}};
 
     std::vector<VkPushConstantRange> push_constants{
         VkPushConstantRange{.stageFlags = VK_SHADER_STAGE_VERTEX_BIT,
