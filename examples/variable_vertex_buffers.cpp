@@ -1,6 +1,10 @@
 
 #include "gfx/render_device.hpp"
 
+#define JED_CMD_IMPLEMENTATION
+#include "cmd/cmd.hpp"
+#undef JED_CMD_IMPLEMENTATION
+
 #include <vulkan/vulkan.h>
 #include <glfw/glfw3.h>
 
@@ -100,7 +104,13 @@ int main()
 
         obj3_vertices[0].pos.y -= .01f;
         obj4_vertices[0].pos.y -= .01f;
-        render_device.drawFrame(1, &view_handle, objects.size(), objects.data());
+
+        for (uint32_t i = 0; i < objects.size(); ++i)
+        {
+            render_device.draw(objects[i]);
+        }
+
+        render_device.drawFrame(1, &view_handle);
     }
 
     render_device.waitForIdle();

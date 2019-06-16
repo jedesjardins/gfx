@@ -17,6 +17,8 @@
 #include <variant>
 #include <optional>
 
+#include "cmd/cmd.hpp"
+
 struct Vertex
 {
     glm::vec3 pos;
@@ -157,7 +159,7 @@ struct MappedBuffer
     VkDeviceSize   memory_size;
     size_t         offset;
 
-    size_t copy(size_t size, void const* src_data)
+    size_t copy(size_t size, void const * src_data)
     {
         auto * dest_data = static_cast<void *>(static_cast<char *>(data) + offset);
 
@@ -273,6 +275,44 @@ struct Pipeline
 
 using PipelineHandle = size_t;
 
+struct Draw
+{
+    static cmd::BackendDispatchFunction const DISPATCH_FUNCTION;
+
+    VkCommandBuffer  commandbuffer;
+    VkBuffer         vertexbuffer;
+    VkDeviceSize     vertexbuffer_offset;
+    VkBuffer         indexbuffer;
+    VkDeviceSize     indexbuffer_offset;
+    VkDeviceSize     indexbuffer_size;
+    VkPipelineLayout pipeline_layout;
+    glm::mat4        transform;
+};
+static_assert(std::is_pod<Draw>::value == true, "Draw must be a POD.");
+
+void draw(void const * data)
+{
+    Draw const * realdata = reinterpret_cast<Draw const *>(data);
+
+    vkCmdPushConstants(realdata->commandbuffer,
+                       realdata->pipeline_layout,
+                       VK_SHADER_STAGE_VERTEX_BIT,
+                       0,
+                       sizeof(glm::mat4),
+                       glm::value_ptr(realdata->transform));
+
+    vkCmdBindVertexBuffers(
+        realdata->commandbuffer, 0, 1, &realdata->vertexbuffer, &realdata->vertexbuffer_offset);
+    vkCmdBindIndexBuffer(realdata->commandbuffer,
+                         realdata->indexbuffer,
+                         realdata->indexbuffer_offset,
+                         VK_INDEX_TYPE_UINT32);
+
+    vkCmdDrawIndexed(realdata->commandbuffer, realdata->indexbuffer_size, 1, 0, 0, 0);
+}
+
+cmd::BackendDispatchFunction const Draw::DISPATCH_FUNCTION = &draw;
+
 class RenderDevice
 {
 public:
@@ -385,6 +425,11 @@ public:
             != VK_SUCCESS)
         {
             return false;
+        }
+
+        for (uint32_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i)
+        {
+            buckets.emplace_back(6);
         }
 
         return true;
@@ -551,9 +596,11 @@ public:
         {
             throw std::runtime_error("failed to acquire swap chain image!");
         }
+
+        buckets[currentFrame].Clear();
     }
 
-    void drawFrame(uint32_t uniform_count, UniformHandle * p_uniforms, uint32_t object_count, Object * p_objects)
+    void drawFrame(uint32_t uniform_count, UniformHandle * p_uniforms)
     {
         // TRANSFER OPERATIONS
         // submit copy operations to the graphics queue
@@ -576,7 +623,7 @@ public:
 
         VkSemaphore signalSemaphores[] = {render_finished_semaphores[currentFrame]};
 
-        createCommandbuffer(uniform_count, p_uniforms, currentImage, object_count, p_objects);
+        createCommandbuffer(currentImage, uniform_count, p_uniforms);
 
         auto submitInfo = VkSubmitInfo{.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
 
@@ -752,8 +799,43 @@ public:
         auto uniform = opt_uniform.value();
 
         // copy into this uniform buffer slot, don't increase offset (use it later to draw)
-        uniform.uniform_buffers[currentFrame].offset
-            = uniform.uniform_buffers[currentFrame].copy(sizeof(glm::mat4), static_cast<void const*>(glm::value_ptr(data)));
+        uniform.uniform_buffers[currentFrame].offset = uniform.uniform_buffers[currentFrame].copy(
+            sizeof(glm::mat4), static_cast<void const *>(glm::value_ptr(data)));
+    }
+
+    void draw(Object & object)
+    {
+        auto & bucket = buckets[currentFrame];
+
+        Draw * command           = bucket.AddCommand<Draw>(0, sizeof(glm::mat4));
+        command->commandbuffer   = commandbuffers[currentFrame];
+        command->pipeline_layout = pipelines[0].vk_pipeline_layout;
+        command->transform       = object.transform;
+
+        if (object.type == ObjectType::STATIC)
+        {
+            command->vertexbuffer        = object.s_vertex_data.vertexbuffer;
+            command->vertexbuffer_offset = object.s_vertex_data.vertexbuffer_offset;
+            command->indexbuffer         = object.s_vertex_data.indexbuffer;
+            command->indexbuffer_offset  = object.s_vertex_data.indexbuffer_offset;
+            command->indexbuffer_size    = object.s_vertex_data.indexbuffer_size;
+        }
+        else if (object.type == ObjectType::STREAMED)
+        {
+            auto & mapped_vertices = dynamic_mapped_vertices[currentFrame];
+            auto & mapped_indices  = dynamic_mapped_indices[currentFrame];
+
+            VkDeviceSize vertex_offset = mapped_vertices.copy(
+                sizeof(Vertex) * object.d_vertex_data.vertex_count, object.d_vertex_data.vertices);
+            VkDeviceSize index_offset = mapped_indices.copy(
+                sizeof(uint32_t) * object.d_vertex_data.index_count, object.d_vertex_data.indices);
+
+            command->vertexbuffer        = mapped_vertices.buffer;
+            command->vertexbuffer_offset = vertex_offset;
+            command->indexbuffer         = mapped_indices.buffer;
+            command->indexbuffer_offset  = index_offset;
+            command->indexbuffer_size    = object.d_vertex_data.index_count;
+        }
     }
 
 private:
@@ -2359,7 +2441,9 @@ private:
     }
 
     // COMMANDBUFFER
-    VkResult createCommandbuffer(uint32_t uniform_count, UniformHandle * p_uniforms, uint32_t resource_index, uint32_t object_count, Object * p_objects)
+    VkResult createCommandbuffer(uint32_t        resource_index,
+                                 uint32_t        uniform_count,
+                                 UniformHandle * p_uniforms)
     {
         auto & mapped_vertices = dynamic_mapped_vertices[currentFrame];
         auto & mapped_indices  = dynamic_mapped_indices[currentFrame];
@@ -2414,13 +2498,14 @@ private:
                           pipelines[0].vk_pipeline);
 
         std::vector<VkDescriptorSet> descriptorsets;
-        std::vector<uint32_t> dynamic_offsets;
+        std::vector<uint32_t>        dynamic_offsets;
 
         for (size_t i = 0; i < uniform_count; ++i)
         {
             auto uniform_handle = p_uniforms[i];
-            auto opt_uniform = uniform_layouts[uniform_handle.uniform_layout_id].getUniform(uniform_handle);
-            auto const& uniform = opt_uniform.value();
+            auto opt_uniform    = uniform_layouts[uniform_handle.uniform_layout_id].getUniform(
+                uniform_handle);
+            auto const & uniform = opt_uniform.value();
 
             descriptorsets.push_back(uniform.vk_descriptorset);
             dynamic_offsets.push_back(uniform.uniform_buffers[currentFrame].offset);
@@ -2435,57 +2520,7 @@ private:
                                 static_cast<uint32_t>(dynamic_offsets.size()),
                                 dynamic_offsets.data());
 
-        for (uint32_t object_index = 0; object_index < object_count; ++object_index)
-        {
-            auto & object = p_objects[object_index];
-
-            vkCmdPushConstants(commandbuffers[currentFrame],
-                               pipelines[0].vk_pipeline_layout,
-                               VK_SHADER_STAGE_VERTEX_BIT,
-                               0,
-                               sizeof(glm::mat4),
-                               glm::value_ptr(object.transform));
-
-            if (object.type == ObjectType::STATIC)
-            {
-                vkCmdBindVertexBuffers(commandbuffers[currentFrame],
-                                       0,
-                                       1,
-                                       &object.s_vertex_data.vertexbuffer,
-                                       &object.s_vertex_data.vertexbuffer_offset);
-                vkCmdBindIndexBuffer(commandbuffers[currentFrame],
-                                     object.s_vertex_data.indexbuffer,
-                                     object.s_vertex_data.indexbuffer_offset,
-                                     VK_INDEX_TYPE_UINT32);
-
-                vkCmdDrawIndexed(commandbuffers[currentFrame],
-                                 object.s_vertex_data.indexbuffer_size,
-                                 1,
-                                 0,
-                                 0,
-                                 0);
-            }
-            else if (object.type == ObjectType::STREAMED)
-            {
-                VkDeviceSize vertex_offset = mapped_vertices.copy(
-                    sizeof(Vertex) * object.d_vertex_data.vertex_count,
-                    object.d_vertex_data.vertices);
-                VkDeviceSize index_offset = mapped_indices.copy(
-                    sizeof(uint32_t) * object.d_vertex_data.index_count,
-                    object.d_vertex_data.indices);
-
-                vkCmdBindVertexBuffers(
-                    commandbuffers[currentFrame], 0, 1, &mapped_vertices.buffer, &vertex_offset);
-
-                vkCmdBindIndexBuffer(commandbuffers[currentFrame],
-                                     mapped_indices.buffer,
-                                     index_offset,
-                                     VK_INDEX_TYPE_UINT32);
-
-                vkCmdDrawIndexed(
-                    commandbuffers[currentFrame], object.d_vertex_data.index_count, 1, 0, 0, 0);
-            }
-        }
+        buckets[currentFrame].Submit();
 
         vkCmdEndRenderPass(commandbuffers[currentFrame]);
 
@@ -2652,10 +2687,6 @@ private:
     std::vector<VkImage>     swapchain_images;
     std::vector<VkImageView> swapchain_image_views;
 
-    VkCommandPool command_pool;
-
-    std::vector<VkCommandBuffer> commandbuffers;
-
     std::vector<VkSemaphore> image_available_semaphores;
     std::vector<VkSemaphore> render_finished_semaphores;
     std::vector<VkFence>     in_flight_fences;
@@ -2666,6 +2697,8 @@ private:
 
     bool framebuffer_resized;
 
+    VkCommandPool                             command_pool;
+    std::vector<VkCommandBuffer>              commandbuffers;
     std::vector<std::vector<VkCommandBuffer>> one_time_use_buffers;
 
     std::vector<MappedBuffer> dynamic_mapped_vertices;
@@ -2783,6 +2816,8 @@ private:
                                              .push_constants    = {0},
                                              .renderpass        = 0,
                                              .subpass           = 0}};
+
+    std::vector<cmd::CommandBucket<int>> buckets;
 
 }; // class RenderDevice
 }; // namespace gfx
