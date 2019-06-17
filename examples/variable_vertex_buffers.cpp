@@ -8,6 +8,7 @@
 #include <vulkan/vulkan.h>
 #include <glfw/glfw3.h>
 
+#include <variant>
 #include <iostream>
 
 std::vector<Vertex> obj1_vertices{{{0.f, 1.f, 0.5f}, {1.f, 0.f, 0.f}},
@@ -32,6 +33,169 @@ std::vector<Vertex> obj4_vertices{{{-1.f, 0.f, 0.f}, {0.f, .5f, .5f}},
 
 std::vector<uint32_t> obj_indices{0, 1, 2, 0, 2, 3};
 
+struct Material
+{
+    gfx::PipelineHandle pipeline{0};
+    glm::mat4           transform{1.0f};
+};
+
+struct StaticVertexData // can be edited with a
+{
+    VkBuffer       vertexbuffer;
+    VkDeviceMemory vertexbuffer_memory;
+    VkDeviceSize   vertexbuffer_offset;
+
+    VkBuffer       indexbuffer;
+    VkDeviceMemory indexbuffer_memory;
+    size_t         indexbuffer_offset;
+    size_t         indexbuffer_count;
+};
+
+struct StreamedVertexData
+{
+    size_t     vertex_count;
+    Vertex *   vertices;
+    size_t     index_count;
+    uint32_t * indices;
+};
+
+enum class ObjectType
+{
+    NONE,
+    STATIC,
+    STREAMED
+};
+
+class Object
+{
+public:
+    Object(gfx::RenderDevice & render_device,
+           ObjectType          type,
+           uint32_t            vertex_count,
+           Vertex *            vertices,
+           uint32_t            index_count,
+           uint32_t *          indices)
+    {
+        if (type == ObjectType::STATIC)
+        {
+            initStaticObject(render_device, vertex_count, vertices, index_count, indices);
+        }
+        else if (type == ObjectType::STREAMED)
+        {
+            initDynamicObject(render_device, vertex_count, vertices, index_count, indices);
+        }
+    }
+
+    bool initStaticObject(gfx::RenderDevice & render_device,
+                          uint32_t            vertex_count,
+                          Vertex *            vertices,
+                          uint32_t            index_count,
+                          uint32_t *          indices)
+    {
+        vertex_data = StaticVertexData{.vertexbuffer        = VK_NULL_HANDLE,
+                                       .vertexbuffer_memory = VK_NULL_HANDLE,
+                                       .vertexbuffer_offset = 0,
+                                       .indexbuffer         = VK_NULL_HANDLE,
+                                       .indexbuffer_memory  = VK_NULL_HANDLE,
+                                       .indexbuffer_offset  = 0,
+                                       .indexbuffer_count   = index_count};
+
+        auto & static_data = std::get<StaticVertexData>(vertex_data);
+
+        if (!render_device.createVertexbuffer(
+                static_data.vertexbuffer, static_data.vertexbuffer_memory, vertex_count, vertices))
+        {
+            return false;
+        }
+
+        if (!render_device.createIndexbuffer(
+                static_data.indexbuffer, static_data.indexbuffer_memory, index_count, indices))
+        {
+            return false;
+        }
+
+        return true;
+    }
+
+    void initDynamicObject(gfx::RenderDevice & render_device,
+                           uint32_t            vertex_count,
+                           Vertex *            vertices,
+                           uint32_t            index_count,
+                           uint32_t *          indices)
+    {
+        vertex_data = StreamedVertexData{.vertex_count = vertex_count,
+                                         .vertices     = vertices,
+                                         .index_count  = index_count,
+                                         .indices      = indices};
+    }
+
+    void updateStaticObject(gfx::RenderDevice & render_device,
+                            uint32_t            vertex_count,
+                            Vertex *            vertices,
+                            uint32_t            index_count,
+                            uint32_t *          indices)
+    {
+        assert(std::holds_alternative<StaticVertexData>(vertex_data));
+
+        auto & static_data = std::get<StaticVertexData>(vertex_data);
+
+        render_device.updateDeviceLocalBuffers(static_data.vertexbuffer,
+                                               static_data.indexbuffer,
+                                               vertex_count,
+                                               vertices,
+                                               index_count,
+                                               indices);
+    }
+
+    void destroyStaticObject(gfx::RenderDevice & render_device)
+    {
+        assert(std::holds_alternative<StaticVertexData>(vertex_data));
+
+        auto & static_data = std::get<StaticVertexData>(vertex_data);
+
+        render_device.destroyDeviceLocalBuffers(static_data.vertexbuffer,
+                                                static_data.vertexbuffer_memory,
+                                                static_data.indexbuffer,
+                                                static_data.indexbuffer_memory);
+    }
+
+    void draw(gfx::RenderDevice & render_device)
+    {
+        if (std::holds_alternative<StaticVertexData>(vertex_data))
+        {
+            auto & static_data = std::get<StaticVertexData>(vertex_data);
+
+            render_device.draw(material.pipeline,
+                               material.transform,
+                               static_data.vertexbuffer,
+                               static_data.vertexbuffer_offset,
+                               static_data.indexbuffer,
+                               static_data.indexbuffer_offset,
+                               static_data.indexbuffer_count);
+        }
+        else if (std::holds_alternative<StreamedVertexData>(vertex_data))
+        {
+            auto & streamed_data = std::get<StreamedVertexData>(vertex_data);
+
+            render_device.dynamicDraw(material.pipeline,
+                                      material.transform,
+                                      streamed_data.vertex_count,
+                                      streamed_data.vertices,
+                                      streamed_data.index_count,
+                                      streamed_data.indices);
+        }
+    }
+
+    Material & getMaterial()
+    {
+        return material;
+    }
+
+private:
+    Material                                           material;
+    std::variant<StaticVertexData, StreamedVertexData> vertex_data;
+};
+
 int main()
 {
     if (glfwInit() == GLFW_FALSE)
@@ -47,33 +211,37 @@ int main()
 
     std::cout << render_device.init("Example", 8, 12) << "\n";
 
-    std::vector<Object> objects{4};
+    std::vector<Object> objects{};
 
-    render_device.createStaticObject(objects[0],
-                                     obj1_vertices.size(),
-                                     obj1_vertices.data(),
-                                     obj_indices.size(),
-                                     obj_indices.data());
+    objects.emplace_back(render_device,
+                         ObjectType::STATIC,
+                         obj1_vertices.size(),
+                         obj1_vertices.data(),
+                         obj_indices.size(),
+                         obj_indices.data());
 
-    objects[0].material.transform = glm::scale(glm::mat4{1.f}, glm::vec3{.5f, .5f, .5f});
+    objects[0].getMaterial().transform = glm::scale(glm::mat4{1.f}, glm::vec3{.5f, .5f, .5f});
 
-    render_device.createStaticObject(objects[1],
-                                     obj2_vertices.size(),
-                                     obj2_vertices.data(),
-                                     obj_indices.size(),
-                                     obj_indices.data());
+    objects.emplace_back(render_device,
+                         ObjectType::STATIC,
+                         obj2_vertices.size(),
+                         obj2_vertices.data(),
+                         obj_indices.size(),
+                         obj_indices.data());
 
-    objects[2].type          = ObjectType::STREAMED;
-    objects[2].d_vertex_data = StreamedVertexData{.vertex_count = 4,
-                                                  .vertices     = obj3_vertices.data(),
-                                                  .index_count  = obj_indices.size(),
-                                                  .indices      = obj_indices.data()};
+    objects.emplace_back(render_device,
+                         ObjectType::STREAMED,
+                         obj3_vertices.size(),
+                         obj3_vertices.data(),
+                         obj_indices.size(),
+                         obj_indices.data());
 
-    objects[3].type          = ObjectType::STREAMED;
-    objects[3].d_vertex_data = StreamedVertexData{.vertex_count = 4,
-                                                  .vertices     = obj4_vertices.data(),
-                                                  .index_count  = obj_indices.size(),
-                                                  .indices      = obj_indices.data()};
+    objects.emplace_back(render_device,
+                         ObjectType::STREAMED,
+                         obj4_vertices.size(),
+                         obj4_vertices.data(),
+                         obj_indices.size(),
+                         obj_indices.data());
 
     uint32_t i = 0;
 
@@ -95,11 +263,11 @@ int main()
         {
             obj1_vertices[0].pos.y -= .01f;
 
-            render_device.updateStaticObject(objects[0],
-                                             obj1_vertices.size(),
-                                             obj1_vertices.data(),
-                                             obj_indices.size(),
-                                             obj_indices.data());
+            objects[0].updateStaticObject(render_device,
+                                          obj1_vertices.size(),
+                                          obj1_vertices.data(),
+                                          obj_indices.size(),
+                                          obj_indices.data());
         }
 
         obj3_vertices[0].pos.y -= .01f;
@@ -107,7 +275,7 @@ int main()
 
         for (uint32_t i = 0; i < objects.size(); ++i)
         {
-            render_device.draw(objects[i]);
+            objects[i].draw(render_device);
         }
 
         render_device.drawFrame(1, &view_handle);
@@ -115,8 +283,8 @@ int main()
 
     render_device.waitForIdle();
 
-    render_device.destroyStaticObject(objects[0]);
-    render_device.destroyStaticObject(objects[1]);
+    objects[0].destroyStaticObject(render_device);
+    objects[1].destroyStaticObject(render_device);
 
     render_device.quit();
 
