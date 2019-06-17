@@ -50,45 +50,6 @@ struct Vertex
     }
 };
 
-enum class ObjectType
-{
-    NONE,
-    STATIC,  // never updated
-    DYNAMIC, // updated infrequently through staging buffer
-    STREAMED // updated frequently with host visible/coherent buffer
-};
-
-struct StaticVertexData // can be edited with a
-{
-    VkBuffer       vertexbuffer;
-    VkDeviceMemory vertexbuffer_memory;
-    VkDeviceSize   vertexbuffer_offset;
-
-    VkBuffer       indexbuffer;
-    VkDeviceMemory indexbuffer_memory;
-    size_t         indexbuffer_offset;
-    size_t         indexbuffer_size;
-};
-
-struct StreamedVertexData
-{
-    size_t     vertex_count;
-    Vertex *   vertices;
-    size_t     index_count;
-    uint32_t * indices;
-};
-
-struct Object
-{
-    ObjectType type{ObjectType::NONE};
-    glm::mat4  transform{1.0f};
-    union
-    {
-        StaticVertexData   s_vertex_data;
-        StreamedVertexData d_vertex_data;
-    };
-};
-
 namespace gfx
 {
 enum class Format
@@ -275,6 +236,55 @@ struct Pipeline
 
 using PipelineHandle = size_t;
 
+}; // namespace gfx
+
+struct Material
+{
+    gfx::PipelineHandle pipeline{0};
+    glm::mat4           transform{1.0f};
+};
+
+enum class ObjectType
+{
+    NONE,
+    STATIC,  // never updated
+    DYNAMIC, // updated infrequently through staging buffer
+    STREAMED // updated frequently with host visible/coherent buffer
+};
+
+struct StaticVertexData // can be edited with a
+{
+    VkBuffer       vertexbuffer;
+    VkDeviceMemory vertexbuffer_memory;
+    VkDeviceSize   vertexbuffer_offset;
+
+    VkBuffer       indexbuffer;
+    VkDeviceMemory indexbuffer_memory;
+    size_t         indexbuffer_offset;
+    size_t         indexbuffer_size;
+};
+
+struct StreamedVertexData
+{
+    size_t     vertex_count;
+    Vertex *   vertices;
+    size_t     index_count;
+    uint32_t * indices;
+};
+
+struct Object
+{
+    ObjectType type{ObjectType::NONE};
+    Material material;
+    union
+    {
+        StaticVertexData   s_vertex_data;
+        StreamedVertexData d_vertex_data;
+    };
+};
+
+namespace gfx
+{
 struct Draw
 {
     static cmd::BackendDispatchFunction const DISPATCH_FUNCTION;
@@ -809,8 +819,8 @@ public:
 
         Draw * command           = bucket.AddCommand<Draw>(0, sizeof(glm::mat4));
         command->commandbuffer   = commandbuffers[currentFrame];
-        command->pipeline_layout = pipelines[0].vk_pipeline_layout;
-        command->transform       = object.transform;
+        command->pipeline_layout = pipelines[object.material.pipeline].vk_pipeline_layout;
+        command->transform       = object.material.transform;
 
         if (object.type == ObjectType::STATIC)
         {
