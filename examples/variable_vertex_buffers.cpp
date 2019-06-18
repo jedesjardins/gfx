@@ -6,7 +6,7 @@
 #undef JED_CMD_IMPLEMENTATION
 
 #include <vulkan/vulkan.h>
-#include <glfw/glfw3.h>
+#include <GLFW/glfw3.h>
 
 #include <variant>
 #include <iostream>
