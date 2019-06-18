@@ -52,18 +52,17 @@ struct Vertex
 
 namespace gfx
 {
-
-using AttachmentInfoHandle = size_t;
-using AttachmentHandle = int32_t; // -1 signifies the swapchain images
-using CommandbufferHandle = size_t;
-using RenderpassHandle = size_t;
-using FramebufferHandle = size_t;
-using UniformLayoutHandle = size_t;
+using AttachmentInfoHandle  = size_t;
+using AttachmentHandle      = int32_t; // -1 signifies the swapchain images
+using CommandbufferHandle   = size_t;
+using RenderpassHandle      = size_t;
+using FramebufferHandle     = size_t;
+using UniformLayoutHandle   = size_t;
 using PushConstantHandle    = size_t;
 using VertexBindingHandle   = size_t;
 using VertexAttributeHandle = size_t;
-using ShaderHandle = size_t;
-using PipelineHandle = size_t;
+using ShaderHandle          = size_t;
+using PipelineHandle        = size_t;
 
 struct UniformHandle
 {
@@ -385,7 +384,7 @@ public:
             return false;
         }
 
-        for (uint32_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i)
+        for (uint32_t i = 0; i < MAX_BUFFERED_RESOURCES; ++i)
         {
             buckets.emplace_back(6);
         }
@@ -397,7 +396,7 @@ public:
     {
         vkDeviceWaitIdle(logical_device);
 
-        for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i)
+        for (size_t i = 0; i < MAX_BUFFERED_RESOURCES; ++i)
         {
             // DYNAMIC INDEXBUFFER
             vkDestroyBuffer(logical_device, dynamic_mapped_indices[i].buffer, nullptr);
@@ -512,30 +511,13 @@ public:
         vkDeviceWaitIdle(logical_device);
     }
 
-    void startFrame()
+    void drawFrame(uint32_t uniform_count, UniformHandle * p_uniforms)
     {
         vkWaitForFences(logical_device,
                         1,
                         &in_flight_fences[currentFrame],
                         VK_TRUE,
                         std::numeric_limits<uint64_t>::max());
-
-        // clear copy command buffers
-        if (!one_time_use_buffers[currentFrame].empty())
-        {
-            vkFreeCommandBuffers(logical_device,
-                                 command_pool,
-                                 one_time_use_buffers[currentFrame].size(),
-                                 one_time_use_buffers[currentFrame].data());
-        }
-
-        one_time_use_buffers[currentFrame].clear();
-
-        // reset buffer offsets for copies
-        dynamic_mapped_vertices[currentFrame].reset();
-        dynamic_mapped_indices[currentFrame].reset();
-        staging_mapped_vertices[currentFrame].reset();
-        staging_mapped_indices[currentFrame].reset();
 
         // DRAW OPERATIONS
         auto result = vkAcquireNextImageKHR(logical_device,
@@ -555,21 +537,16 @@ public:
             throw std::runtime_error("failed to acquire swap chain image!");
         }
 
-        buckets[currentFrame].Clear();
-    }
-
-    void drawFrame(uint32_t uniform_count, UniformHandle * p_uniforms)
-    {
         // TRANSFER OPERATIONS
         // submit copy operations to the graphics queue
 
-        if (one_time_use_buffers[currentFrame].size())
+        if (one_time_use_buffers[currentResource].size())
         {
             auto submitCopyInfo = VkSubmitInfo{
                 .sType              = VK_STRUCTURE_TYPE_SUBMIT_INFO,
                 .commandBufferCount = static_cast<uint32_t>(
-                    one_time_use_buffers[currentFrame].size()),
-                .pCommandBuffers = one_time_use_buffers[currentFrame].data()};
+                    one_time_use_buffers[currentResource].size()),
+                .pCommandBuffers = one_time_use_buffers[currentResource].data()};
 
             vkQueueSubmit(graphics_queue, 1, &submitCopyInfo, VK_NULL_HANDLE);
         }
@@ -590,7 +567,7 @@ public:
                                        .pWaitDstStageMask  = waitStages,
 
                                        .commandBufferCount = 1,
-                                       .pCommandBuffers    = &commandbuffers[currentFrame],
+                                       .pCommandBuffers    = &commandbuffers[currentResource],
 
                                        .signalSemaphoreCount = 1,
                                        .pSignalSemaphores    = signalSemaphores};
@@ -615,7 +592,7 @@ public:
 
                                             .pResults = nullptr};
 
-        auto result = vkQueuePresentKHR(present_queue, &presentInfo);
+        result = vkQueuePresentKHR(present_queue, &presentInfo);
 
         if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR
             || framebuffer_resized)
@@ -628,9 +605,27 @@ public:
             throw std::runtime_error("failed to present swap chain image!");
         }
 
-        currentFrame = (currentFrame + 1) % MAX_FRAMES_IN_FLIGHT;
+        currentFrame    = (currentFrame + 1) % MAX_FRAMES_IN_FLIGHT;
+        currentResource = (currentResource + 1) % MAX_BUFFERED_RESOURCES;
 
-        // clear next frames single time use buffers
+        // clear next frames unused resources
+        if (!one_time_use_buffers[currentResource].empty())
+        {
+            vkFreeCommandBuffers(logical_device,
+                                 command_pool,
+                                 one_time_use_buffers[currentResource].size(),
+                                 one_time_use_buffers[currentResource].data());
+        }
+
+        one_time_use_buffers[currentResource].clear();
+
+        // reset buffer offsets for copies
+        dynamic_mapped_vertices[currentResource].reset();
+        dynamic_mapped_indices[currentResource].reset();
+        staging_mapped_vertices[currentResource].reset();
+        staging_mapped_indices[currentResource].reset();
+
+        buckets[currentResource].Clear();
     }
 
     std::optional<UniformHandle> newUniform()
@@ -670,8 +665,8 @@ public:
                      uint32_t          index_count,
                      uint32_t *        indices)
     {
-        auto & mapped_vertices = dynamic_mapped_vertices[currentFrame];
-        auto & mapped_indices  = dynamic_mapped_indices[currentFrame];
+        auto & mapped_vertices = dynamic_mapped_vertices[currentResource];
+        auto & mapped_indices  = dynamic_mapped_indices[currentResource];
 
         VkDeviceSize vertex_offset = mapped_vertices.copy(sizeof(Vertex) * vertex_count, vertices);
         VkDeviceSize index_offset  = mapped_indices.copy(sizeof(uint32_t) * index_count, indices);
@@ -693,10 +688,10 @@ public:
               VkDeviceSize      indexbuffer_offset,
               VkDeviceSize      indexbuffer_count)
     {
-        auto & bucket = buckets[currentFrame];
+        auto & bucket = buckets[currentResource];
 
         Draw * command               = bucket.AddCommand<Draw>(0, sizeof(glm::mat4));
-        command->commandbuffer       = commandbuffers[currentFrame];
+        command->commandbuffer       = commandbuffers[currentResource];
         command->pipeline_layout     = pipelines[pipeline].vk_pipeline_layout;
         command->transform           = transform;
         command->vertexbuffer        = vertexbuffer;
@@ -782,8 +777,8 @@ public:
                                   uint32_t   index_count,
                                   uint32_t * indices)
     {
-        auto & mapped_vertices = staging_mapped_vertices[currentFrame];
-        auto & mapped_indices  = staging_mapped_indices[currentFrame];
+        auto & mapped_vertices = staging_mapped_vertices[currentResource];
+        auto & mapped_indices  = staging_mapped_indices[currentResource];
 
         size_t vertex_data_size = sizeof(Vertex) * vertex_count;
         size_t index_data_size  = sizeof(uint32_t) * index_count;
@@ -1591,13 +1586,13 @@ private:
 
             auto poolsize = VkDescriptorPoolSize{
                 .type            = uniform_layout.binding.descriptorType,
-                .descriptorCount = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT)};
+                .descriptorCount = static_cast<uint32_t>(MAX_BUFFERED_RESOURCES)};
 
             auto poolInfo = VkDescriptorPoolCreateInfo{
                 .sType         = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
                 .poolSizeCount = 1,
                 .pPoolSizes    = &poolsize,
-                .maxSets       = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT)};
+                .maxSets       = static_cast<uint32_t>(MAX_BUFFERED_RESOURCES)};
 
             result = vkCreateDescriptorPool(
                 logical_device, &poolInfo, nullptr, &uniform_layout.vk_descriptor_pool);
@@ -1611,9 +1606,9 @@ private:
 
             auto & uniforms = uniform_layout.uniform_buffers;
 
-            uniforms.resize(MAX_FRAMES_IN_FLIGHT);
+            uniforms.resize(MAX_BUFFERED_RESOURCES);
 
-            for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i)
+            for (size_t i = 0; i < MAX_BUFFERED_RESOURCES; ++i)
             {
                 uniforms[i].memory_size = bufferSize;
 
@@ -1633,18 +1628,18 @@ private:
             }
 
             // create the descriptors
-            std::vector<VkDescriptorSetLayout> layouts{static_cast<size_t>(MAX_FRAMES_IN_FLIGHT),
+            std::vector<VkDescriptorSetLayout> layouts{static_cast<size_t>(MAX_BUFFERED_RESOURCES),
                                                        uniform_layout.vk_descriptorset_layout};
 
             auto allocInfo = VkDescriptorSetAllocateInfo{
                 .sType              = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
                 .descriptorPool     = uniform_layout.vk_descriptor_pool,
-                .descriptorSetCount = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT),
+                .descriptorSetCount = static_cast<uint32_t>(MAX_BUFFERED_RESOURCES),
                 .pSetLayouts        = layouts.data()};
 
             auto & descriptorsets = uniform_layout.vk_descriptorsets;
 
-            descriptorsets.resize(MAX_FRAMES_IN_FLIGHT);
+            descriptorsets.resize(MAX_BUFFERED_RESOURCES);
 
             result = vkAllocateDescriptorSets(logical_device, &allocInfo, descriptorsets.data());
             if (result != VK_SUCCESS)
@@ -1652,7 +1647,7 @@ private:
                 return result;
             }
 
-            for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i)
+            for (size_t i = 0; i < MAX_BUFFERED_RESOURCES; ++i)
             {
                 auto bufferInfo = VkDescriptorBufferInfo{
                     .buffer = uniforms[i].buffer, .offset = 0, .range = sizeof(glm::mat4)};
@@ -2280,7 +2275,7 @@ private:
     // TODO: rewrite to return VkResult
     VkResult createCommandbuffers()
     {
-        commandbuffers.resize(MAX_FRAMES_IN_FLIGHT);
+        commandbuffers.resize(MAX_BUFFERED_RESOURCES);
 
         auto allocInfo = VkCommandBufferAllocateInfo{
             .sType              = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
@@ -2295,7 +2290,7 @@ private:
 
     VkResult createSingleTimeUseBuffers()
     {
-        one_time_use_buffers.resize(MAX_FRAMES_IN_FLIGHT);
+        one_time_use_buffers.resize(MAX_BUFFERED_RESOURCES);
         return VK_SUCCESS;
     }
 
@@ -2304,15 +2299,15 @@ private:
                                  uint32_t        uniform_count,
                                  UniformHandle * p_uniforms)
     {
-        auto & mapped_vertices = dynamic_mapped_vertices[currentFrame];
-        auto & mapped_indices  = dynamic_mapped_indices[currentFrame];
+        auto & mapped_vertices = dynamic_mapped_vertices[currentResource];
+        auto & mapped_indices  = dynamic_mapped_indices[currentResource];
 
         auto beginInfo = VkCommandBufferBeginInfo{
             .sType            = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
             .flags            = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,
             .pInheritanceInfo = nullptr};
 
-        auto result = vkBeginCommandBuffer(commandbuffers[currentFrame], &beginInfo);
+        auto result = vkBeginCommandBuffer(commandbuffers[currentResource], &beginInfo);
         if (result != VK_SUCCESS)
         {
             return result;
@@ -2323,7 +2318,7 @@ private:
                                        .srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT,
                                        .dstAccessMask = VK_ACCESS_VERTEX_ATTRIBUTE_READ_BIT};
 
-        vkCmdPipelineBarrier(commandbuffers[currentFrame],
+        vkCmdPipelineBarrier(commandbuffers[currentResource],
                              VK_PIPELINE_STAGE_TRANSFER_BIT,
                              VK_PIPELINE_STAGE_VERTEX_INPUT_BIT,
                              0,
@@ -2350,9 +2345,9 @@ private:
             .pClearValues      = clearValues.data()};
 
         vkCmdBeginRenderPass(
-            commandbuffers[currentFrame], &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
+            commandbuffers[currentResource], &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
 
-        vkCmdBindPipeline(commandbuffers[currentFrame],
+        vkCmdBindPipeline(commandbuffers[currentResource],
                           VK_PIPELINE_BIND_POINT_GRAPHICS,
                           pipelines[0].vk_pipeline);
 
@@ -2367,10 +2362,10 @@ private:
             auto const & uniform = opt_uniform.value();
 
             descriptorsets.push_back(uniform.vk_descriptorset);
-            dynamic_offsets.push_back(uniform.uniform_buffers[currentFrame].offset);
+            dynamic_offsets.push_back(uniform.uniform_buffers[currentResource].offset);
         }
 
-        vkCmdBindDescriptorSets(commandbuffers[currentFrame],
+        vkCmdBindDescriptorSets(commandbuffers[currentResource],
                                 VK_PIPELINE_BIND_POINT_GRAPHICS,
                                 pipelines[0].vk_pipeline_layout,
                                 0,
@@ -2379,11 +2374,11 @@ private:
                                 static_cast<uint32_t>(dynamic_offsets.size()),
                                 dynamic_offsets.data());
 
-        buckets[currentFrame].Submit();
+        buckets[currentResource].Submit();
 
-        vkCmdEndRenderPass(commandbuffers[currentFrame]);
+        vkCmdEndRenderPass(commandbuffers[currentResource]);
 
-        result = vkEndCommandBuffer(commandbuffers[currentFrame]);
+        result = vkEndCommandBuffer(commandbuffers[currentResource]);
         if (result != VK_SUCCESS)
         {
             return result;
@@ -2426,10 +2421,10 @@ private:
     VkResult createDynamicObjectResources(size_t dynamic_vertices_count,
                                           size_t dynamic_indices_count)
     {
-        dynamic_mapped_vertices.resize(MAX_FRAMES_IN_FLIGHT);
-        dynamic_mapped_indices.resize(MAX_FRAMES_IN_FLIGHT);
+        dynamic_mapped_vertices.resize(MAX_BUFFERED_RESOURCES);
+        dynamic_mapped_indices.resize(MAX_BUFFERED_RESOURCES);
 
-        for (uint32_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i)
+        for (uint32_t i = 0; i < MAX_BUFFERED_RESOURCES; ++i)
         {
             dynamic_mapped_vertices[i].memory_size = sizeof(Vertex) * dynamic_vertices_count;
             dynamic_mapped_indices[i].memory_size  = sizeof(uint32_t) * dynamic_indices_count;
@@ -2469,10 +2464,10 @@ private:
     VkResult createStagingObjectResources(size_t dynamic_vertices_count,
                                           size_t dynamic_indices_count)
     {
-        staging_mapped_vertices.resize(MAX_FRAMES_IN_FLIGHT);
-        staging_mapped_indices.resize(MAX_FRAMES_IN_FLIGHT);
+        staging_mapped_vertices.resize(MAX_BUFFERED_RESOURCES);
+        staging_mapped_indices.resize(MAX_BUFFERED_RESOURCES);
 
-        for (uint32_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i)
+        for (uint32_t i = 0; i < MAX_BUFFERED_RESOURCES; ++i)
         {
             staging_mapped_vertices[i].memory_size = sizeof(Vertex) * dynamic_vertices_count;
             staging_mapped_indices[i].memory_size  = sizeof(uint32_t) * dynamic_indices_count;
@@ -2550,9 +2545,11 @@ private:
     std::vector<VkSemaphore> render_finished_semaphores;
     std::vector<VkFence>     in_flight_fences;
 
+    int32_t const MAX_FRAMES_IN_FLIGHT{2};
+    int32_t const MAX_BUFFERED_RESOURCES{MAX_FRAMES_IN_FLIGHT + 1};
     uint32_t      currentImage{0};
     size_t        currentFrame{0};
-    int32_t const MAX_FRAMES_IN_FLIGHT{2};
+    uint32_t      currentResource{0};
 
     bool framebuffer_resized;
 

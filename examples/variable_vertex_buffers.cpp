@@ -253,8 +253,6 @@ int main()
 
     while (!glfwWindowShouldClose(window))
     {
-        render_device.startFrame();
-
         glfwPollEvents();
 
         render_device.updateUniform(view_handle, view);
