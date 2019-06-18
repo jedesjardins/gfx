@@ -63,22 +63,22 @@ if(NOT glm_POPULATED)
 	add_subdirectory(${glm_SOURCE_DIR} ${glm_BINARY_DIR})
 endif()
 
-add_library(gfx INTERFACE)
-target_include_directories(gfx
+add_library(Gfx INTERFACE)
+target_include_directories(Gfx
 	INTERFACE
 	$<BUILD_INTERFACE:${CMAKE_CURRENT_LIST_DIR}/include>
 )
 
 find_package(vulkan REQUIRED)
 
-target_link_libraries(gfx INTERFACE
+target_link_libraries(Gfx INTERFACE
 	JED::cmd
 	Vulkan::Vulkan
 	glfw
 	glm
 )
 
-add_library(JED::gfx ALIAS gfx)
+add_library(JED::gfx ALIAS Gfx)
 
 if(GFX_BUILD_EXAMPLES)
 	add_subdirectory(examples)
