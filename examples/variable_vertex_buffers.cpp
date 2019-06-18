@@ -196,6 +196,75 @@ private:
     std::variant<StaticVertexData, StreamedVertexData> vertex_data;
 };
 
+class RawClock
+{
+public:
+    RawClock(): start_time{Clock::now()}
+    {}
+
+    void Resume()
+    {
+        paused = false;
+
+        start_time = Clock::now();
+    }
+    void Pause()
+    {
+        auto end_time = Clock::now();
+
+        std::chrono::duration<double, std::milli> mdt = end_time - start_time;
+
+        paused_dt += mdt.count();
+        paused = true;
+    }
+    void Clear()
+    {
+        paused_dt  = 0;
+        start_time = Clock::now();
+    }
+    double Read()
+    {
+        if (paused)
+        {
+            return paused_dt;
+        }
+
+        auto end_time = Clock::now();
+
+        std::chrono::duration<double, std::milli> mdt = end_time - start_time;
+
+        return paused_dt + mdt.count();
+    }
+    double Restart()
+    {
+        auto dt = paused_dt;
+
+        if (!paused)
+        {
+            auto end_time = Clock::now();
+
+            std::chrono::duration<double, std::milli> mdt = end_time - start_time;
+            dt += mdt.count();
+        }
+
+        paused     = false;
+        paused_dt  = 0;
+        start_time = Clock::now();
+
+        return dt;
+    }
+
+private:
+    using Clock    = std::chrono::high_resolution_clock;
+    using Duration = std::chrono::time_point<Clock>;
+
+    Duration start_time;
+
+    double paused_dt{0};
+    bool   paused = false;
+
+}; // class RawClock
+
 int main()
 {
     if (glfwInit() == GLFW_FALSE)
@@ -209,7 +278,10 @@ int main()
 
     auto render_device = gfx::RenderDevice{window};
 
-    std::cout << render_device.init("Example", 8, 12) << "\n";
+    if (!render_device.init("Example", 8, 12))
+    {
+        throw std::runtime_error("Couldn't initialize Vulkan!");
+    }
 
     std::vector<Object> objects{};
 
@@ -251,6 +323,10 @@ int main()
 
     gfx::UniformHandle view_handle = opt_view_handle.value();
 
+    auto clock = RawClock{};
+
+    clock.Clear();
+
     while (!glfwWindowShouldClose(window))
     {
         glfwPollEvents();
@@ -277,6 +353,8 @@ int main()
         }
 
         render_device.drawFrame(1, &view_handle);
+
+        std::cout << clock.Restart() << "\n";
     }
 
     render_device.waitForIdle();
