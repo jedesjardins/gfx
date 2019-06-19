@@ -53,7 +53,6 @@ struct Vertex
 namespace gfx
 {
 using AttachmentInfoHandle  = size_t;
-using AttachmentHandle      = int32_t; // -1 signifies the swapchain images
 using CommandbufferHandle   = size_t;
 using RenderpassHandle      = size_t;
 using FramebufferHandle     = size_t;
@@ -63,6 +62,12 @@ using VertexBindingHandle   = size_t;
 using VertexAttributeHandle = size_t;
 using ShaderHandle          = size_t;
 using PipelineHandle        = size_t;
+
+struct AttachmentHandle
+{
+    uint64_t is_swapchain_image : 1;
+    uint64_t id : 63;
+};
 
 struct UniformHandle
 {
@@ -2189,13 +2194,13 @@ private:
 
                 for (auto attachment_id: framebuffer.attachments)
                 {
-                    if (attachment_id == -1)
+                    if (attachment_id.is_swapchain_image)
                     {
                         fb_attachments.push_back(swapchain_image_views[i]);
                     }
                     else
                     {
-                        fb_attachments.push_back(attachments[attachment_id].vk_image_view);
+                        fb_attachments.push_back(attachments[attachment_id.id].vk_image_view);
                     }
                 }
 
@@ -2629,9 +2634,21 @@ private:
         Attachment{.format = Format::USE_DEPTH, .use_samples = true}};
 
     std::vector<std::vector<Framebuffer>> framebuffers{
-        std::vector<Framebuffer>{Framebuffer{.renderpass = 0, .attachments = {0, 1, -1}}},
-        std::vector<Framebuffer>{Framebuffer{.renderpass = 0, .attachments = {0, 1, -1}}},
-        std::vector<Framebuffer>{Framebuffer{.renderpass = 0, .attachments = {0, 1, -1}}}};
+        std::vector<Framebuffer>{
+            Framebuffer{.renderpass  = 0,
+                        .attachments = {AttachmentHandle{.is_swapchain_image = 0, .id = 0},
+                                        AttachmentHandle{.is_swapchain_image = 0, .id = 1},
+                                        AttachmentHandle{.is_swapchain_image = 1, .id = 0}}}},
+        std::vector<Framebuffer>{
+            Framebuffer{.renderpass  = 0,
+                        .attachments = {AttachmentHandle{.is_swapchain_image = 0, .id = 0},
+                                        AttachmentHandle{.is_swapchain_image = 0, .id = 1},
+                                        AttachmentHandle{.is_swapchain_image = 1, .id = 0}}}},
+        std::vector<Framebuffer>{
+            Framebuffer{.renderpass  = 0,
+                        .attachments = {AttachmentHandle{.is_swapchain_image = 0, .id = 0},
+                                        AttachmentHandle{.is_swapchain_image = 0, .id = 1},
+                                        AttachmentHandle{.is_swapchain_image = 1, .id = 0}}}}};
 
     std::vector<UniformLayout> uniform_layouts{
         UniformLayout{.binding       = {.binding            = 0,
