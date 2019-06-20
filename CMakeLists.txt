@@ -24,7 +24,7 @@ if(NOT Cmd_POPULATED)
 	add_subdirectory(${cmd_SOURCE_DIR} ${cmd_BINARY_DIR})
 endif()
 
-
+#[[
 FetchContent_Declare(
 	glfw
 	GIT_REPOSITORY "https://github.com/glfw/glfw"
@@ -43,6 +43,7 @@ if(NOT glfw_POPULATED)
 	set(GLFW_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
 	add_subdirectory(${glfw_SOURCE_DIR} ${glfw_BINARY_DIR})
 endif()
+]]
 
 FetchContent_Declare(
 	glm
@@ -63,6 +64,7 @@ if(NOT glm_POPULATED)
 	add_subdirectory(${glm_SOURCE_DIR} ${glm_BINARY_DIR})
 endif()
 
+
 add_library(Gfx INTERFACE)
 target_include_directories(Gfx
 	INTERFACE
@@ -70,6 +72,7 @@ target_include_directories(Gfx
 )
 
 find_package(vulkan REQUIRED)
+find_package(glfw3 REQUIRED)
 
 target_link_libraries(Gfx INTERFACE
 	JED::cmd
