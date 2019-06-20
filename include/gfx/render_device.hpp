@@ -818,7 +818,7 @@ public:
 
         vkEndCommandBuffer(commandBuffer);
 
-        one_time_use_buffers[currentFrame].push_back(commandBuffer);
+        one_time_use_buffers[currentResource].push_back(commandBuffer);
     }
 
     void destroyDeviceLocalBuffers(VkBuffer       vertexbuffer,
