@@ -713,29 +713,19 @@ public:
     {
         VkDeviceSize bufferSize = sizeof(Vertex) * vertex_count;
 
-        VkBuffer       stagingBuffer;
-        VkDeviceMemory stagingBufferMemory;
-        createBuffer(bufferSize,
-                     VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-                     VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-                     stagingBuffer,
-                     stagingBufferMemory);
+        // copy to staging vertex buffer
+        auto &       mapped_vertices       = staging_mapped_vertices[currentResource];
+        size_t       vertex_data_size      = sizeof(Vertex) * vertex_count;
+        VkDeviceSize staging_vertex_offset = mapped_vertices.copy(vertex_data_size, vertices);
 
-        void * data;
-        vkMapMemory(logical_device, stagingBufferMemory, 0, bufferSize, 0, &data);
-        memcpy(data, vertices, (size_t)bufferSize);
-        vkUnmapMemory(logical_device, stagingBufferMemory);
-
+        // create
         createBuffer(bufferSize,
                      VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
                      VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
                      vertexbuffer,
                      vertexbuffer_memory);
 
-        copyBuffer(stagingBuffer, vertexbuffer, bufferSize);
-
-        vkDestroyBuffer(logical_device, stagingBuffer, nullptr);
-        vkFreeMemory(logical_device, stagingBufferMemory, nullptr);
+        copyBuffer(mapped_vertices.buffer, staging_vertex_offset, vertexbuffer, 0, bufferSize);
 
         return true;
     }
@@ -748,18 +738,11 @@ public:
     {
         VkDeviceSize bufferSize = sizeof(uint32_t) * index_count;
 
-        VkBuffer       stagingBuffer;
-        VkDeviceMemory stagingBufferMemory;
-        createBuffer(bufferSize,
-                     VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-                     VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-                     stagingBuffer,
-                     stagingBufferMemory);
+        auto & mapped_indices = staging_mapped_indices[currentResource];
 
-        void * data;
-        vkMapMemory(logical_device, stagingBufferMemory, 0, bufferSize, 0, &data);
-        memcpy(data, indices, (size_t)bufferSize);
-        vkUnmapMemory(logical_device, stagingBufferMemory);
+        size_t index_data_size = sizeof(uint32_t) * index_count;
+
+        VkDeviceSize staging_index_offset = mapped_indices.copy(index_data_size, indices);
 
         createBuffer(bufferSize,
                      VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
@@ -767,10 +750,7 @@ public:
                      indexbuffer,
                      indexbuffer_memory);
 
-        copyBuffer(stagingBuffer, indexbuffer, bufferSize);
-
-        vkDestroyBuffer(logical_device, stagingBuffer, nullptr);
-        vkFreeMemory(logical_device, stagingBufferMemory, nullptr);
+        copyBuffer(mapped_indices.buffer, staging_index_offset, indexbuffer, 0, bufferSize);
 
         return true;
     }
@@ -2263,17 +2243,35 @@ private:
         return VK_SUCCESS;
     }
 
-    void copyBuffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkDeviceSize size)
+    void copyBuffer(VkBuffer     srcBuffer,
+                    VkDeviceSize srcOffset,
+                    VkBuffer     dstBuffer,
+                    VkDeviceSize dstOffset,
+                    VkDeviceSize size)
     {
-        auto commandBuffer = beginSingleTimeCommands();
+        auto allocInfo = VkCommandBufferAllocateInfo{
+            .sType              = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
+            .level              = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
+            .commandPool        = command_pool,
+            .commandBufferCount = 1};
 
-        auto copyRegion = VkBufferCopy{.srcOffset = 0, // Optional
-                                       .dstOffset = 0, // Optional
-                                       .size      = size};
+        VkCommandBuffer commandBuffer;
+        vkAllocateCommandBuffers(logical_device, &allocInfo, &commandBuffer);
+
+        auto beginInfo = VkCommandBufferBeginInfo{
+            .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
+            .flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT};
+
+        vkBeginCommandBuffer(commandBuffer, &beginInfo);
+
+        auto copyRegion = VkBufferCopy{
+            .srcOffset = srcOffset, .dstOffset = dstOffset, .size = size};
 
         vkCmdCopyBuffer(commandBuffer, srcBuffer, dstBuffer, 1, &copyRegion);
 
-        endSingleTimeCommands(commandBuffer);
+        vkEndCommandBuffer(commandBuffer);
+
+        one_time_use_buffers[currentResource].push_back(commandBuffer);
     };
 
     // COMMANDBUFFERS
