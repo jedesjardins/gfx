@@ -237,6 +237,35 @@ struct Pipeline
     VkPipelineLayout vk_pipeline_layout;
 };
 
+struct RenderConfig
+{
+    char const * window_name;
+
+    size_t dynamic_vertices_count;
+
+    size_t dynamic_indices_count;
+
+    std::vector<AttachmentInfo> attachment_infos;
+
+    std::vector<Renderpass> renderpasses;
+
+    std::vector<Attachment> attachments;
+
+    std::vector<Framebuffer> framebuffers;
+
+    std::vector<UniformLayout> uniform_layouts;
+
+    std::vector<VkPushConstantRange> push_constants;
+
+    std::vector<VkVertexInputBindingDescription> vertex_bindings;
+
+    std::vector<VkVertexInputAttributeDescription> vertex_attributes;
+
+    std::vector<Shader> shaders;
+
+    std::vector<Pipeline> pipelines;
+};
+
 struct Draw
 {
     static cmd::BackendDispatchFunction const DISPATCH_FUNCTION;
@@ -284,9 +313,9 @@ public:
         getRequiredExtensions();
     }
 
-    bool init(char const * window_name, size_t dynamic_vertices_count, size_t dynamic_indices_count)
+    bool init(RenderConfig & render_config)
     {
-        if (createInstance(window_name) != VK_SUCCESS)
+        if (createInstance(render_config.window_name) != VK_SUCCESS)
         {
             return false;
         }
@@ -327,21 +356,29 @@ public:
             return false;
         }
 
+        renderpasses = std::move(render_config.renderpasses);
+        attachment_infos = std::move(render_config.attachment_infos);
         if (createRenderPass() != VK_SUCCESS)
         {
             return false;
         }
 
+        uniform_layouts = std::move(render_config.uniform_layouts);
         if (createUniformLayouts() != VK_SUCCESS)
         {
             return false;
         }
 
+        shaders = std::move(render_config.shaders);
         if (createShaders() != VK_SUCCESS)
         {
             return false;
         }
 
+        pipelines = std::move(render_config.pipelines);
+        push_constants = std::move(render_config.push_constants);
+        vertex_bindings = std::move(render_config.vertex_bindings);
+        vertex_attributes = std::move(render_config.vertex_attributes);
         if (createGraphicsPipeline() != VK_SUCCESS)
         {
             return false;
@@ -352,12 +389,13 @@ public:
             return false;
         }
 
+        attachments = std::move(render_config.attachments);
         if (createAttachments() != VK_SUCCESS)
         {
             return false;
         }
 
-        if (createFramebuffers() != VK_SUCCESS)
+        if (createFramebuffers(render_config) != VK_SUCCESS)
         {
             return false;
         }
@@ -377,13 +415,15 @@ public:
             return false;
         }
 
-        if (createDynamicObjectResources(dynamic_vertices_count, dynamic_indices_count)
+        if (createDynamicObjectResources(render_config.dynamic_vertices_count,
+                                         render_config.dynamic_indices_count)
             != VK_SUCCESS)
         {
             return false;
         }
 
-        if (createStagingObjectResources(dynamic_vertices_count, dynamic_indices_count)
+        if (createStagingObjectResources(render_config.dynamic_vertices_count,
+                                         render_config.dynamic_indices_count)
             != VK_SUCCESS)
         {
             return false;
@@ -2162,12 +2202,14 @@ private:
     }
 
     // FRAMEBUFFER
-    VkResult createFramebuffers()
+    VkResult createFramebuffers(RenderConfig & render_config)
     {
         framebuffers.resize(swapchain_image_count);
 
         for (size_t i = 0; i < swapchain_image_count; ++i)
         {
+            framebuffers[i] = render_config.framebuffers;
+
             for (auto & framebuffer: framebuffers[i])
             {
                 auto fb_attachments = std::vector<VkImageView>{};
@@ -2566,127 +2608,28 @@ private:
     std::vector<MappedBuffer> staging_mapped_vertices;
     std::vector<MappedBuffer> staging_mapped_indices;
 
-    std::vector<AttachmentInfo> attachment_infos
-    {
-        AttachmentInfo{
-            .format = Format::USE_COLOR,
-            .use_samples = true,
-            .description = VkAttachmentDescription{
-                           //.format  = swapchain_image_format,
-                           //.samples        = physical_device_info.msaa_samples,
-                           .loadOp         = VK_ATTACHMENT_LOAD_OP_CLEAR,
-                           .storeOp        = VK_ATTACHMENT_STORE_OP_DONT_CARE, // not needed for storing, result is stored in color resolve
-                           .stencilLoadOp  = VK_ATTACHMENT_LOAD_OP_DONT_CARE,
-                           .stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
-                           .initialLayout  = VK_IMAGE_LAYOUT_UNDEFINED,
-                           .finalLayout    = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL}},
-        AttachmentInfo{
-            .format = Format::USE_DEPTH,
-            .use_samples = true,
-            .description = VkAttachmentDescription{
-                            //.format         = swapchain_image_format,
-                            //.samples        = VK_SAMPLE_COUNT_1_BIT,
-                            .loadOp         = VK_ATTACHMENT_LOAD_OP_CLEAR,
-                            .storeOp        = VK_ATTACHMENT_STORE_OP_DONT_CARE,
-                            .stencilLoadOp  = VK_ATTACHMENT_LOAD_OP_DONT_CARE,
-                            .stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
-                            .initialLayout  = VK_IMAGE_LAYOUT_UNDEFINED,
-                            .finalLayout    = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL}},
-        AttachmentInfo{
-            .format = Format::USE_COLOR,
-            .use_samples = false,
-            .description = VkAttachmentDescription{
-                            //.format       = depth_format,
-                            //.samples        = physical_device_info.msaa_samples,
-                            .loadOp         = VK_ATTACHMENT_LOAD_OP_DONT_CARE,
-                            .storeOp        = VK_ATTACHMENT_STORE_OP_STORE,
-                            .stencilLoadOp  = VK_ATTACHMENT_LOAD_OP_DONT_CARE,
-                            .stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
-                            .initialLayout  = VK_IMAGE_LAYOUT_UNDEFINED,
-                            .finalLayout    = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR}}
-    };
+    std::vector<AttachmentInfo> attachment_infos;
 
-    std::vector<Renderpass> renderpasses{Renderpass{
-        .attachments          = {0, 1, 2},
-        .subpasses            = {SubpassInfo{
-            .color_attachments = {VkAttachmentReference{0,
-                                                        VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL}},
-            .color_resolve_attachment
-            = VkAttachmentReference{2, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL},
-            .depth_stencil_attachment
-            = VkAttachmentReference{1, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL}}},
-        .subpass_dependencies = {
-            VkSubpassDependency{.srcSubpass    = VK_SUBPASS_EXTERNAL,
-                                .dstSubpass    = 0,
-                                .srcStageMask  = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
-                                .dstStageMask  = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
-                                .srcAccessMask = 0,
-                                .dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT
-                                                 | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT}}}};
+    std::vector<Renderpass> renderpasses;
 
     // need a way of handling the swapchain images
     // attachments that are used after this frame need to be double buffered etc (i.e. like
     // swapchain) if Store op is DONT_CARE, it doesn't need to be buffered
-    std::vector<Attachment> attachments{
-        Attachment{.format = Format::USE_COLOR, .use_samples = true},
-        Attachment{.format = Format::USE_DEPTH, .use_samples = true}};
+    std::vector<Attachment> attachments;
 
-    std::vector<std::vector<Framebuffer>> framebuffers{
-        std::vector<Framebuffer>{
-            Framebuffer{.renderpass  = 0,
-                        .attachments = {AttachmentHandle{.is_swapchain_image = 0, .id = 0},
-                                        AttachmentHandle{.is_swapchain_image = 0, .id = 1},
-                                        AttachmentHandle{.is_swapchain_image = 1, .id = 0}}}},
-        std::vector<Framebuffer>{
-            Framebuffer{.renderpass  = 0,
-                        .attachments = {AttachmentHandle{.is_swapchain_image = 0, .id = 0},
-                                        AttachmentHandle{.is_swapchain_image = 0, .id = 1},
-                                        AttachmentHandle{.is_swapchain_image = 1, .id = 0}}}},
-        std::vector<Framebuffer>{
-            Framebuffer{.renderpass  = 0,
-                        .attachments = {AttachmentHandle{.is_swapchain_image = 0, .id = 0},
-                                        AttachmentHandle{.is_swapchain_image = 0, .id = 1},
-                                        AttachmentHandle{.is_swapchain_image = 1, .id = 0}}}}};
+    std::vector<std::vector<Framebuffer>> framebuffers;
 
-    std::vector<UniformLayout> uniform_layouts{
-        UniformLayout{.binding       = {.binding            = 0,
-                                  .descriptorType     = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC,
-                                  .descriptorCount    = 1,
-                                  .stageFlags         = VK_SHADER_STAGE_VERTEX_BIT,
-                                  .pImmutableSamplers = nullptr},
-                      .uniform_count = 1}};
+    std::vector<UniformLayout> uniform_layouts;
 
-    std::vector<VkPushConstantRange> push_constants{
-        VkPushConstantRange{.stageFlags = VK_SHADER_STAGE_VERTEX_BIT,
-                            .offset     = 0,
-                            .size       = sizeof(glm::mat4)}};
+    std::vector<VkPushConstantRange> push_constants;
 
-    std::vector<VkVertexInputBindingDescription> vertex_bindings{
-        VkVertexInputBindingDescription{.binding   = 0,
-                                        .stride    = sizeof(Vertex),
-                                        .inputRate = VK_VERTEX_INPUT_RATE_VERTEX}};
+    std::vector<VkVertexInputBindingDescription> vertex_bindings;
 
-    std::vector<VkVertexInputAttributeDescription> vertex_attributes = {
-        VkVertexInputAttributeDescription{.binding  = 0,
-                                          .location = 0,
-                                          .format   = VK_FORMAT_R32G32B32_SFLOAT,
-                                          .offset   = offsetof(Vertex, pos)},
-        VkVertexInputAttributeDescription{.binding  = 0,
-                                          .location = 1,
-                                          .format   = VK_FORMAT_R32G32B32_SFLOAT,
-                                          .offset   = offsetof(Vertex, color)}};
+    std::vector<VkVertexInputAttributeDescription> vertex_attributes;
 
-    std::vector<Shader> shaders{Shader{.shader_name = "shaders/vert.spv"},
-                                Shader{.shader_name = "shaders/frag.spv"}};
+    std::vector<Shader> shaders;
 
-    std::vector<Pipeline> pipelines{Pipeline{.vertex_shader     = 0,
-                                             .fragment_shader   = 1,
-                                             .vertex_bindings   = {0},
-                                             .vertex_attributes = {0, 1},
-                                             .uniform_layouts   = {},
-                                             .push_constants    = {0},
-                                             .renderpass        = 0,
-                                             .subpass           = 0}};
+    std::vector<Pipeline> pipelines;
 
     std::vector<cmd::CommandBucket<int>> buckets;
 
