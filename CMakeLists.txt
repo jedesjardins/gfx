@@ -64,11 +64,29 @@ if(NOT glm_POPULATED)
 	add_subdirectory(${glm_SOURCE_DIR} ${glm_BINARY_DIR})
 endif()
 
+FetchContent_Declare(
+	rapidjson
+	GIT_REPOSITORY https://github.com/Tencent/rapidjson.git
+)
+
+FetchContent_GetProperties(rapidjson)
+if(NOT rapidjson_POPULATED)
+	FetchContent_Populate(rapidjson)
+	message(STATUS "rapidjson source dir: ${rapidjson_SOURCE_DIR}")
+	message(STATUS "rapidjson binary dir: ${rapidjson_BINARY_DIR}")
+	message(STATUS "rapidjson include dir: ${rapidjson_SOURCE_DIR}/include")
+
+	set(RAPIDJSON_BUILD_DOC OFF CACHE BOOL "" FORCE)
+	set(RAPIDJSON_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+	set(RAPIDJSON_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+	add_subdirectory(${rapidjson_SOURCE_DIR} ${rapidjson_BINARY_DIR})
+endif()
 
 add_library(Gfx INTERFACE)
 target_include_directories(Gfx
 	INTERFACE
 	$<BUILD_INTERFACE:${CMAKE_CURRENT_LIST_DIR}/include>
+	$<BUILD_INTERFACE:${rapidjson_SOURCE_DIR}/include>
 )
 
 find_package(vulkan REQUIRED)
