@@ -19,6 +19,8 @@
 
 #include "cmd/cmd.hpp"
 
+#include "rapidjson/document.h"
+
 struct Vertex
 {
     glm::vec3 pos;
@@ -49,6 +51,26 @@ struct Vertex
         return attributeDescriptions;
     }
 };
+
+std::vector<char> readFile(std::string const & filename)
+    {
+        std::ifstream file(filename, std::ios::ate | std::ios::binary);
+
+        if (!file.is_open())
+        {
+            throw std::runtime_error("failed to open file!");
+        }
+
+        size_t            fileSize = (size_t)file.tellg();
+        std::vector<char> buffer(fileSize);
+
+        file.seekg(0);
+        file.read(buffer.data(), fileSize);
+
+        file.close();
+
+        return buffer;
+    }
 
 namespace gfx
 {
@@ -239,6 +261,8 @@ struct Pipeline
 
 struct RenderConfig
 {
+    char const * config_filename;
+
     char const * window_name;
 
     size_t dynamic_vertices_count;
@@ -264,6 +288,43 @@ struct RenderConfig
     std::vector<Shader> shaders;
 
     std::vector<Pipeline> pipelines;
+
+    void init()
+    {
+        namespace rj = rapidjson;
+
+        rj::Document document;
+
+        auto config_json = readFile(config_filename);
+        config_json.push_back('\0');
+
+        if (document.Parse(config_json.data()).HasParseError())
+        {
+            std::cout << "\"" << config_json.data() << "\"\n";
+            std::cout << "Parse error\n";
+            return;
+        }
+        else
+        {
+            std::cout << "Parsed okay\n";
+        }
+
+        assert(document.IsObject());
+
+        assert(document.HasMember("window_name"));
+        assert(document["window_name"].IsString());
+        window_name = document["window_name"].GetString();
+
+        assert(document.HasMember("dynamic_vertices_count"));
+        assert(document["dynamic_vertices_count"].IsNumber());
+        assert(document["dynamic_vertices_count"].IsInt());
+        dynamic_vertices_count = document["dynamic_vertices_count"].GetInt();
+
+        assert(document.HasMember("dynamic_indices_count"));
+        assert(document["dynamic_indices_count"].IsString());
+        assert(document["dynamic_indices_count"].IsInt());
+        dynamic_indices_count = document["dynamic_indices_count"].GetInt();
+    }
 };
 
 struct Draw
@@ -1906,26 +1967,6 @@ private:
         }
 
         return VK_SUCCESS;
-    }
-
-    std::vector<char> readFile(std::string const & filename)
-    {
-        std::ifstream file(filename, std::ios::ate | std::ios::binary);
-
-        if (!file.is_open())
-        {
-            throw std::runtime_error("failed to open file!");
-        }
-
-        size_t            fileSize = (size_t)file.tellg();
-        std::vector<char> buffer(fileSize);
-
-        file.seekg(0);
-        file.read(buffer.data(), fileSize);
-
-        file.close();
-
-        return buffer;
     }
 
     // COMMAND POOL

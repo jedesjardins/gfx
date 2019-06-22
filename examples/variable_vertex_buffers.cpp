@@ -279,9 +279,7 @@ int main()
     auto render_device = gfx::RenderDevice{window};
 
     auto render_config = gfx::RenderConfig{
-        .window_name            = "Example",
-        .dynamic_vertices_count = 8,
-        .dynamic_indices_count  = 12,
+        .config_filename        = "../examples/example_renderer_config.json",
         .renderpasses           = {gfx::Renderpass{
             .attachments          = {0, 1, 2},
             .subpasses            = {gfx::SubpassInfo{
@@ -369,6 +367,8 @@ int main()
                                               .format   = VK_FORMAT_R32G32B32_SFLOAT,
                                               .offset   = offsetof(Vertex, color)}}};
 
+    render_config.init();
+
     if (!render_device.init(render_config))
     {
         throw std::runtime_error("Couldn't initialize Vulkan!");
@@ -445,7 +445,7 @@ int main()
 
         render_device.drawFrame(1, &view_handle);
 
-        std::cout << clock.Restart() << "\n";
+        //std::cout << clock.Restart() << "\n";
     }
 
     render_device.waitForIdle();
