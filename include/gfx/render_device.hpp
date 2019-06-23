@@ -321,7 +321,7 @@ struct RenderConfig
         dynamic_vertices_count = document["dynamic_vertices_count"].GetInt();
 
         assert(document.HasMember("dynamic_indices_count"));
-        assert(document["dynamic_indices_count"].IsString());
+        assert(document["dynamic_indices_count"].IsNumber());
         assert(document["dynamic_indices_count"].IsInt());
         dynamic_indices_count = document["dynamic_indices_count"].GetInt();
     }
@@ -381,6 +381,7 @@ public:
             return false;
         }
 
+        std::cout << use_validation << std::endl;
         if (use_validation && createDebugMessenger() != VK_SUCCESS)
         {
             return false;

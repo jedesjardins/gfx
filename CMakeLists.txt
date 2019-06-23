@@ -7,6 +7,10 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 option(GFX_BUILD_EXAMPLES "Build documentation examples" OFF)
 option(GFX_BUILD_TESTS "Build documentation tests" OFF)
 
+if(NOT CMAKE_BUILD_TYPE)
+    set(CMAKE_BUILD_TYPE "DEBUG" CACHE STRING "Choose the type of build, options are: Debug Release RelWithDebInfo MinSizeRel." FORCE)
+endif()
+
 include(FetchContent)
 
 FetchContent_Declare(
