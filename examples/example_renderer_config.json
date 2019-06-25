@@ -13,6 +13,13 @@
 			"multisampled": true
 		}
 	],
+	"framebuffers":
+	[
+		{
+			"renderpass": 0,
+			"attachments": [0, 1, -1]
+		}
+	],
 	"attachment_infos":
 	[
 		{

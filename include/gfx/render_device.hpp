@@ -169,8 +169,7 @@ VkAttachmentLoadOp getVkAttachmentLoadOp(std::string const & op_name)
 VkAttachmentStoreOp getVkAttachmentStoreOp(std::string const & op_name)
 {
     static std::unordered_map<std::string, VkAttachmentStoreOp> ops{
-        {"STORE", VK_ATTACHMENT_STORE_OP_STORE},
-        {"DONT_CARE", VK_ATTACHMENT_STORE_OP_DONT_CARE}};
+        {"STORE", VK_ATTACHMENT_STORE_OP_STORE}, {"DONT_CARE", VK_ATTACHMENT_STORE_OP_DONT_CARE}};
 
     auto op = ops.find(op_name);
     assert(op != ops.end());
@@ -250,7 +249,8 @@ private:
         if (document.HasMember("stencil_load_op"))
         {
             assert(document["stencil_load_op"].IsString());
-            description.stencilLoadOp = getVkAttachmentLoadOp(document["stencil_load_op"].GetString());
+            description.stencilLoadOp = getVkAttachmentLoadOp(
+                document["stencil_load_op"].GetString());
         }
         else
         {
@@ -260,7 +260,8 @@ private:
         if (document.HasMember("stencil_store_op"))
         {
             assert(document["stencil_store_op"].IsString());
-            description.stencilStoreOp = getVkAttachmentStoreOp(document["stencil_store_op"].GetString());
+            description.stencilStoreOp = getVkAttachmentStoreOp(
+                document["stencil_store_op"].GetString());
         }
         else
         {
@@ -662,12 +663,43 @@ private:
 
 struct Framebuffer
 {
+public:
     RenderpassHandle              renderpass;
     std::vector<AttachmentHandle> attachments;
     uint32_t                      width;
     uint32_t                      height;
     uint32_t                      depth;
     VkFramebuffer                 vk_framebuffer;
+
+    void init(rapidjson::Value & document)
+    {
+        assert(document.IsObject());
+
+        assert(document.HasMember("renderpass"));
+        assert(document["renderpass"].IsInt());
+        renderpass = document["renderpass"].GetInt();
+
+        assert(document.HasMember("attachments"));
+        assert(document["attachments"].IsArray());
+
+        for (auto const & attachment: document["attachments"].GetArray())
+        {
+            assert(attachment.IsInt());
+            int64_t attachment_id = attachment.GetInt();
+
+            if (attachment_id == -1)
+            {
+                attachments.push_back(gfx::AttachmentHandle{.is_swapchain_image = 1, .id = 0});
+            }
+            else
+            {
+                attachments.push_back(gfx::AttachmentHandle{
+                    .is_swapchain_image = 0, .id = static_cast<uint64_t>(attachment_id)});
+            }
+        }
+    }
+
+private:
 };
 
 struct MappedBuffer
@@ -873,6 +905,16 @@ struct RenderConfig
             Attachment attachment{};
             attachment.init(rp);
             attachments.push_back(attachment);
+        }
+
+        assert(document.HasMember("framebuffers"));
+        assert(document["framebuffers"].IsArray());
+
+        for (auto & fb: document["framebuffers"].GetArray())
+        {
+            Framebuffer framebuffer{};
+            framebuffer.init(fb);
+            framebuffers.push_back(framebuffer);
         }
     }
 };

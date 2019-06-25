@@ -298,11 +298,6 @@ int main()
                                         .push_constants    = {0},
                                         .renderpass        = 0,
                                         .subpass           = 0}},
-            .framebuffers = {gfx::Framebuffer{
-                .renderpass  = 0,
-                .attachments = {gfx::AttachmentHandle{.is_swapchain_image = 0, .id = 0},
-                                gfx::AttachmentHandle{.is_swapchain_image = 0, .id = 1},
-                                gfx::AttachmentHandle{.is_swapchain_image = 1, .id = 0}}}},
             .push_constants    = {VkPushConstantRange{
                 .stageFlags = VK_SHADER_STAGE_VERTEX_BIT, .offset = 0, .size = sizeof(glm::mat4)}},
             .vertex_bindings   = {VkVertexInputBindingDescription{
