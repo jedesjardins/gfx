@@ -2,6 +2,17 @@
 	"window_name": "Example Window",
 	"dynamic_vertices_count": 8,
 	"dynamic_indices_count": 12,
+	"attachments":
+	[
+		{
+			"format": "color",
+			"multisampled": true
+		},
+		{
+			"format": "depth",
+			"multisampled": true
+		}
+	],
 	"attachment_infos":
 	[
 		{

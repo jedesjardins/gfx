@@ -298,8 +298,6 @@ int main()
                                         .push_constants    = {0},
                                         .renderpass        = 0,
                                         .subpass           = 0}},
-            .attachments  = {gfx::Attachment{.format = gfx::Format::USE_COLOR, .use_samples = true},
-                            gfx::Attachment{.format = gfx::Format::USE_DEPTH, .use_samples = true}},
             .framebuffers = {gfx::Framebuffer{
                 .renderpass  = 0,
                 .attachments = {gfx::AttachmentHandle{.is_swapchain_image = 0, .id = 0},

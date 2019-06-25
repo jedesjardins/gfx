@@ -279,6 +279,37 @@ struct Attachment
     VkDeviceMemory vk_image_memory{VK_NULL_HANDLE};
     VkImage        vk_image{VK_NULL_HANDLE};
     VkImageView    vk_image_view{VK_NULL_HANDLE};
+
+    void init(rapidjson::Value & document)
+    {
+        assert(document.IsObject());
+
+        assert(document.HasMember("format"));
+        assert(document["format"].IsString());
+        char const * format_str = document["format"].GetString();
+        if (strcmp(format_str, "color") == 0)
+        {
+            format = Format::USE_COLOR;
+        }
+        else if (strcmp(format_str, "depth") == 0)
+        {
+            format = Format::USE_DEPTH;
+        }
+
+        assert(document.HasMember("multisampled"));
+        assert(document["multisampled"].IsBool());
+        use_samples = document["multisampled"].GetBool();
+    }
+
+    friend bool operator==(Attachment const & lhs, Attachment const & rhs)
+    {
+        return lhs.format == rhs.format && lhs.use_samples == rhs.use_samples;
+    }
+
+    friend bool operator!=(Attachment const & lhs, Attachment const & rhs)
+    {
+        return !(lhs == rhs);
+    }
 };
 
 bool operator==(VkAttachmentReference const & lhs, VkAttachmentReference const & rhs)
@@ -832,6 +863,16 @@ struct RenderConfig
             AttachmentInfo attachment_info{};
             attachment_info.init(rp);
             attachment_infos.push_back(attachment_info);
+        }
+
+        assert(document.HasMember("attachments"));
+        assert(document["attachments"].IsArray());
+
+        for (auto & rp: document["attachments"].GetArray())
+        {
+            Attachment attachment{};
+            attachment.init(rp);
+            attachments.push_back(attachment);
         }
     }
 };

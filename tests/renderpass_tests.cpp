@@ -289,3 +289,48 @@ TEST_CASE("AttachmentInfos can be initialized from json")
 
     REQUIRE(json_attachment_info == first_attachment_info);
 }
+
+TEST_CASE("Attachments can be compared")
+{
+    auto first_attachment = gfx::Attachment{
+        .format = gfx::Format::USE_COLOR,
+        .use_samples = true
+    };
+
+    auto second_attachment = gfx::Attachment{
+        .format = gfx::Format::USE_COLOR,
+        .use_samples = true
+    };
+
+    auto third_attachment = gfx::Attachment{
+        .format = gfx::Format::USE_COLOR,
+        .use_samples = false
+    };
+
+    REQUIRE(first_attachment == second_attachment);
+    REQUIRE(first_attachment != third_attachment);
+}
+
+TEST_CASE("Attachments can be initialized from json")
+{
+    std::string json = R"(
+        {
+            "format": "color",
+            "multisampled": true
+        }
+    )";
+
+    rapidjson::Document document;
+
+    REQUIRE(!document.Parse(json.c_str()).HasParseError());
+
+    gfx::Attachment json_attachment;
+    json_attachment.init(document);
+
+    auto first_attachment = gfx::Attachment{
+        .format = gfx::Format::USE_COLOR,
+        .use_samples = true
+    };
+
+    REQUIRE(json_attachment == first_attachment);
+}
