@@ -107,11 +107,168 @@ enum class Format
     USE_COLOR
 };
 
+bool operator==(VkAttachmentDescription const & lhs, VkAttachmentDescription const & rhs)
+{
+    return lhs.flags == rhs.flags && lhs.format == rhs.format && lhs.samples == rhs.samples
+           && lhs.loadOp == rhs.loadOp && lhs.storeOp == rhs.storeOp
+           && lhs.stencilLoadOp == rhs.stencilLoadOp && lhs.stencilStoreOp == rhs.stencilStoreOp
+           && lhs.initialLayout == rhs.initialLayout && lhs.finalLayout == rhs.finalLayout;
+}
+
+bool operator!=(VkAttachmentDescription const & lhs, VkAttachmentDescription const & rhs)
+{
+    return !(lhs == rhs);
+}
+
+VkImageLayout getVkImageLayout(std::string const & layout_name)
+{
+    static std::unordered_map<std::string, VkImageLayout> layouts{
+        {"UNDEFINED", VK_IMAGE_LAYOUT_UNDEFINED},
+        {"GENERAL", VK_IMAGE_LAYOUT_GENERAL},
+        {"COLOR_ATTACHMENT_OPTIMAL", VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL},
+        {"DEPTH_STENCIL_ATTACHMENT_OPTIMAL", VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL},
+        {"DEPTH_STENCIL_READ_ONLY_OPTIMAL", VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL},
+        {"SHADER_READ_ONLY_OPTIMAL", VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL},
+        {"TRANSFER_SRC_OPTIMAL", VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL},
+        {"TRANSFER_DST_OPTIMAL", VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL},
+        {"PREINITIALIZED", VK_IMAGE_LAYOUT_PREINITIALIZED},
+        {"DEPTH_READ_ONLY_STENCIL_ATTACHMENT_OPTIMAL",
+         VK_IMAGE_LAYOUT_DEPTH_READ_ONLY_STENCIL_ATTACHMENT_OPTIMAL},
+        {"DEPTH_ATTACHMENT_STENCIL_READ_ONLY_OPTIMAL",
+         VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_STENCIL_READ_ONLY_OPTIMAL},
+        {"PRESENT_SRC_KHR", VK_IMAGE_LAYOUT_PRESENT_SRC_KHR},
+        {"SHARED_PRESENT_KHR", VK_IMAGE_LAYOUT_SHARED_PRESENT_KHR}};
+
+    auto layout = layouts.find(layout_name);
+    assert(layout != layouts.end());
+    if (layout == layouts.end())
+    {
+        // return static_cast<VkPipelineStageFlagBits>(0);
+    }
+
+    return layout->second;
+}
+
+VkAttachmentLoadOp getVkAttachmentLoadOp(std::string const & op_name)
+{
+    static std::unordered_map<std::string, VkAttachmentLoadOp> ops{
+        {"LOAD", VK_ATTACHMENT_LOAD_OP_LOAD},
+        {"CLEAR", VK_ATTACHMENT_LOAD_OP_CLEAR},
+        {"DONT_CARE", VK_ATTACHMENT_LOAD_OP_DONT_CARE}};
+
+    auto op = ops.find(op_name);
+    assert(op != ops.end());
+    if (op == ops.end())
+    {
+        // return static_cast<VkPipelineStageFlagBits>(0);
+    }
+
+    return op->second;
+}
+
+VkAttachmentStoreOp getVkAttachmentStoreOp(std::string const & op_name)
+{
+    static std::unordered_map<std::string, VkAttachmentStoreOp> ops{
+        {"STORE", VK_ATTACHMENT_STORE_OP_STORE},
+        {"DONT_CARE", VK_ATTACHMENT_STORE_OP_DONT_CARE}};
+
+    auto op = ops.find(op_name);
+    assert(op != ops.end());
+    if (op == ops.end())
+    {
+        // return static_cast<VkPipelineStageFlagBits>(0);
+    }
+
+    return op->second;
+}
+
 struct AttachmentInfo
 {
     VkAttachmentDescription description;
     Format                  format;
     bool                    use_samples;
+
+    void init(rapidjson::Value & document)
+    {
+        assert(document.IsObject());
+
+        assert(document.HasMember("format"));
+        assert(document["format"].IsString());
+        char const * format_str = document["format"].GetString();
+        if (strcmp(format_str, "color") == 0)
+        {
+            format = Format::USE_COLOR;
+        }
+        else if (strcmp(format_str, "depth") == 0)
+        {
+            format = Format::USE_DEPTH;
+        }
+
+        assert(document.HasMember("multisampled"));
+        assert(document["multisampled"].IsBool());
+        use_samples = document["multisampled"].GetBool();
+
+        assert(document.HasMember("description"));
+        assert(document["description"].IsObject());
+        description = initAttachmentDescription(document["description"]);
+    }
+
+    friend bool operator==(AttachmentInfo const & lhs, AttachmentInfo const & rhs)
+    {
+        return lhs.format == rhs.format && lhs.use_samples == rhs.use_samples
+               && lhs.description == rhs.description;
+    }
+
+    friend bool operator!=(AttachmentInfo const & lhs, AttachmentInfo const & rhs)
+    {
+        return !(lhs == rhs);
+    }
+
+private:
+    VkAttachmentDescription initAttachmentDescription(rapidjson::Value const & document)
+    {
+        assert(document.IsObject());
+
+        VkAttachmentDescription description{};
+
+        assert(document.HasMember("initial_layout"));
+        assert(document["initial_layout"].IsString());
+        description.initialLayout = getVkImageLayout(document["initial_layout"].GetString());
+
+        assert(document.HasMember("final_layout"));
+        assert(document["final_layout"].IsString());
+        description.finalLayout = getVkImageLayout(document["final_layout"].GetString());
+
+        assert(document.HasMember("load_op"));
+        assert(document["load_op"].IsString());
+        description.loadOp = getVkAttachmentLoadOp(document["load_op"].GetString());
+
+        assert(document.HasMember("store_op"));
+        assert(document["store_op"].IsString());
+        description.storeOp = getVkAttachmentStoreOp(document["store_op"].GetString());
+
+        if (document.HasMember("stencil_load_op"))
+        {
+            assert(document["stencil_load_op"].IsString());
+            description.stencilLoadOp = getVkAttachmentLoadOp(document["stencil_load_op"].GetString());
+        }
+        else
+        {
+            description.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+        }
+
+        if (document.HasMember("stencil_store_op"))
+        {
+            assert(document["stencil_store_op"].IsString());
+            description.stencilStoreOp = getVkAttachmentStoreOp(document["stencil_store_op"].GetString());
+        }
+        else
+        {
+            description.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+        }
+
+        return description;
+    }
 };
 
 struct Attachment
@@ -201,35 +358,6 @@ public:
     VkAttachmentReference              depth_stencil_attachment;
 
 private:
-    VkImageLayout getVkImageLayout(std::string const & layout_name)
-    {
-        static std::unordered_map<std::string, VkImageLayout> layouts = {
-            {"UNDEFINED", VK_IMAGE_LAYOUT_UNDEFINED},
-            {"GENERAL", VK_IMAGE_LAYOUT_GENERAL},
-            {"COLOR_ATTACHMENT_OPTIMAL", VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL},
-            {"DEPTH_STENCIL_ATTACHMENT_OPTIMAL", VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL},
-            {"DEPTH_STENCIL_READ_ONLY_OPTIMAL", VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL},
-            {"SHADER_READ_ONLY_OPTIMAL", VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL},
-            {"TRANSFER_SRC_OPTIMAL", VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL},
-            {"TRANSFER_DST_OPTIMAL", VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL},
-            {"PREINITIALIZED", VK_IMAGE_LAYOUT_PREINITIALIZED},
-            {"DEPTH_READ_ONLY_STENCIL_ATTACHMENT_OPTIMAL",
-             VK_IMAGE_LAYOUT_DEPTH_READ_ONLY_STENCIL_ATTACHMENT_OPTIMAL},
-            {"DEPTH_ATTACHMENT_STENCIL_READ_ONLY_OPTIMAL",
-             VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_STENCIL_READ_ONLY_OPTIMAL},
-            {"PRESENT_SRC_KHR", VK_IMAGE_LAYOUT_PRESENT_SRC_KHR},
-            {"SHARED_PRESENT_KHR", VK_IMAGE_LAYOUT_SHARED_PRESENT_KHR}};
-
-        auto layout = layouts.find(layout_name);
-        assert(layout != layouts.end());
-        if (layout == layouts.end())
-        {
-            // return static_cast<VkPipelineStageFlagBits>(0);
-        }
-
-        return layout->second;
-    }
-
     VkAttachmentReference initAttachmentReference(rapidjson::Value & document)
     {
         assert(document.IsObject());
@@ -691,10 +819,19 @@ struct RenderConfig
 
         for (auto & rp: document["renderpasses"].GetArray())
         {
-            assert(rp.IsObject());
             Renderpass renderpass{};
             renderpass.init(rp);
             renderpasses.push_back(renderpass);
+        }
+
+        assert(document.HasMember("attachment_infos"));
+        assert(document["attachment_infos"].IsArray());
+
+        for (auto & rp: document["attachment_infos"].GetArray())
+        {
+            AttachmentInfo attachment_info{};
+            attachment_info.init(rp);
+            attachment_infos.push_back(attachment_info);
         }
     }
 };

@@ -211,3 +211,81 @@ TEST_CASE("Renderpasses can be initialized from json")
 
     REQUIRE(json_renderpass == first_renderpass);
 }
+
+TEST_CASE("AttachmentInfos can be compared")
+{
+    auto first_attachment_info = gfx::AttachmentInfo{
+        .format = gfx::Format::USE_COLOR,
+        .use_samples = true,
+        .description = {
+            .loadOp = VK_ATTACHMENT_LOAD_OP_LOAD,
+            .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
+            .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+            .finalLayout = VK_IMAGE_LAYOUT_UNDEFINED
+        }
+    };
+
+    auto second_attachment_info = gfx::AttachmentInfo{
+        .format = gfx::Format::USE_COLOR,
+        .use_samples = true,
+        .description = {
+            .loadOp = VK_ATTACHMENT_LOAD_OP_LOAD,
+            .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
+            .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+            .finalLayout = VK_IMAGE_LAYOUT_UNDEFINED
+        }
+    };
+
+    auto third_attachment_info = gfx::AttachmentInfo{
+        .format = gfx::Format::USE_COLOR,
+        .use_samples = true,
+        .description = {
+            .loadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE,
+            .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
+            .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+            .finalLayout = VK_IMAGE_LAYOUT_UNDEFINED
+        }
+    };
+
+    REQUIRE(first_attachment_info == second_attachment_info);
+    REQUIRE(first_attachment_info != third_attachment_info);
+}
+
+TEST_CASE("AttachmentInfos can be initialized from json")
+{
+    std::string json = R"(
+        {
+            "format": "color",
+            "multisampled": true,
+            "description":
+            {
+                "load_op": "LOAD",
+                "store_op": "STORE",
+                "initial_layout": "UNDEFINED",
+                "final_layout": "UNDEFINED"
+            }
+        }
+    )";
+
+    rapidjson::Document document;
+
+    REQUIRE(!document.Parse(json.c_str()).HasParseError());
+
+    gfx::AttachmentInfo json_attachment_info;
+    json_attachment_info.init(document);
+
+    auto first_attachment_info = gfx::AttachmentInfo{
+        .format = gfx::Format::USE_COLOR,
+        .use_samples = true,
+        .description = {
+            .loadOp = VK_ATTACHMENT_LOAD_OP_LOAD,
+            .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
+            .stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE,
+            .stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
+            .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+            .finalLayout = VK_IMAGE_LAYOUT_UNDEFINED
+        }
+    };
+
+    REQUIRE(json_attachment_info == first_attachment_info);
+}

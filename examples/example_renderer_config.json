@@ -2,6 +2,42 @@
 	"window_name": "Example Window",
 	"dynamic_vertices_count": 8,
 	"dynamic_indices_count": 12,
+	"attachment_infos":
+	[
+		{
+			"format": "color",
+			"multisampled": true,
+			"description":
+			{
+				"load_op": "CLEAR",
+				"store_op": "DONT_CARE",
+				"initial_layout": "UNDEFINED",
+				"final_layout": "COLOR_ATTACHMENT_OPTIMAL"
+			}
+		},
+		{
+			"format": "depth",
+			"multisampled": true,
+			"description":
+			{
+				"load_op": "CLEAR",
+				"store_op": "DONT_CARE",
+				"initial_layout": "UNDEFINED",
+				"final_layout": "DEPTH_STENCIL_ATTACHMENT_OPTIMAL"
+			}
+		},
+		{
+			"format": "color",
+			"multisampled": false,
+			"description":
+			{
+				"load_op": "DONT_CARE",
+				"store_op": "STORE",
+				"initial_layout": "UNDEFINED",
+				"final_layout": "PRESENT_SRC_KHR"
+			}
+		}
+	],
 	"renderpasses":
 	[
 		{

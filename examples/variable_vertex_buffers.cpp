@@ -298,41 +298,6 @@ int main()
                                         .push_constants    = {0},
                                         .renderpass        = 0,
                                         .subpass           = 0}},
-            .attachment_infos
-            = {gfx::AttachmentInfo{
-                   .format      = gfx::Format::USE_COLOR,
-                   .use_samples = true,
-                   .description
-                   = VkAttachmentDescription{.loadOp         = VK_ATTACHMENT_LOAD_OP_CLEAR,
-                                             .storeOp        = VK_ATTACHMENT_STORE_OP_DONT_CARE,
-                                             .stencilLoadOp  = VK_ATTACHMENT_LOAD_OP_DONT_CARE,
-                                             .stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
-                                             .initialLayout  = VK_IMAGE_LAYOUT_UNDEFINED,
-                                             .finalLayout
-                                             = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL}},
-               gfx::AttachmentInfo{
-                   .format = gfx::Format::USE_DEPTH,
-                   .use_samples
-                   = true,
-                   .description
-                   = VkAttachmentDescription{.loadOp         = VK_ATTACHMENT_LOAD_OP_CLEAR,
-                                             .storeOp        = VK_ATTACHMENT_STORE_OP_DONT_CARE,
-                                             .stencilLoadOp  = VK_ATTACHMENT_LOAD_OP_DONT_CARE,
-                                             .stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
-                                             .initialLayout  = VK_IMAGE_LAYOUT_UNDEFINED,
-                                             .finalLayout
-                                             = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL}},
-               gfx::AttachmentInfo{
-                   .format = gfx::Format::USE_COLOR,
-                   .use_samples
-                   = false,
-                   .description
-                   = VkAttachmentDescription{.loadOp         = VK_ATTACHMENT_LOAD_OP_DONT_CARE,
-                                             .storeOp        = VK_ATTACHMENT_STORE_OP_STORE,
-                                             .stencilLoadOp  = VK_ATTACHMENT_LOAD_OP_DONT_CARE,
-                                             .stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
-                                             .initialLayout  = VK_IMAGE_LAYOUT_UNDEFINED,
-                                             .finalLayout    = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR}}},
             .attachments  = {gfx::Attachment{.format = gfx::Format::USE_COLOR, .use_samples = true},
                             gfx::Attachment{.format = gfx::Format::USE_DEPTH, .use_samples = true}},
             .framebuffers = {gfx::Framebuffer{
