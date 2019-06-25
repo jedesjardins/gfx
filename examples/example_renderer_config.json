@@ -120,5 +120,13 @@
 			"offset": 0,
 			"size": 64
 		}
+	],
+	"vertex_bindings":
+	[
+		{
+			"binding": 0,
+			"stride": 24,
+			"input_rate": "PER_VERTEX"
+		}
 	]
 }

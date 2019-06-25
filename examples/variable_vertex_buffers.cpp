@@ -280,8 +280,6 @@ int main()
 
     auto render_config = gfx::RenderConfig{
         .config_filename = "../examples/example_renderer_config.json",
-        .vertex_bindings = {VkVertexInputBindingDescription{
-            .binding = 0, .stride = sizeof(Vertex), .inputRate = VK_VERTEX_INPUT_RATE_VERTEX}},
         .vertex_attributes
         = {VkVertexInputAttributeDescription{.binding  = 0,
                                              .location = 0,

@@ -912,7 +912,6 @@ VkPushConstantRange initVkPushConstantRange(rapidjson::Value & document)
     assert(document["stage"].IsString());
     push_constant.stageFlags = getVkShaderStageFlagBit(document["stage"].GetString());
 
-
     assert(document.HasMember("offset"));
     assert(document["offset"].IsInt());
     push_constant.offset = document["offset"].GetInt();
@@ -922,6 +921,35 @@ VkPushConstantRange initVkPushConstantRange(rapidjson::Value & document)
     push_constant.size = document["size"].GetInt();
 
     return push_constant;
+}
+
+VkVertexInputBindingDescription initVkVertexInputBindingDescription(rapidjson::Value & document)
+{
+    assert(document.IsObject());
+
+    VkVertexInputBindingDescription vertex_binding;
+
+    assert(document.HasMember("binding"));
+    assert(document["binding"].IsInt());
+    vertex_binding.binding = document["binding"].GetInt();
+
+    assert(document.HasMember("stride"));
+    assert(document["stride"].IsInt());
+    vertex_binding.stride = document["stride"].GetInt();
+
+    assert(document.HasMember("input_rate"));
+    assert(document["input_rate"].IsString());
+    std::string input_rate = document["input_rate"].GetString();
+    if (strcmp(input_rate.c_str(), "PER_VERTEX") == 0)
+    {
+        vertex_binding.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
+    }
+    else if (strcmp(input_rate.c_str(), "PER_INSTANCE") == 0)
+    {
+        vertex_binding.inputRate = VK_VERTEX_INPUT_RATE_INSTANCE;
+    }
+
+    return vertex_binding;
 }
 
 struct RenderConfig
@@ -1057,6 +1085,16 @@ struct RenderConfig
         {
             VkPushConstantRange push_constant = initVkPushConstantRange(pc);
             push_constants.push_back(push_constant);
+        }
+
+        assert(document.HasMember("vertex_bindings"));
+        assert(document["vertex_bindings"].IsArray());
+
+        for (auto & vb: document["vertex_bindings"].GetArray())
+        {
+            VkVertexInputBindingDescription vertex_binding = initVkVertexInputBindingDescription(
+                vb);
+            vertex_bindings.push_back(vertex_binding);
         }
     }
 };
