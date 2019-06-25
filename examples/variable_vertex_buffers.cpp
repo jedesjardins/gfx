@@ -332,6 +332,9 @@ int main()
 
     clock.Clear();
 
+    std::vector<double> frame_times{10, 16.6};
+    uint32_t            frameIndex{0};
+
     while (!glfwWindowShouldClose(window))
     {
         glfwPollEvents();
@@ -359,7 +362,15 @@ int main()
 
         render_device.drawFrame(1, &view_handle);
 
-        // std::cout << clock.Restart() << "\n";
+        frame_times[++frameIndex % frame_times.size()] = clock.Restart();
+
+        double avg_time = 0;
+        for (double frame_time: frame_times)
+        {
+            avg_time += frame_time;
+        }
+
+        //std::cout << avg_time/frame_times.size() << "\n";
     }
 
     render_device.waitForIdle();
