@@ -737,6 +737,27 @@ struct DynamicUniformBuffer
     std::vector<MappedBuffer> uniform_buffers;
 };
 
+VkShaderStageFlagBits getVkShaderStageFlagBit(std::string const & flag_name)
+{
+    static std::unordered_map<std::string, VkShaderStageFlagBits> flags{
+        {"VERTEX", VK_SHADER_STAGE_VERTEX_BIT},
+        {"FRAGMENT", VK_SHADER_STAGE_FRAGMENT_BIT},
+        {"COMPUTE", VK_SHADER_STAGE_COMPUTE_BIT},
+        {"TESSELLATION_CONTROL", VK_SHADER_STAGE_TESSELLATION_CONTROL_BIT},
+        {"TESSELLATION_EVALUATION", VK_SHADER_STAGE_TESSELLATION_EVALUATION_BIT},
+        {"ALL_GRAPHICS", VK_SHADER_STAGE_ALL_GRAPHICS},
+        {"ALL", VK_SHADER_STAGE_ALL}};
+
+    auto flag = flags.find(flag_name);
+    assert(flag != flags.end());
+    if (flag == flags.end())
+    {
+        // return static_cast<VkPipelineStageFlagBits>(0);
+    }
+
+    return flag->second;
+}
+
 struct UniformLayout
 {
     VkDescriptorSetLayoutBinding binding;
@@ -791,6 +812,7 @@ struct UniformLayout
 
         return uniform;
     }
+
 private:
     VkDescriptorSetLayoutBinding initVkDescriptorSetLayoutBinding(rapidjson::Value & document)
     {
@@ -817,7 +839,7 @@ private:
         return layout;
     }
 
-    VkDescriptorType getVkDescriptorType(std::string const& type_name)
+    VkDescriptorType getVkDescriptorType(std::string const & type_name)
     {
         static std::unordered_map<std::string, VkDescriptorType> types{
             {"SAMPLER", VK_DESCRIPTOR_TYPE_SAMPLER},
@@ -832,8 +854,7 @@ private:
             {"STORAGE_BUFFER_DYNAMIC", VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC},
             {"INPUT_ATTACHMENT", VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT},
             {"SAMPLED_IMAGE", VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE},
-            {"SAMPLED_IMAGE", VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE}
-        };
+            {"SAMPLED_IMAGE", VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE}};
 
         auto type = types.find(type_name);
         assert(type != types.end());
@@ -843,28 +864,6 @@ private:
         }
 
         return type->second;
-    }
-
-    VkShaderStageFlagBits getVkShaderStageFlagBit(std::string const& flag_name)
-    {
-        static std::unordered_map<std::string, VkShaderStageFlagBits> flags{
-            {"VERTEX", VK_SHADER_STAGE_VERTEX_BIT},
-            {"FRAGMENT", VK_SHADER_STAGE_FRAGMENT_BIT},
-            {"COMPUTE", VK_SHADER_STAGE_COMPUTE_BIT},
-            {"TESSELLATION_CONTROL", VK_SHADER_STAGE_TESSELLATION_CONTROL_BIT},
-            {"TESSELLATION_EVALUATION", VK_SHADER_STAGE_TESSELLATION_EVALUATION_BIT},
-            {"ALL_GRAPHICS", VK_SHADER_STAGE_ALL_GRAPHICS},
-            {"ALL", VK_SHADER_STAGE_ALL}
-        };
-
-        auto flag = flags.find(flag_name);
-        assert(flag != flags.end());
-        if (flag == flags.end())
-        {
-            // return static_cast<VkPipelineStageFlagBits>(0);
-        }
-
-        return flag->second;
     }
 };
 
@@ -902,6 +901,28 @@ struct Pipeline
     VkPipeline       vk_pipeline;
     VkPipelineLayout vk_pipeline_layout;
 };
+
+VkPushConstantRange initVkPushConstantRange(rapidjson::Value & document)
+{
+    assert(document.IsObject());
+
+    VkPushConstantRange push_constant;
+
+    assert(document.HasMember("stage"));
+    assert(document["stage"].IsString());
+    push_constant.stageFlags = getVkShaderStageFlagBit(document["stage"].GetString());
+
+
+    assert(document.HasMember("offset"));
+    assert(document["offset"].IsInt());
+    push_constant.offset = document["offset"].GetInt();
+
+    assert(document.HasMember("size"));
+    assert(document["size"].IsInt());
+    push_constant.size = document["size"].GetInt();
+
+    return push_constant;
+}
 
 struct RenderConfig
 {
@@ -1029,6 +1050,14 @@ struct RenderConfig
             uniform_layouts.push_back(layout);
         }
 
+        assert(document.HasMember("push_constants"));
+        assert(document["push_constants"].IsArray());
+
+        for (auto & pc: document["push_constants"].GetArray())
+        {
+            VkPushConstantRange push_constant = initVkPushConstantRange(pc);
+            push_constants.push_back(push_constant);
+        }
     }
 };
 

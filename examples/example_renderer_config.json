@@ -112,5 +112,13 @@
 			"stage": "VERTEX",
 			"uniform_count": 1
 		}
+	],
+	"push_constants":
+	[
+		{
+			"stage": "VERTEX",
+			"offset": 0,
+			"size": 64
+		}
 	]
 }

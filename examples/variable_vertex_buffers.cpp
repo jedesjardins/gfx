@@ -278,30 +278,27 @@ int main()
 
     auto render_device = gfx::RenderDevice{window};
 
-    auto render_config
-        = gfx::RenderConfig{
-            .config_filename = "../examples/example_renderer_config.json",
-            .pipelines       = {gfx::Pipeline{.vertex_shader     = 0,
-                                        .fragment_shader   = 1,
-                                        .vertex_bindings   = {0},
-                                        .vertex_attributes = {0, 1},
-                                        .uniform_layouts   = {},
-                                        .push_constants    = {0},
-                                        .renderpass        = 0,
-                                        .subpass           = 0}},
-            .push_constants    = {VkPushConstantRange{
-                .stageFlags = VK_SHADER_STAGE_VERTEX_BIT, .offset = 0, .size = sizeof(glm::mat4)}},
-            .vertex_bindings   = {VkVertexInputBindingDescription{
-                .binding = 0, .stride = sizeof(Vertex), .inputRate = VK_VERTEX_INPUT_RATE_VERTEX}},
-            .vertex_attributes = {
-                VkVertexInputAttributeDescription{.binding  = 0,
-                                                  .location = 0,
-                                                  .format   = VK_FORMAT_R32G32B32_SFLOAT,
-                                                  .offset   = offsetof(Vertex, pos)},
-                VkVertexInputAttributeDescription{.binding  = 0,
-                                                  .location = 1,
-                                                  .format   = VK_FORMAT_R32G32B32_SFLOAT,
-                                                  .offset   = offsetof(Vertex, color)}}};
+    auto render_config = gfx::RenderConfig{
+        .config_filename = "../examples/example_renderer_config.json",
+        .vertex_bindings = {VkVertexInputBindingDescription{
+            .binding = 0, .stride = sizeof(Vertex), .inputRate = VK_VERTEX_INPUT_RATE_VERTEX}},
+        .vertex_attributes
+        = {VkVertexInputAttributeDescription{.binding  = 0,
+                                             .location = 0,
+                                             .format   = VK_FORMAT_R32G32B32_SFLOAT,
+                                             .offset   = offsetof(Vertex, pos)},
+           VkVertexInputAttributeDescription{.binding  = 0,
+                                             .location = 1,
+                                             .format   = VK_FORMAT_R32G32B32_SFLOAT,
+                                             .offset   = offsetof(Vertex, color)}},
+        .pipelines = {gfx::Pipeline{.vertex_shader     = 0,
+                                    .fragment_shader   = 1,
+                                    .vertex_bindings   = {0},
+                                    .vertex_attributes = {0, 1},
+                                    .uniform_layouts   = {},
+                                    .push_constants    = {0},
+                                    .renderpass        = 0,
+                                    .subpass           = 0}}};
 
     render_config.init();
 

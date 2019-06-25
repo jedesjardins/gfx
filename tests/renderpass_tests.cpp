@@ -215,37 +215,28 @@ TEST_CASE("Renderpasses can be initialized from json")
 TEST_CASE("AttachmentInfos can be compared")
 {
     auto first_attachment_info = gfx::AttachmentInfo{
-        .format = gfx::Format::USE_COLOR,
+        .format      = gfx::Format::USE_COLOR,
         .use_samples = true,
-        .description = {
-            .loadOp = VK_ATTACHMENT_LOAD_OP_LOAD,
-            .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
-            .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
-            .finalLayout = VK_IMAGE_LAYOUT_UNDEFINED
-        }
-    };
+        .description = {.loadOp        = VK_ATTACHMENT_LOAD_OP_LOAD,
+                        .storeOp       = VK_ATTACHMENT_STORE_OP_STORE,
+                        .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+                        .finalLayout   = VK_IMAGE_LAYOUT_UNDEFINED}};
 
     auto second_attachment_info = gfx::AttachmentInfo{
-        .format = gfx::Format::USE_COLOR,
+        .format      = gfx::Format::USE_COLOR,
         .use_samples = true,
-        .description = {
-            .loadOp = VK_ATTACHMENT_LOAD_OP_LOAD,
-            .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
-            .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
-            .finalLayout = VK_IMAGE_LAYOUT_UNDEFINED
-        }
-    };
+        .description = {.loadOp        = VK_ATTACHMENT_LOAD_OP_LOAD,
+                        .storeOp       = VK_ATTACHMENT_STORE_OP_STORE,
+                        .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+                        .finalLayout   = VK_IMAGE_LAYOUT_UNDEFINED}};
 
     auto third_attachment_info = gfx::AttachmentInfo{
-        .format = gfx::Format::USE_COLOR,
+        .format      = gfx::Format::USE_COLOR,
         .use_samples = true,
-        .description = {
-            .loadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE,
-            .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
-            .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
-            .finalLayout = VK_IMAGE_LAYOUT_UNDEFINED
-        }
-    };
+        .description = {.loadOp        = VK_ATTACHMENT_LOAD_OP_DONT_CARE,
+                        .storeOp       = VK_ATTACHMENT_STORE_OP_STORE,
+                        .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+                        .finalLayout   = VK_IMAGE_LAYOUT_UNDEFINED}};
 
     REQUIRE(first_attachment_info == second_attachment_info);
     REQUIRE(first_attachment_info != third_attachment_info);
@@ -275,37 +266,25 @@ TEST_CASE("AttachmentInfos can be initialized from json")
     json_attachment_info.init(document);
 
     auto first_attachment_info = gfx::AttachmentInfo{
-        .format = gfx::Format::USE_COLOR,
+        .format      = gfx::Format::USE_COLOR,
         .use_samples = true,
-        .description = {
-            .loadOp = VK_ATTACHMENT_LOAD_OP_LOAD,
-            .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
-            .stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE,
-            .stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
-            .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
-            .finalLayout = VK_IMAGE_LAYOUT_UNDEFINED
-        }
-    };
+        .description = {.loadOp         = VK_ATTACHMENT_LOAD_OP_LOAD,
+                        .storeOp        = VK_ATTACHMENT_STORE_OP_STORE,
+                        .stencilLoadOp  = VK_ATTACHMENT_LOAD_OP_DONT_CARE,
+                        .stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
+                        .initialLayout  = VK_IMAGE_LAYOUT_UNDEFINED,
+                        .finalLayout    = VK_IMAGE_LAYOUT_UNDEFINED}};
 
     REQUIRE(json_attachment_info == first_attachment_info);
 }
 
 TEST_CASE("Attachments can be compared")
 {
-    auto first_attachment = gfx::Attachment{
-        .format = gfx::Format::USE_COLOR,
-        .use_samples = true
-    };
+    auto first_attachment = gfx::Attachment{.format = gfx::Format::USE_COLOR, .use_samples = true};
 
-    auto second_attachment = gfx::Attachment{
-        .format = gfx::Format::USE_COLOR,
-        .use_samples = true
-    };
+    auto second_attachment = gfx::Attachment{.format = gfx::Format::USE_COLOR, .use_samples = true};
 
-    auto third_attachment = gfx::Attachment{
-        .format = gfx::Format::USE_COLOR,
-        .use_samples = false
-    };
+    auto third_attachment = gfx::Attachment{.format = gfx::Format::USE_COLOR, .use_samples = false};
 
     REQUIRE(first_attachment == second_attachment);
     REQUIRE(first_attachment != third_attachment);
@@ -327,10 +306,7 @@ TEST_CASE("Attachments can be initialized from json")
     gfx::Attachment json_attachment;
     json_attachment.init(document);
 
-    auto first_attachment = gfx::Attachment{
-        .format = gfx::Format::USE_COLOR,
-        .use_samples = true
-    };
+    auto first_attachment = gfx::Attachment{.format = gfx::Format::USE_COLOR, .use_samples = true};
 
     REQUIRE(json_attachment == first_attachment);
 }
