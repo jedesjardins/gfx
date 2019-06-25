@@ -128,5 +128,33 @@
 			"stride": 24,
 			"input_rate": "PER_VERTEX"
 		}
+	],
+	"vertex_attributes":
+	[
+		{
+			"binding": 0,
+			"location": 0,
+			"format": "R32G32B32_SFLOAT",
+			"offset": 0
+		},
+		{
+			"binding": 0,
+			"location": 1,
+			"format": "R32G32B32_SFLOAT",
+			"offset": 12
+		}
+	],
+	"pipelines":
+	[
+		{
+			"vertex_shader": 0,
+			"fragment_shader": 1,
+			"vertex_bindings": [0],
+			"vertex_attributes": [0, 1],
+			"uniform_layouts": [0],
+			"push_constants": [0],
+			"renderpass": 0,
+			"subpass": 0
+		}
 	]
 }

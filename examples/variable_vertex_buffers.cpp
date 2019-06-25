@@ -279,24 +279,7 @@ int main()
     auto render_device = gfx::RenderDevice{window};
 
     auto render_config = gfx::RenderConfig{
-        .config_filename = "../examples/example_renderer_config.json",
-        .vertex_attributes
-        = {VkVertexInputAttributeDescription{.binding  = 0,
-                                             .location = 0,
-                                             .format   = VK_FORMAT_R32G32B32_SFLOAT,
-                                             .offset   = offsetof(Vertex, pos)},
-           VkVertexInputAttributeDescription{.binding  = 0,
-                                             .location = 1,
-                                             .format   = VK_FORMAT_R32G32B32_SFLOAT,
-                                             .offset   = offsetof(Vertex, color)}},
-        .pipelines = {gfx::Pipeline{.vertex_shader     = 0,
-                                    .fragment_shader   = 1,
-                                    .vertex_bindings   = {0},
-                                    .vertex_attributes = {0, 1},
-                                    .uniform_layouts   = {},
-                                    .push_constants    = {0},
-                                    .renderpass        = 0,
-                                    .subpass           = 0}}};
+        .config_filename = "../examples/example_renderer_config.json"};
 
     render_config.init();
 

@@ -900,6 +900,59 @@ struct Pipeline
 
     VkPipeline       vk_pipeline;
     VkPipelineLayout vk_pipeline_layout;
+
+    void init(rapidjson::Value & document)
+    {
+        assert(document.IsObject());
+
+        assert(document.HasMember("vertex_shader"));
+        assert(document["vertex_shader"].IsInt());
+        vertex_shader = document["vertex_shader"].GetInt();
+
+        assert(document.HasMember("fragment_shader"));
+        assert(document["fragment_shader"].IsInt());
+        fragment_shader = document["fragment_shader"].GetInt();
+
+        assert(document.HasMember("vertex_bindings"));
+        assert(document["vertex_bindings"].IsArray());
+        for (auto const& vbi: document["vertex_bindings"].GetArray())
+        {
+            assert(vbi.IsInt());
+            vertex_bindings.push_back(vbi.GetInt());
+        }
+
+        assert(document.HasMember("vertex_attributes"));
+        assert(document["vertex_attributes"].IsArray());
+        for (auto const& vai: document["vertex_attributes"].GetArray())
+        {
+            assert(vai.IsInt());
+            vertex_attributes.push_back(vai.GetInt());
+        }
+
+        assert(document.HasMember("uniform_layouts"));
+        assert(document["uniform_layouts"].IsArray());
+        for (auto const& uli: document["uniform_layouts"].GetArray())
+        {
+            assert(uli.IsInt());
+            uniform_layouts.push_back(uli.GetInt());
+        }
+
+        assert(document.HasMember("push_constants"));
+        assert(document["push_constants"].IsArray());
+        for (auto const& pci: document["push_constants"].GetArray())
+        {
+            assert(pci.IsInt());
+            push_constants.push_back(pci.GetInt());
+        }
+
+        assert(document.HasMember("renderpass"));
+        assert(document["renderpass"].IsInt());
+        renderpass = document["renderpass"].GetInt();
+
+        assert(document.HasMember("subpass"));
+        assert(document["subpass"].IsInt());
+        subpass = document["subpass"].GetInt();
+    }
 };
 
 VkPushConstantRange initVkPushConstantRange(rapidjson::Value & document)
@@ -950,6 +1003,47 @@ VkVertexInputBindingDescription initVkVertexInputBindingDescription(rapidjson::V
     }
 
     return vertex_binding;
+}
+
+VkFormat getVkFormat(std::string const& format_name)
+{
+    static std::unordered_map<std::string, VkFormat> formats{
+        {"R32G32B32_SFLOAT", VK_FORMAT_R32G32B32_SFLOAT},
+    };
+
+    auto format = formats.find(format_name);
+    assert(format != formats.end());
+    if (format == formats.end())
+    {
+        // return static_cast<VkPipelineStageFlagBits>(0);
+    }
+
+    return format->second;
+}
+
+VkVertexInputAttributeDescription initVkVertexInputAttributeDescription(rapidjson::Value & document)
+{
+    assert(document.IsObject());
+
+    VkVertexInputAttributeDescription attribute;
+
+    assert(document.HasMember("binding"));
+    assert(document["binding"].IsInt());
+    attribute.binding = document["binding"].GetInt();
+
+    assert(document.HasMember("location"));
+    assert(document["location"].IsInt());
+    attribute.location = document["location"].GetInt();
+
+    assert(document.HasMember("offset"));
+    assert(document["offset"].IsInt());
+    attribute.offset = document["offset"].GetInt();
+
+    assert(document.HasMember("format"));
+    assert(document["format"].IsString());
+    attribute.format = getVkFormat(document["format"].GetString());
+
+    return attribute;
 }
 
 struct RenderConfig
@@ -1096,6 +1190,26 @@ struct RenderConfig
                 vb);
             vertex_bindings.push_back(vertex_binding);
         }
+
+        assert(document.HasMember("vertex_attributes"));
+        assert(document["vertex_attributes"].IsArray());
+
+        for (auto & va: document["vertex_attributes"].GetArray())
+        {
+            VkVertexInputAttributeDescription vertex_attribute
+                = initVkVertexInputAttributeDescription(va);
+            vertex_attributes.push_back(vertex_attribute);
+        }
+
+        assert(document.HasMember("pipelines"));
+        assert(document["pipelines"].IsArray());
+
+        for (auto & p: document["pipelines"].GetArray())
+        {
+            Pipeline pipeline{};
+            pipeline.init(p);
+            pipelines.push_back(pipeline);
+        }
     }
 };
 
@@ -1153,7 +1267,6 @@ public:
             return false;
         }
 
-        std::cout << use_validation << std::endl;
         if (use_validation && createDebugMessenger() != VK_SUCCESS)
         {
             return false;
