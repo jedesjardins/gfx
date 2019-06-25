@@ -788,6 +788,13 @@ struct Shader
     std::string shader_name;
 
     VkShaderModule vk_shader_module{VK_NULL_HANDLE};
+
+    void init(rapidjson::Value & document)
+    {
+        assert(document.IsString());
+
+        shader_name = document.GetString();
+    }
 };
 
 struct Pipeline
@@ -915,6 +922,16 @@ struct RenderConfig
             Framebuffer framebuffer{};
             framebuffer.init(fb);
             framebuffers.push_back(framebuffer);
+        }
+
+        assert(document.HasMember("shaders"));
+        assert(document["shaders"].IsArray());
+
+        for (auto & s: document["shaders"].GetArray())
+        {
+            Shader shader{};
+            shader.init(s);
+            shaders.push_back(shader);
         }
     }
 };

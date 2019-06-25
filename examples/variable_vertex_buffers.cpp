@@ -288,8 +288,6 @@ int main()
                             .stageFlags         = VK_SHADER_STAGE_VERTEX_BIT,
                             .pImmutableSamplers = nullptr},
                 .uniform_count = 1}},
-            .shaders         = {gfx::Shader{.shader_name = "shaders/vert.spv"},
-                        gfx::Shader{.shader_name = "shaders/frag.spv"}},
             .pipelines       = {gfx::Pipeline{.vertex_shader     = 0,
                                         .fragment_shader   = 1,
                                         .vertex_bindings   = {0},
