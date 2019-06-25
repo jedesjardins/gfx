@@ -281,13 +281,6 @@ int main()
     auto render_config
         = gfx::RenderConfig{
             .config_filename = "../examples/example_renderer_config.json",
-            .uniform_layouts = {gfx::UniformLayout{
-                .binding       = {.binding            = 0,
-                            .descriptorType     = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC,
-                            .descriptorCount    = 1,
-                            .stageFlags         = VK_SHADER_STAGE_VERTEX_BIT,
-                            .pImmutableSamplers = nullptr},
-                .uniform_count = 1}},
             .pipelines       = {gfx::Pipeline{.vertex_shader     = 0,
                                         .fragment_shader   = 1,
                                         .vertex_bindings   = {0},

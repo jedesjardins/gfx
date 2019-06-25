@@ -747,6 +747,16 @@ struct UniformLayout
     std::vector<VkDescriptorSet> vk_descriptorsets; // currentFrame
     std::vector<MappedBuffer>    uniform_buffers;   // currentFrame
 
+    void init(rapidjson::Value & document)
+    {
+        assert(document.IsObject());
+        binding = initVkDescriptorSetLayoutBinding(document);
+
+        assert(document.HasMember("uniform_count"));
+        assert(document["uniform_count"].IsInt());
+        uniform_count = document["uniform_count"].GetInt();
+    }
+
     std::optional<UniformHandle> newUniform()
     {
         if (uniform_buffers[0].offset >= uniform_buffers[0].memory_size)
@@ -780,6 +790,81 @@ struct UniformLayout
         }
 
         return uniform;
+    }
+private:
+    VkDescriptorSetLayoutBinding initVkDescriptorSetLayoutBinding(rapidjson::Value & document)
+    {
+        assert(document.IsObject());
+
+        VkDescriptorSetLayoutBinding layout{};
+
+        assert(document.HasMember("binding"));
+        assert(document["binding"].IsInt());
+        layout.binding = document["binding"].GetInt();
+
+        assert(document.HasMember("descriptor_type"));
+        assert(document["descriptor_type"].IsString());
+        layout.descriptorType = getVkDescriptorType(document["descriptor_type"].GetString());
+
+        assert(document.HasMember("descriptor_count"));
+        assert(document["descriptor_count"].IsInt());
+        layout.descriptorCount = document["descriptor_count"].GetInt();
+
+        assert(document.HasMember("stage"));
+        assert(document["stage"].IsString());
+        layout.stageFlags = getVkShaderStageFlagBit(document["stage"].GetString());
+
+        return layout;
+    }
+
+    VkDescriptorType getVkDescriptorType(std::string const& type_name)
+    {
+        static std::unordered_map<std::string, VkDescriptorType> types{
+            {"SAMPLER", VK_DESCRIPTOR_TYPE_SAMPLER},
+            {"COMBINED_IMAGE_SAMPLER", VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER},
+            {"SAMPLED_IMAGE", VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE},
+            {"STORAGE_IMAGE", VK_DESCRIPTOR_TYPE_STORAGE_IMAGE},
+            {"UNIFORM_TEXEL_BUFFER", VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER},
+            {"STORAGE_TEXEL_BUFFER", VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER},
+            {"UNIFORM_BUFFER", VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER},
+            {"STORAGE_BUFFER", VK_DESCRIPTOR_TYPE_STORAGE_BUFFER},
+            {"UNIFORM_BUFFER_DYNAMIC", VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC},
+            {"STORAGE_BUFFER_DYNAMIC", VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC},
+            {"INPUT_ATTACHMENT", VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT},
+            {"SAMPLED_IMAGE", VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE},
+            {"SAMPLED_IMAGE", VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE}
+        };
+
+        auto type = types.find(type_name);
+        assert(type != types.end());
+        if (type == types.end())
+        {
+            // return static_cast<VkPipelineStageFlagBits>(0);
+        }
+
+        return type->second;
+    }
+
+    VkShaderStageFlagBits getVkShaderStageFlagBit(std::string const& flag_name)
+    {
+        static std::unordered_map<std::string, VkShaderStageFlagBits> flags{
+            {"VERTEX", VK_SHADER_STAGE_VERTEX_BIT},
+            {"FRAGMENT", VK_SHADER_STAGE_FRAGMENT_BIT},
+            {"COMPUTE", VK_SHADER_STAGE_COMPUTE_BIT},
+            {"TESSELLATION_CONTROL", VK_SHADER_STAGE_TESSELLATION_CONTROL_BIT},
+            {"TESSELLATION_EVALUATION", VK_SHADER_STAGE_TESSELLATION_EVALUATION_BIT},
+            {"ALL_GRAPHICS", VK_SHADER_STAGE_ALL_GRAPHICS},
+            {"ALL", VK_SHADER_STAGE_ALL}
+        };
+
+        auto flag = flags.find(flag_name);
+        assert(flag != flags.end());
+        if (flag == flags.end())
+        {
+            // return static_cast<VkPipelineStageFlagBits>(0);
+        }
+
+        return flag->second;
     }
 };
 
@@ -933,6 +1018,17 @@ struct RenderConfig
             shader.init(s);
             shaders.push_back(shader);
         }
+
+        assert(document.HasMember("uniform_layouts"));
+        assert(document["uniform_layouts"].IsArray());
+
+        for (auto & ul: document["uniform_layouts"].GetArray())
+        {
+            UniformLayout layout{};
+            layout.init(ul);
+            uniform_layouts.push_back(layout);
+        }
+
     }
 };
 

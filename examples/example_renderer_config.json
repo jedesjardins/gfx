@@ -102,5 +102,15 @@
 	[
 		"shaders/vert.spv",
 		"shaders/frag.spv"
+	],
+	"uniform_layouts":
+	[
+		{
+			"binding": 0,
+			"descriptor_type": "UNIFORM_BUFFER_DYNAMIC",
+			"descriptor_count": 1,
+			"stage": "VERTEX",
+			"uniform_count": 1
+		}
 	]
 }
