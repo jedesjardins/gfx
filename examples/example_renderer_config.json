@@ -1,5 +1,47 @@
 {
 	"window_name": "Example Window",
 	"dynamic_vertices_count": 8,
-	"dynamic_indices_count": 12
+	"dynamic_indices_count": 12,
+	"renderpasses":
+	[
+		{
+			"attachment_infos": [0, 1, 2],
+			"subpasses":
+			[
+				{
+					"color_attachments":
+					[
+						{
+							"attachment_index": 0,
+							"layout": "COLOR_ATTACHMENT_OPTIMAL"
+						}
+					],
+					"resolve_attachment":
+					{
+						"attachment_index": 2,
+						"layout": "COLOR_ATTACHMENT_OPTIMAL"
+					},
+					"depth_stencil_attachment":
+					{
+						"attachment_index": 1,
+						"layout": "DEPTH_STENCIL_ATTACHMENT_OPTIMAL"
+					}
+				}
+			],
+			"subpass_dependencies":
+			[
+				{
+					"src_subpass": "EXTERNAL_SUBPASS",
+					"dst_subpass": 0,
+					"src_stage_mask": ["COLOR_ATTACHMENT_OUTPUT"],
+					"dst_stage_mask": ["COLOR_ATTACHMENT_OUTPUT"],
+					"dst_access_mask":
+					[
+						"COLOR_ATTACHMENT_READ",
+						"COLOR_ATTACHMENT_WRITE"
+					]
+				}
+			]
+		}
+	]
 }

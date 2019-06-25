@@ -278,94 +278,81 @@ int main()
 
     auto render_device = gfx::RenderDevice{window};
 
-    auto render_config = gfx::RenderConfig{
-        .config_filename        = "../examples/example_renderer_config.json",
-        .renderpasses           = {gfx::Renderpass{
-            .attachments          = {0, 1, 2},
-            .subpasses            = {gfx::SubpassInfo{
-                .color_attachments = {VkAttachmentReference{
-                    0, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL}},
-                .color_resolve_attachment
-                = VkAttachmentReference{2, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL},
-                .depth_stencil_attachment
-                = VkAttachmentReference{1, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL}}},
-            .subpass_dependencies = {VkSubpassDependency{
-                .srcSubpass    = VK_SUBPASS_EXTERNAL,
-                .dstSubpass    = 0,
-                .srcStageMask  = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
-                .dstStageMask  = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
-                .srcAccessMask = 0,
-                .dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT
-                                 | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT}}}},
-        .uniform_layouts        = {gfx::UniformLayout{
-            .binding       = {.binding            = 0,
-                        .descriptorType     = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC,
-                        .descriptorCount    = 1,
-                        .stageFlags         = VK_SHADER_STAGE_VERTEX_BIT,
-                        .pImmutableSamplers = nullptr},
-            .uniform_count = 1}},
-        .shaders                = {gfx::Shader{.shader_name = "shaders/vert.spv"},
-                    gfx::Shader{.shader_name = "shaders/frag.spv"}},
-        .pipelines              = {gfx::Pipeline{.vertex_shader     = 0,
-                                    .fragment_shader   = 1,
-                                    .vertex_bindings   = {0},
-                                    .vertex_attributes = {0, 1},
-                                    .uniform_layouts   = {},
-                                    .push_constants    = {0},
-                                    .renderpass        = 0,
-                                    .subpass           = 0}},
-        .attachment_infos
-        = {gfx::AttachmentInfo{
-               .format      = gfx::Format::USE_COLOR,
-               .use_samples = true,
-               .description
-               = VkAttachmentDescription{.loadOp         = VK_ATTACHMENT_LOAD_OP_CLEAR,
-                                         .storeOp        = VK_ATTACHMENT_STORE_OP_DONT_CARE,
-                                         .stencilLoadOp  = VK_ATTACHMENT_LOAD_OP_DONT_CARE,
-                                         .stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
-                                         .initialLayout  = VK_IMAGE_LAYOUT_UNDEFINED,
-                                         .finalLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL}},
-           gfx::AttachmentInfo{
-               .format      = gfx::Format::USE_DEPTH,
-               .use_samples = true,
-               .description
-               = VkAttachmentDescription{.loadOp         = VK_ATTACHMENT_LOAD_OP_CLEAR,
-                                         .storeOp        = VK_ATTACHMENT_STORE_OP_DONT_CARE,
-                                         .stencilLoadOp  = VK_ATTACHMENT_LOAD_OP_DONT_CARE,
-                                         .stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
-                                         .initialLayout  = VK_IMAGE_LAYOUT_UNDEFINED,
-                                         .finalLayout
-                                         = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL}},
-           gfx::AttachmentInfo{
-               .format      = gfx::Format::USE_COLOR,
-               .use_samples = false,
-               .description
-               = VkAttachmentDescription{.loadOp         = VK_ATTACHMENT_LOAD_OP_DONT_CARE,
-                                         .storeOp        = VK_ATTACHMENT_STORE_OP_STORE,
-                                         .stencilLoadOp  = VK_ATTACHMENT_LOAD_OP_DONT_CARE,
-                                         .stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
-                                         .initialLayout  = VK_IMAGE_LAYOUT_UNDEFINED,
-                                         .finalLayout    = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR}}},
-        .attachments     = {gfx::Attachment{.format = gfx::Format::USE_COLOR, .use_samples = true},
-                        gfx::Attachment{.format = gfx::Format::USE_DEPTH, .use_samples = true}},
-        .framebuffers    = {gfx::Framebuffer{
-            .renderpass  = 0,
-            .attachments = {gfx::AttachmentHandle{.is_swapchain_image = 0, .id = 0},
-                            gfx::AttachmentHandle{.is_swapchain_image = 0, .id = 1},
-                            gfx::AttachmentHandle{.is_swapchain_image = 1, .id = 0}}}},
-        .push_constants  = {VkPushConstantRange{
-            .stageFlags = VK_SHADER_STAGE_VERTEX_BIT, .offset = 0, .size = sizeof(glm::mat4)}},
-        .vertex_bindings = {VkVertexInputBindingDescription{
-            .binding = 0, .stride = sizeof(Vertex), .inputRate = VK_VERTEX_INPUT_RATE_VERTEX}},
-        .vertex_attributes = {
-            VkVertexInputAttributeDescription{.binding  = 0,
-                                              .location = 0,
-                                              .format   = VK_FORMAT_R32G32B32_SFLOAT,
-                                              .offset   = offsetof(Vertex, pos)},
-            VkVertexInputAttributeDescription{.binding  = 0,
-                                              .location = 1,
-                                              .format   = VK_FORMAT_R32G32B32_SFLOAT,
-                                              .offset   = offsetof(Vertex, color)}}};
+    auto render_config
+        = gfx::RenderConfig{
+            .config_filename = "../examples/example_renderer_config.json",
+            .uniform_layouts = {gfx::UniformLayout{
+                .binding       = {.binding            = 0,
+                            .descriptorType     = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC,
+                            .descriptorCount    = 1,
+                            .stageFlags         = VK_SHADER_STAGE_VERTEX_BIT,
+                            .pImmutableSamplers = nullptr},
+                .uniform_count = 1}},
+            .shaders         = {gfx::Shader{.shader_name = "shaders/vert.spv"},
+                        gfx::Shader{.shader_name = "shaders/frag.spv"}},
+            .pipelines       = {gfx::Pipeline{.vertex_shader     = 0,
+                                        .fragment_shader   = 1,
+                                        .vertex_bindings   = {0},
+                                        .vertex_attributes = {0, 1},
+                                        .uniform_layouts   = {},
+                                        .push_constants    = {0},
+                                        .renderpass        = 0,
+                                        .subpass           = 0}},
+            .attachment_infos
+            = {gfx::AttachmentInfo{
+                   .format      = gfx::Format::USE_COLOR,
+                   .use_samples = true,
+                   .description
+                   = VkAttachmentDescription{.loadOp         = VK_ATTACHMENT_LOAD_OP_CLEAR,
+                                             .storeOp        = VK_ATTACHMENT_STORE_OP_DONT_CARE,
+                                             .stencilLoadOp  = VK_ATTACHMENT_LOAD_OP_DONT_CARE,
+                                             .stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
+                                             .initialLayout  = VK_IMAGE_LAYOUT_UNDEFINED,
+                                             .finalLayout
+                                             = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL}},
+               gfx::AttachmentInfo{
+                   .format = gfx::Format::USE_DEPTH,
+                   .use_samples
+                   = true,
+                   .description
+                   = VkAttachmentDescription{.loadOp         = VK_ATTACHMENT_LOAD_OP_CLEAR,
+                                             .storeOp        = VK_ATTACHMENT_STORE_OP_DONT_CARE,
+                                             .stencilLoadOp  = VK_ATTACHMENT_LOAD_OP_DONT_CARE,
+                                             .stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
+                                             .initialLayout  = VK_IMAGE_LAYOUT_UNDEFINED,
+                                             .finalLayout
+                                             = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL}},
+               gfx::AttachmentInfo{
+                   .format = gfx::Format::USE_COLOR,
+                   .use_samples
+                   = false,
+                   .description
+                   = VkAttachmentDescription{.loadOp         = VK_ATTACHMENT_LOAD_OP_DONT_CARE,
+                                             .storeOp        = VK_ATTACHMENT_STORE_OP_STORE,
+                                             .stencilLoadOp  = VK_ATTACHMENT_LOAD_OP_DONT_CARE,
+                                             .stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
+                                             .initialLayout  = VK_IMAGE_LAYOUT_UNDEFINED,
+                                             .finalLayout    = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR}}},
+            .attachments  = {gfx::Attachment{.format = gfx::Format::USE_COLOR, .use_samples = true},
+                            gfx::Attachment{.format = gfx::Format::USE_DEPTH, .use_samples = true}},
+            .framebuffers = {gfx::Framebuffer{
+                .renderpass  = 0,
+                .attachments = {gfx::AttachmentHandle{.is_swapchain_image = 0, .id = 0},
+                                gfx::AttachmentHandle{.is_swapchain_image = 0, .id = 1},
+                                gfx::AttachmentHandle{.is_swapchain_image = 1, .id = 0}}}},
+            .push_constants    = {VkPushConstantRange{
+                .stageFlags = VK_SHADER_STAGE_VERTEX_BIT, .offset = 0, .size = sizeof(glm::mat4)}},
+            .vertex_bindings   = {VkVertexInputBindingDescription{
+                .binding = 0, .stride = sizeof(Vertex), .inputRate = VK_VERTEX_INPUT_RATE_VERTEX}},
+            .vertex_attributes = {
+                VkVertexInputAttributeDescription{.binding  = 0,
+                                                  .location = 0,
+                                                  .format   = VK_FORMAT_R32G32B32_SFLOAT,
+                                                  .offset   = offsetof(Vertex, pos)},
+                VkVertexInputAttributeDescription{.binding  = 0,
+                                                  .location = 1,
+                                                  .format   = VK_FORMAT_R32G32B32_SFLOAT,
+                                                  .offset   = offsetof(Vertex, color)}}};
 
     render_config.init();
 
@@ -445,7 +432,7 @@ int main()
 
         render_device.drawFrame(1, &view_handle);
 
-        //std::cout << clock.Restart() << "\n";
+        // std::cout << clock.Restart() << "\n";
     }
 
     render_device.waitForIdle();

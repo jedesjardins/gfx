@@ -16,6 +16,7 @@
 #include <fstream>
 #include <variant>
 #include <optional>
+#include <unordered_map>
 
 #include "cmd/cmd.hpp"
 
@@ -53,27 +54,30 @@ struct Vertex
 };
 
 std::vector<char> readFile(std::string const & filename)
+{
+    std::ifstream file(filename, std::ios::ate | std::ios::binary);
+
+    if (!file.is_open())
     {
-        std::ifstream file(filename, std::ios::ate | std::ios::binary);
-
-        if (!file.is_open())
-        {
-            throw std::runtime_error("failed to open file!");
-        }
-
-        size_t            fileSize = (size_t)file.tellg();
-        std::vector<char> buffer(fileSize);
-
-        file.seekg(0);
-        file.read(buffer.data(), fileSize);
-
-        file.close();
-
-        return buffer;
+        throw std::runtime_error("failed to open file!");
     }
+
+    size_t            fileSize = (size_t)file.tellg();
+    std::vector<char> buffer(fileSize);
+
+    file.seekg(0);
+    file.read(buffer.data(), fileSize);
+
+    file.close();
+
+    return buffer;
+}
 
 namespace gfx
 {
+class RenderDevice;
+class RenderConfig;
+
 using AttachmentInfoHandle  = size_t;
 using CommandbufferHandle   = size_t;
 using RenderpassHandle      = size_t;
@@ -120,24 +124,381 @@ struct Attachment
     VkImageView    vk_image_view{VK_NULL_HANDLE};
 };
 
+bool operator==(VkAttachmentReference const & lhs, VkAttachmentReference const & rhs)
+{
+    return lhs.attachment == rhs.attachment && lhs.layout == rhs.layout;
+}
+
+bool operator!=(VkAttachmentReference const & lhs, VkAttachmentReference const & rhs)
+{
+    return !(lhs == rhs);
+}
+
 struct SubpassInfo
 {
+public:
+    void init(rapidjson::Value & document)
+    {
+        assert(document.IsObject());
+
+        if (document.HasMember("color_attachments"))
+        {
+            assert(document["color_attachments"].IsArray());
+            for (auto & ca: document["color_attachments"].GetArray())
+            {
+                VkAttachmentReference reference = initAttachmentReference(ca);
+                color_attachments.push_back(reference);
+            }
+        }
+
+        if (document.HasMember("resolve_attachment"))
+        {
+            color_resolve_attachment = initAttachmentReference(document["resolve_attachment"]);
+        }
+
+        if (document.HasMember("depth_stencil_attachment"))
+        {
+            depth_stencil_attachment = initAttachmentReference(
+                document["depth_stencil_attachment"]);
+        }
+    }
+
+    friend bool operator==(SubpassInfo const & lhs, SubpassInfo const & rhs)
+    {
+        if (lhs.color_resolve_attachment != rhs.color_resolve_attachment)
+        {
+            return false;
+        }
+
+        if (lhs.depth_stencil_attachment != rhs.depth_stencil_attachment)
+        {
+            return false;
+        }
+
+        if (lhs.color_attachments.size() != rhs.color_attachments.size())
+        {
+            return false;
+        }
+
+        for (uint32_t i = 0; i < lhs.color_attachments.size(); ++i)
+        {
+            if (lhs.color_attachments[i] != rhs.color_attachments[i])
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    friend bool operator!=(SubpassInfo const & lhs, SubpassInfo const & rhs)
+    {
+        return !(lhs == rhs);
+    }
+
     std::vector<VkAttachmentReference> color_attachments;
     VkAttachmentReference              color_resolve_attachment;
     VkAttachmentReference              depth_stencil_attachment;
+
+private:
+    VkImageLayout getVkImageLayout(std::string const & layout_name)
+    {
+        static std::unordered_map<std::string, VkImageLayout> layouts = {
+            {"UNDEFINED", VK_IMAGE_LAYOUT_UNDEFINED},
+            {"GENERAL", VK_IMAGE_LAYOUT_GENERAL},
+            {"COLOR_ATTACHMENT_OPTIMAL", VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL},
+            {"DEPTH_STENCIL_ATTACHMENT_OPTIMAL", VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL},
+            {"DEPTH_STENCIL_READ_ONLY_OPTIMAL", VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL},
+            {"SHADER_READ_ONLY_OPTIMAL", VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL},
+            {"TRANSFER_SRC_OPTIMAL", VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL},
+            {"TRANSFER_DST_OPTIMAL", VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL},
+            {"PREINITIALIZED", VK_IMAGE_LAYOUT_PREINITIALIZED},
+            {"DEPTH_READ_ONLY_STENCIL_ATTACHMENT_OPTIMAL",
+             VK_IMAGE_LAYOUT_DEPTH_READ_ONLY_STENCIL_ATTACHMENT_OPTIMAL},
+            {"DEPTH_ATTACHMENT_STENCIL_READ_ONLY_OPTIMAL",
+             VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_STENCIL_READ_ONLY_OPTIMAL},
+            {"PRESENT_SRC_KHR", VK_IMAGE_LAYOUT_PRESENT_SRC_KHR},
+            {"SHARED_PRESENT_KHR", VK_IMAGE_LAYOUT_SHARED_PRESENT_KHR}};
+
+        auto layout = layouts.find(layout_name);
+        assert(layout != layouts.end());
+        if (layout == layouts.end())
+        {
+            // return static_cast<VkPipelineStageFlagBits>(0);
+        }
+
+        return layout->second;
+    }
+
+    VkAttachmentReference initAttachmentReference(rapidjson::Value & document)
+    {
+        assert(document.IsObject());
+
+        VkAttachmentReference reference{};
+
+        assert(document.HasMember("attachment_index"));
+        assert(document["attachment_index"].IsInt());
+        reference.attachment = document["attachment_index"].GetInt();
+
+        assert(document.HasMember("layout"));
+        assert(document["layout"].IsString());
+        reference.layout = getVkImageLayout(document["layout"].GetString());
+
+        return reference;
+    }
 };
+
+bool operator==(VkSubpassDependency const & lhs, VkSubpassDependency const & rhs)
+{
+    return lhs.srcSubpass == rhs.srcSubpass && lhs.dstSubpass == rhs.dstSubpass
+           && lhs.srcStageMask == rhs.srcStageMask && lhs.dstStageMask == rhs.dstStageMask
+           && lhs.srcAccessMask == rhs.srcAccessMask && lhs.dstAccessMask == rhs.dstAccessMask
+           && lhs.dependencyFlags == rhs.dependencyFlags;
+}
+
+bool operator!=(VkSubpassDependency const & lhs, VkSubpassDependency const & rhs)
+{
+    return !(lhs == rhs);
+}
 
 struct Renderpass
 {
+public:
+    void init(rapidjson::Value & document)
+    {
+        assert(document.IsObject());
+
+        assert(document.HasMember("attachment_infos"));
+        assert(document["attachment_infos"].IsArray());
+
+        for (auto & amnt_info: document["attachment_infos"].GetArray())
+        {
+            assert(amnt_info.IsInt());
+            // AttachmentInfoHandle info = amnt_info.GetInt();
+            attachments.push_back(amnt_info.GetInt());
+        }
+
+        assert(document.HasMember("subpasses"));
+        assert(document["subpasses"].IsArray());
+
+        for (auto & sp: document["subpasses"].GetArray())
+        {
+            SubpassInfo info{};
+            info.init(sp);
+
+            subpasses.push_back(info);
+        }
+
+        assert(document.HasMember("subpass_dependencies"));
+        assert(document["subpass_dependencies"].IsArray());
+
+        for (auto & spd: document["subpass_dependencies"].GetArray())
+        {
+            subpass_dependencies.push_back(initDependency(spd));
+        }
+    }
+
+    friend bool operator==(Renderpass const & lhs, Renderpass const & rhs)
+    {
+        if (lhs.attachments.size() != rhs.attachments.size())
+        {
+            return false;
+        }
+
+        for (uint32_t i = 0; i < lhs.attachments.size(); ++i)
+        {
+            if (lhs.attachments[i] != rhs.attachments[i])
+            {
+                return false;
+            }
+        }
+
+        if (lhs.subpasses.size() != rhs.subpasses.size())
+        {
+            return false;
+        }
+
+        for (uint32_t i = 0; i < lhs.subpasses.size(); ++i)
+        {
+            if (lhs.subpasses[i] != rhs.subpasses[i])
+            {
+                return false;
+            }
+        }
+
+        if (lhs.subpass_dependencies.size() != rhs.subpass_dependencies.size())
+        {
+            return false;
+        }
+
+        for (uint32_t i = 0; i < lhs.subpass_dependencies.size(); ++i)
+        {
+            if (lhs.subpass_dependencies[i] != rhs.subpass_dependencies[i])
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    friend bool operator!=(Renderpass const & lhs, Renderpass const & rhs)
+    {
+        return !(lhs == rhs);
+    }
+
     std::vector<AttachmentInfoHandle> attachments;
+    std::vector<SubpassInfo>          subpasses;
+    std::vector<VkSubpassDependency>  subpass_dependencies;
+    VkRenderPass                      vk_renderpass{VK_NULL_HANDLE};
 
-    std::vector<SubpassInfo> subpasses; // attachment references for creating subpass description
+private:
+    uint32_t initSubpassIndex(rapidjson::Value & document)
+    {
+        assert(document.IsInt() || document.IsString());
 
-    std::vector<VkSubpassDependency> subpass_dependencies;
+        if (document.IsInt())
+        {
+            return document.GetInt();
+        }
+        else if (document.IsString())
+        {
+            assert(strcmp(document.GetString(), "EXTERNAL_SUBPASS") == 0);
+            return VK_SUBPASS_EXTERNAL;
+        }
 
-    std::vector<CommandbufferHandle> subpass_commandbuffers;
+        return 0;
+    }
 
-    VkRenderPass vk_renderpass{VK_NULL_HANDLE};
+    VkPipelineStageFlagBits getVkPipelineStageFlagBit(std::string const & bit_name)
+    {
+        static std::unordered_map<std::string, VkPipelineStageFlagBits> bits = {
+            {"TOP_OF_PIPE", VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT},
+            {"DRAW_INDIRECT", VK_PIPELINE_STAGE_DRAW_INDIRECT_BIT},
+            {"VERTEX_INPUT", VK_PIPELINE_STAGE_VERTEX_INPUT_BIT},
+            {"VERTEX_SHADER", VK_PIPELINE_STAGE_VERTEX_SHADER_BIT},
+            {"FRAGMENT_SHADER", VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT},
+            {"EARLY_FRAGMENT_TESTS", VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT},
+            {"LATE_FRAGMENT_TESTS", VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT},
+            {"COLOR_ATTACHMENT_OUTPUT", VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT},
+            {"COMPUTE_SHADER", VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT},
+            {"TRANSFER", VK_PIPELINE_STAGE_TRANSFER_BIT},
+            {"BOTTOM_OF_PIPE", VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT},
+            {"HOST", VK_PIPELINE_STAGE_HOST_BIT},
+            {"ALL_GRAPHICS", VK_PIPELINE_STAGE_ALL_GRAPHICS_BIT},
+            {"ALL_COMMANDS", VK_PIPELINE_STAGE_ALL_COMMANDS_BIT}};
+
+        auto bit = bits.find(bit_name);
+        assert(bit != bits.end());
+        if (bit == bits.end())
+        {
+            // return static_cast<VkPipelineStageFlagBits>(0);
+        }
+
+        return bit->second;
+    }
+
+    VkPipelineStageFlagBits initStageFlags(rapidjson::Value & document)
+    {
+        assert(document.IsArray());
+
+        VkPipelineStageFlagBits stage_flags{};
+
+        for (auto & stage_name: document.GetArray())
+        {
+            assert(stage_name.IsString());
+            stage_flags = static_cast<VkPipelineStageFlagBits>(
+                stage_flags | getVkPipelineStageFlagBit(stage_name.GetString()));
+        }
+
+        return stage_flags;
+    }
+
+    VkAccessFlagBits getVkAccessFlagBit(std::string const & bit_name)
+    {
+        static std::unordered_map<std::string, VkAccessFlagBits> bits = {
+            {"INDIRECT_COMMAND_READ", VK_ACCESS_INDIRECT_COMMAND_READ_BIT},
+            {"INDEX_READ", VK_ACCESS_INDEX_READ_BIT},
+            {"VERTEX_ATTRIBUTE_READ", VK_ACCESS_VERTEX_ATTRIBUTE_READ_BIT},
+            {"UNIFORM_READ", VK_ACCESS_UNIFORM_READ_BIT},
+            {"INPUT_ATTACHMENT_READ", VK_ACCESS_INPUT_ATTACHMENT_READ_BIT},
+            {"SHADER_READ", VK_ACCESS_SHADER_READ_BIT},
+            {"SHADER_WRITE", VK_ACCESS_SHADER_WRITE_BIT},
+            {"COLOR_ATTACHMENT_READ", VK_ACCESS_COLOR_ATTACHMENT_READ_BIT},
+            {"COLOR_ATTACHMENT_WRITE", VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT},
+            {"DEPTH_STENCIL_ATTACHMENT_READ", VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT},
+            {"DEPTH_STENCIL_ATTACHMENT_WRITE", VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT},
+            {"TRANSFER_READ", VK_ACCESS_TRANSFER_READ_BIT},
+            {"TRANSFER_WRITE", VK_ACCESS_TRANSFER_WRITE_BIT},
+            {"HOST_READ", VK_ACCESS_HOST_READ_BIT},
+            {"HOST_WRITE", VK_ACCESS_HOST_WRITE_BIT},
+            {"MEMORY_READ", VK_ACCESS_MEMORY_READ_BIT},
+            {"MEMORY_WRITE", VK_ACCESS_MEMORY_WRITE_BIT}};
+
+        auto bit = bits.find(bit_name);
+        assert(bit != bits.end());
+        if (bit == bits.end())
+        {
+            // return static_cast<VkPipelineStageFlagBits>(0);
+        }
+
+        return bit->second;
+    }
+
+    VkAccessFlagBits initAccessFlags(rapidjson::Value & document)
+    {
+        assert(document.IsArray());
+
+        VkAccessFlagBits access_flags{};
+
+        for (auto & access_name: document.GetArray())
+        {
+            assert(access_name.IsString());
+            access_flags = static_cast<VkAccessFlagBits>(
+                access_flags | getVkAccessFlagBit(access_name.GetString()));
+        }
+
+        return access_flags;
+    }
+
+    VkSubpassDependency initDependency(rapidjson::Value & document)
+    {
+        assert(document.IsObject());
+
+        VkSubpassDependency dependency{};
+
+        if (document.HasMember("src_subpass"))
+        {
+            dependency.srcSubpass = initSubpassIndex(document["src_subpass"]);
+        }
+
+        if (document.HasMember("dst_subpass"))
+        {
+            dependency.dstSubpass = initSubpassIndex(document["dst_subpass"]);
+        }
+
+        if (document.HasMember("src_stage_mask"))
+        {
+            dependency.srcStageMask = initStageFlags(document["src_stage_mask"]);
+        }
+
+        if (document.HasMember("dst_stage_mask"))
+        {
+            dependency.dstStageMask = initStageFlags(document["dst_stage_mask"]);
+        }
+
+        if (document.HasMember("src_access_mask"))
+        {
+            dependency.srcAccessMask = initAccessFlags(document["src_access_mask"]);
+        }
+
+        if (document.HasMember("dst_access_mask"))
+        {
+            dependency.dstAccessMask = initAccessFlags(document["dst_access_mask"]);
+        }
+
+        return dependency;
+    }
 };
 
 struct Framebuffer
@@ -324,6 +685,17 @@ struct RenderConfig
         assert(document["dynamic_indices_count"].IsNumber());
         assert(document["dynamic_indices_count"].IsInt());
         dynamic_indices_count = document["dynamic_indices_count"].GetInt();
+
+        assert(document.HasMember("renderpasses"));
+        assert(document["renderpasses"].IsArray());
+
+        for (auto & rp: document["renderpasses"].GetArray())
+        {
+            assert(rp.IsObject());
+            Renderpass renderpass{};
+            renderpass.init(rp);
+            renderpasses.push_back(renderpass);
+        }
     }
 };
 
@@ -418,7 +790,7 @@ public:
             return false;
         }
 
-        renderpasses = std::move(render_config.renderpasses);
+        renderpasses     = std::move(render_config.renderpasses);
         attachment_infos = std::move(render_config.attachment_infos);
         if (createRenderPass() != VK_SUCCESS)
         {
@@ -437,9 +809,9 @@ public:
             return false;
         }
 
-        pipelines = std::move(render_config.pipelines);
-        push_constants = std::move(render_config.push_constants);
-        vertex_bindings = std::move(render_config.vertex_bindings);
+        pipelines         = std::move(render_config.pipelines);
+        push_constants    = std::move(render_config.push_constants);
+        vertex_bindings   = std::move(render_config.vertex_bindings);
         vertex_attributes = std::move(render_config.vertex_attributes);
         if (createGraphicsPipeline() != VK_SUCCESS)
         {
@@ -2415,8 +2787,6 @@ private:
                              nullptr,
                              0,
                              nullptr);
-
-        VkClearValue clearColor = {0.0f, 0.0f, 0.0f, 1.0f};
 
         auto clearValues = std::array<VkClearValue, 2>{
             VkClearValue{.color = {0.0f, 0.0f, 0.0f, 1.0f}},
