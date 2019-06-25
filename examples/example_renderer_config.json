@@ -1,0 +1,160 @@
+{
+	"window_name": "Example Window",
+	"dynamic_vertices_count": 8,
+	"dynamic_indices_count": 12,
+	"attachments":
+	[
+		{
+			"format": "color",
+			"multisampled": true
+		},
+		{
+			"format": "depth",
+			"multisampled": true
+		}
+	],
+	"framebuffers":
+	[
+		{
+			"renderpass": 0,
+			"attachments": [0, 1, -1]
+		}
+	],
+	"attachment_infos":
+	[
+		{
+			"format": "color",
+			"multisampled": true,
+			"description":
+			{
+				"load_op": "CLEAR",
+				"store_op": "DONT_CARE",
+				"initial_layout": "UNDEFINED",
+				"final_layout": "COLOR_ATTACHMENT_OPTIMAL"
+			}
+		},
+		{
+			"format": "depth",
+			"multisampled": true,
+			"description":
+			{
+				"load_op": "CLEAR",
+				"store_op": "DONT_CARE",
+				"initial_layout": "UNDEFINED",
+				"final_layout": "DEPTH_STENCIL_ATTACHMENT_OPTIMAL"
+			}
+		},
+		{
+			"format": "color",
+			"multisampled": false,
+			"description":
+			{
+				"load_op": "DONT_CARE",
+				"store_op": "STORE",
+				"initial_layout": "UNDEFINED",
+				"final_layout": "PRESENT_SRC_KHR"
+			}
+		}
+	],
+	"renderpasses":
+	[
+		{
+			"attachment_infos": [0, 1, 2],
+			"subpasses":
+			[
+				{
+					"color_attachments":
+					[
+						{
+							"attachment_index": 0,
+							"layout": "COLOR_ATTACHMENT_OPTIMAL"
+						}
+					],
+					"resolve_attachment":
+					{
+						"attachment_index": 2,
+						"layout": "COLOR_ATTACHMENT_OPTIMAL"
+					},
+					"depth_stencil_attachment":
+					{
+						"attachment_index": 1,
+						"layout": "DEPTH_STENCIL_ATTACHMENT_OPTIMAL"
+					}
+				}
+			],
+			"subpass_dependencies":
+			[
+				{
+					"src_subpass": "EXTERNAL_SUBPASS",
+					"dst_subpass": 0,
+					"src_stage_mask": ["COLOR_ATTACHMENT_OUTPUT"],
+					"dst_stage_mask": ["COLOR_ATTACHMENT_OUTPUT"],
+					"dst_access_mask":
+					[
+						"COLOR_ATTACHMENT_READ",
+						"COLOR_ATTACHMENT_WRITE"
+					]
+				}
+			]
+		}
+	],
+	"shaders":
+	[
+		"shaders/vert.spv",
+		"shaders/frag.spv"
+	],
+	"uniform_layouts":
+	[
+		{
+			"binding": 0,
+			"descriptor_type": "UNIFORM_BUFFER_DYNAMIC",
+			"descriptor_count": 1,
+			"stage": "VERTEX",
+			"uniform_count": 1
+		}
+	],
+	"push_constants":
+	[
+		{
+			"stage": "VERTEX",
+			"offset": 0,
+			"size": 64
+		}
+	],
+	"vertex_bindings":
+	[
+		{
+			"binding": 0,
+			"stride": 24,
+			"input_rate": "PER_VERTEX"
+		}
+	],
+	"vertex_attributes":
+	[
+		{
+			"binding": 0,
+			"location": 0,
+			"format": "R32G32B32_SFLOAT",
+			"offset": 0
+		},
+		{
+			"binding": 0,
+			"location": 1,
+			"format": "R32G32B32_SFLOAT",
+			"offset": 12
+		}
+	],
+	"pipelines":
+	[
+		{
+			"vertex_shader": 0,
+			"fragment_shader": 1,
+			"vertex_bindings": [0],
+			"vertex_attributes": [0, 1],
+			"uniform_layouts": [0],
+			"push_constants": [0],
+			"renderpass": 0,
+			"subpass": 0
+		}
+	]
+}
