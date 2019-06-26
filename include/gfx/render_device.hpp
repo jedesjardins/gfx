@@ -1457,18 +1457,6 @@ void RenderConfig::init()
         renderpasses.push_back(renderpass);
     }
 
-    /*
-    assert(document.HasMember("attachment_infos"));
-    assert(document["attachment_infos"].IsArray());
-
-    for (auto & rp: document["attachment_infos"].GetArray())
-    {
-        AttachmentInfo attachment_info{};
-        attachment_info.init(rp);
-        attachment_infos.push_back(attachment_info);
-    }
-    */
-
     assert(document.HasMember("attachments"));
     assert(document["attachments"].IsArray());
 
@@ -2751,68 +2739,66 @@ VkResult RenderDevice::createImageView(VkImage            image,
 // RENDER PASS & ATTACHMENT DESCRIPTIONS
 VkResult RenderDevice::createRenderPass()
 {
-    for (uint32_t r_i = 0; r_i < renderpasses.size(); ++r_i)
+    for (auto & renderpass: renderpasses)
     {
-        // attachment descriptions
-        auto attachments = std::vector<VkAttachmentDescription>(
-            renderpasses[r_i].attachments.size());
+        std::vector<VkAttachmentDescription> descriptions;
+        descriptions.reserve(renderpass.attachments.size());
 
-        for (uint32_t a_i = 0; a_i < attachments.size(); ++a_i)
+        for (auto const& attachment_handle: renderpass.attachments)
         {
-            auto const & attachment_info = attachment_infos[renderpasses[r_i].attachments[a_i]];
+            auto const & attachment_info = attachment_infos[attachment_handle];
 
-            attachments[a_i] = attachment_info.description;
+            VkAttachmentDescription description = attachment_info.description;
 
             switch (attachment_info.format)
             {
             case Format::USE_COLOR:
-                attachments[a_i].format = swapchain_image_format;
+                description.format = swapchain_image_format;
                 break;
             case Format::USE_DEPTH:
-                attachments[a_i].format = depth_format;
+                description.format = depth_format;
                 break;
             }
 
             if (attachment_info.use_samples)
             {
-                attachments[a_i].samples = physical_device_info.msaa_samples;
+                description.samples = physical_device_info.msaa_samples;
             }
             else
             {
-                attachments[a_i].samples = VK_SAMPLE_COUNT_1_BIT;
+                description.samples = VK_SAMPLE_COUNT_1_BIT;
             }
+
+            descriptions.push_back(description);
         }
 
-        // subpass descriptions
-        auto subpasses = std::vector<VkSubpassDescription>(renderpasses[r_i].subpasses.size());
+        std::vector<VkSubpassDescription> subpasses;
+        subpasses.reserve(renderpass.subpasses.size());
 
-        for (uint32_t s_i = 0; s_i < subpasses.size(); ++s_i)
+        for (auto & subpass_info: renderpass.subpasses)
         {
-            subpasses[s_i] = VkSubpassDescription{
+            subpasses.push_back(VkSubpassDescription{
                 .pipelineBindPoint    = VK_PIPELINE_BIND_POINT_GRAPHICS,
                 .colorAttachmentCount = static_cast<uint32_t>(
-                    renderpasses[r_i].subpasses[s_i].color_attachments.size()),
-                .pColorAttachments = renderpasses[r_i].subpasses[s_i].color_attachments.data(),
-                .pDepthStencilAttachment
-                = &renderpasses[r_i].subpasses[s_i].depth_stencil_attachment,
-                .pResolveAttachments = &renderpasses[r_i].subpasses[s_i].color_resolve_attachment};
+                    subpass_info.color_attachments.size()),
+                .pColorAttachments       = subpass_info.color_attachments.data(),
+                .pDepthStencilAttachment = &subpass_info.depth_stencil_attachment,
+                .pResolveAttachments     = &subpass_info.color_resolve_attachment});
         }
-
-        auto const & dependencies = renderpasses[r_i].subpass_dependencies;
 
         auto renderPassInfo = VkRenderPassCreateInfo{
             .sType           = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO,
-            .attachmentCount = static_cast<uint32_t>(attachments.size()),
-            .pAttachments    = attachments.data(),
+            .attachmentCount = static_cast<uint32_t>(descriptions.size()),
+            .pAttachments    = descriptions.data(),
 
             .subpassCount = static_cast<uint32_t>(subpasses.size()),
             .pSubpasses   = subpasses.data(),
 
-            .dependencyCount = static_cast<uint32_t>(dependencies.size()),
-            .pDependencies   = dependencies.data()};
+            .dependencyCount = static_cast<uint32_t>(renderpass.subpass_dependencies.size()),
+            .pDependencies   = renderpass.subpass_dependencies.data()};
 
         auto result = vkCreateRenderPass(
-            logical_device, &renderPassInfo, nullptr, &renderpasses[r_i].vk_renderpass);
+            logical_device, &renderPassInfo, nullptr, &renderpass.vk_renderpass);
         if (result != VK_SUCCESS)
         {
             return result;
