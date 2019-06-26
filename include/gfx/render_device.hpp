@@ -38,7 +38,6 @@ namespace gfx
 class RenderDevice;
 class RenderConfig;
 
-using AttachmentInfoHandle  = size_t;
 using CommandbufferHandle   = size_t;
 using RenderpassHandle      = size_t;
 using FramebufferHandle     = size_t;
@@ -59,6 +58,9 @@ struct UniformHandle
 {
     uint64_t uniform_layout_id : 32;
     uint64_t uniform_id : 32;
+
+    friend bool operator==(AttachmentHandle const & lhs, AttachmentHandle const & rhs);
+    friend bool operator!=(AttachmentHandle const & lhs, AttachmentHandle const & rhs);
 };
 
 bool operator==(VkAttachmentDescription const & lhs, VkAttachmentDescription const & rhs);
@@ -117,10 +119,10 @@ struct SubpassInfo
 
 struct Renderpass
 {
-    std::vector<AttachmentInfoHandle> attachments;
-    std::vector<SubpassInfo>          subpasses;
-    std::vector<VkSubpassDependency>  subpass_dependencies;
-    VkRenderPass                      vk_renderpass{VK_NULL_HANDLE};
+    std::vector<AttachmentHandle>    attachments;
+    std::vector<SubpassInfo>         subpasses;
+    std::vector<VkSubpassDependency> subpass_dependencies;
+    VkRenderPass                     vk_renderpass{VK_NULL_HANDLE};
 
     void init(rapidjson::Value & document);
 
@@ -620,7 +622,6 @@ std::vector<char> readFile(std::string const & filename)
 
 namespace gfx
 {
-
 //
 //  RAPIDJSON INIT FUNCTIONS
 //
@@ -644,6 +645,16 @@ bool operator==(VkAttachmentReference const & lhs, VkAttachmentReference const &
 }
 
 bool operator!=(VkAttachmentReference const & lhs, VkAttachmentReference const & rhs)
+{
+    return !(lhs == rhs);
+}
+
+bool operator==(AttachmentHandle const & lhs, AttachmentHandle const & rhs)
+{
+    return lhs.is_swapchain_image == rhs.is_swapchain_image && lhs.id == rhs.id;
+}
+
+bool operator!=(AttachmentHandle const & lhs, AttachmentHandle const & rhs)
 {
     return !(lhs == rhs);
 }
@@ -1281,7 +1292,12 @@ void Renderpass::init(rapidjson::Value & document)
     {
         assert(amnt_info.IsInt());
         // AttachmentInfoHandle info = amnt_info.GetInt();
-        attachments.push_back(amnt_info.GetInt());
+        AttachmentHandle attachment = {
+            .is_swapchain_image = 0,
+            .id = static_cast<uint64_t>(amnt_info.GetInt())
+        };
+
+        attachments.push_back(attachment);
     }
 
     assert(document.HasMember("subpasses"));
@@ -1623,8 +1639,7 @@ cmd::BackendDispatchFunction const Draw::DISPATCH_FUNCTION = &draw;
 // RENDER DEVICE
 //
 
-RenderDevice::RenderDevice(GLFWwindow * window_ptr)
-: window(window_ptr)
+RenderDevice::RenderDevice(GLFWwindow * window_ptr): window(window_ptr)
 {
     checkValidationLayerSupport();
     getRequiredExtensions();
@@ -1936,15 +1951,14 @@ void RenderDevice::drawFrame(uint32_t uniform_count, UniformHandle * p_uniforms)
 
     vkResetFences(logical_device, 1, &in_flight_fences[currentFrame]);
 
-    if (vkQueueSubmit(graphics_queue, 1, &submitInfo, in_flight_fences[currentFrame])
-        != VK_SUCCESS)
+    if (vkQueueSubmit(graphics_queue, 1, &submitInfo, in_flight_fences[currentFrame]) != VK_SUCCESS)
     {
         throw std::runtime_error("failed to submit draw command buffer!");
     }
 
     VkSwapchainKHR swapChains[] = {swapchain};
 
-    auto presentInfo = VkPresentInfoKHR{.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR,
+    auto presentInfo = VkPresentInfoKHR{.sType              = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR,
                                         .waitSemaphoreCount = 1,
                                         .pWaitSemaphores    = signalSemaphores,
 
@@ -1956,8 +1970,7 @@ void RenderDevice::drawFrame(uint32_t uniform_count, UniformHandle * p_uniforms)
 
     result = vkQueuePresentKHR(present_queue, &presentInfo);
 
-    if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR
-        || framebuffer_resized)
+    if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR || framebuffer_resized)
     {
         framebuffer_resized = false;
         // recreateSwapChain();
@@ -2272,10 +2285,10 @@ VkResult RenderDevice::createInstance(char const * window_name)
 
 // VALIDATION LAYER DEBUG MESSAGER
 VKAPI_ATTR VkBool32 VKAPI_CALL
-                           RenderDevice::debugCallback(VkDebugUtilsMessageSeverityFlagBitsEXT       messageSeverity,
-                                         VkDebugUtilsMessageTypeFlagsEXT              messageType,
-                                         const VkDebugUtilsMessengerCallbackDataEXT * pCallbackData,
-                                         void *                                       pUserData)
+                    RenderDevice::debugCallback(VkDebugUtilsMessageSeverityFlagBitsEXT       messageSeverity,
+                            VkDebugUtilsMessageTypeFlagsEXT              messageType,
+                            const VkDebugUtilsMessengerCallbackDataEXT * pCallbackData,
+                            void *                                       pUserData)
 {
     std::cerr << "validation layer: " << pCallbackData->pMessage << std::endl;
     return VK_FALSE;
@@ -2298,9 +2311,10 @@ VkResult RenderDevice::createDebugMessenger()
     return createDebugUtilsMessengerEXT(&createInfo, nullptr, &debug_messager);
 }
 
-VkResult RenderDevice::createDebugUtilsMessengerEXT(const VkDebugUtilsMessengerCreateInfoEXT * pCreateInfo,
-                                      const VkAllocationCallbacks *              pAllocator,
-                                      VkDebugUtilsMessengerEXT * pDebugMessenger)
+VkResult RenderDevice::createDebugUtilsMessengerEXT(
+    const VkDebugUtilsMessengerCreateInfoEXT * pCreateInfo,
+    const VkAllocationCallbacks *              pAllocator,
+    VkDebugUtilsMessengerEXT *                 pDebugMessenger)
 {
     auto func = (PFN_vkCreateDebugUtilsMessengerEXT)vkGetInstanceProcAddr(
         instance, "vkCreateDebugUtilsMessengerEXT");
@@ -2315,7 +2329,7 @@ VkResult RenderDevice::createDebugUtilsMessengerEXT(const VkDebugUtilsMessengerC
 }
 
 void RenderDevice::cleanupDebugUtilsMessengerEXT(VkDebugUtilsMessengerEXT      debugMessenger,
-                                   const VkAllocationCallbacks * pAllocator)
+                                                 const VkAllocationCallbacks * pAllocator)
 {
     auto func = (PFN_vkDestroyDebugUtilsMessengerEXT)vkGetInstanceProcAddr(
         instance, "vkDestroyDebugUtilsMessengerEXT");
@@ -2461,7 +2475,8 @@ void RenderDevice::findQueueFamilies(VkPhysicalDevice device, PhysicalDeviceInfo
     }
 }
 
-bool RenderDevice::checkDeviceExtensionSupport(VkPhysicalDevice device, PhysicalDeviceInfo & device_info)
+bool RenderDevice::checkDeviceExtensionSupport(VkPhysicalDevice     device,
+                                               PhysicalDeviceInfo & device_info)
 {
     uint32_t extensionCount;
     vkEnumerateDeviceExtensionProperties(device, nullptr, &extensionCount, nullptr);
@@ -2780,7 +2795,7 @@ VkResult RenderDevice::createRenderPass()
 
         for (uint32_t a_i = 0; a_i < attachments.size(); ++a_i)
         {
-            auto const & attachment_info = attachment_infos[renderpasses[r_i].attachments[a_i]];
+            auto const & attachment_info = attachment_infos[renderpasses[r_i].attachments[a_i].id];
 
             attachments[a_i] = attachment_info.description;
 
@@ -2852,8 +2867,8 @@ VkFormat RenderDevice::findDepthFormat()
 }
 
 VkFormat RenderDevice::findSupportedFormat(const std::vector<VkFormat> & candidates,
-                             VkImageTiling                 tiling,
-                             VkFormatFeatureFlags          features)
+                                           VkImageTiling                 tiling,
+                                           VkFormatFeatureFlags          features)
 {
     for (VkFormat format: candidates)
     {
@@ -2998,7 +3013,8 @@ VkResult RenderDevice::createShaders()
     return result;
 }
 
-VkResult RenderDevice::createShaderModule(std::vector<char> const & code, VkShaderModule & shaderModule)
+VkResult RenderDevice::createShaderModule(std::vector<char> const & code,
+                                          VkShaderModule &          shaderModule)
 {
     auto createInfo = VkShaderModuleCreateInfo{
         .sType    = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
@@ -3716,7 +3732,7 @@ VkResult RenderDevice::createSyncObjects()
 }
 
 VkResult RenderDevice::createDynamicObjectResources(size_t dynamic_vertices_count,
-                                      size_t dynamic_indices_count)
+                                                    size_t dynamic_indices_count)
 {
     dynamic_mapped_vertices.resize(MAX_BUFFERED_RESOURCES);
     dynamic_mapped_indices.resize(MAX_BUFFERED_RESOURCES);
@@ -3759,7 +3775,7 @@ VkResult RenderDevice::createDynamicObjectResources(size_t dynamic_vertices_coun
 }
 
 VkResult RenderDevice::createStagingObjectResources(size_t dynamic_vertices_count,
-                                      size_t dynamic_indices_count)
+                                                    size_t dynamic_indices_count)
 {
     staging_mapped_vertices.resize(MAX_BUFFERED_RESOURCES);
     staging_mapped_indices.resize(MAX_BUFFERED_RESOURCES);
