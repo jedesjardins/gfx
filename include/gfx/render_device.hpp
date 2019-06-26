@@ -40,6 +40,7 @@ class RenderConfig;
 
 using CommandbufferHandle   = size_t;
 using RenderpassHandle      = size_t;
+using AttachmentHandle      = size_t;
 using FramebufferHandle     = size_t;
 using UniformLayoutHandle   = size_t;
 using PushConstantHandle    = size_t;
@@ -48,19 +49,10 @@ using VertexAttributeHandle = size_t;
 using ShaderHandle          = size_t;
 using PipelineHandle        = size_t;
 
-struct AttachmentHandle
-{
-    uint64_t is_swapchain_image : 1;
-    uint64_t id : 63;
-};
-
 struct UniformHandle
 {
     uint64_t uniform_layout_id : 32;
     uint64_t uniform_id : 32;
-
-    friend bool operator==(AttachmentHandle const & lhs, AttachmentHandle const & rhs);
-    friend bool operator!=(AttachmentHandle const & lhs, AttachmentHandle const & rhs);
 };
 
 bool operator==(VkAttachmentDescription const & lhs, VkAttachmentDescription const & rhs);
@@ -83,6 +75,7 @@ struct AttachmentInfo
     VkAttachmentDescription description;
     Format                  format;
     bool                    use_samples;
+    bool                    is_swapchain_image;
 
     void init(rapidjson::Value & document);
 
@@ -92,9 +85,6 @@ struct AttachmentInfo
 
 struct Attachment
 {
-    Format format;
-    bool   use_samples;
-
     VkDeviceMemory vk_image_memory{VK_NULL_HANDLE};
     VkImage        vk_image{VK_NULL_HANDLE};
     VkImageView    vk_image_view{VK_NULL_HANDLE};
@@ -649,16 +639,6 @@ bool operator!=(VkAttachmentReference const & lhs, VkAttachmentReference const &
     return !(lhs == rhs);
 }
 
-bool operator==(AttachmentHandle const & lhs, AttachmentHandle const & rhs)
-{
-    return lhs.is_swapchain_image == rhs.is_swapchain_image && lhs.id == rhs.id;
-}
-
-bool operator!=(AttachmentHandle const & lhs, AttachmentHandle const & rhs)
-{
-    return !(lhs == rhs);
-}
-
 bool operator==(AttachmentInfo const & lhs, AttachmentInfo const & rhs)
 {
     return lhs.format == rhs.format && lhs.use_samples == rhs.use_samples
@@ -672,7 +652,7 @@ bool operator!=(AttachmentInfo const & lhs, AttachmentInfo const & rhs)
 
 bool operator==(Attachment const & lhs, Attachment const & rhs)
 {
-    return lhs.format == rhs.format && lhs.use_samples == rhs.use_samples;
+    return true;
 }
 
 bool operator!=(Attachment const & lhs, Attachment const & rhs)
@@ -1233,28 +1213,20 @@ void gfx::AttachmentInfo::init(rapidjson::Value & document)
     assert(document.HasMember("description"));
     assert(document["description"].IsObject());
     description = initAttachmentDescription(document["description"]);
+
+    if (document.HasMember("is_swapchain_image"))
+    {
+        assert(document["is_swapchain_image"].IsBool());
+        is_swapchain_image = document["is_swapchain_image"].GetBool();
+    }
+    else
+    {
+        is_swapchain_image = false;
+    }
 }
 
 void Attachment::init(rapidjson::Value & document)
-{
-    assert(document.IsObject());
-
-    assert(document.HasMember("format"));
-    assert(document["format"].IsString());
-    char const * format_str = document["format"].GetString();
-    if (strcmp(format_str, "color") == 0)
-    {
-        format = Format::USE_COLOR;
-    }
-    else if (strcmp(format_str, "depth") == 0)
-    {
-        format = Format::USE_DEPTH;
-    }
-
-    assert(document.HasMember("multisampled"));
-    assert(document["multisampled"].IsBool());
-    use_samples = document["multisampled"].GetBool();
-}
+{}
 
 void SubpassInfo::init(rapidjson::Value & document)
 {
@@ -1291,11 +1263,7 @@ void Renderpass::init(rapidjson::Value & document)
     for (auto & amnt_info: document["attachment_infos"].GetArray())
     {
         assert(amnt_info.IsInt());
-        // AttachmentInfoHandle info = amnt_info.GetInt();
-        AttachmentHandle attachment = {
-            .is_swapchain_image = 0,
-            .id = static_cast<uint64_t>(amnt_info.GetInt())
-        };
+        AttachmentHandle attachment = amnt_info.GetInt();
 
         attachments.push_back(attachment);
     }
@@ -1334,17 +1302,7 @@ void Framebuffer::init(rapidjson::Value & document)
     for (auto const & attachment: document["attachments"].GetArray())
     {
         assert(attachment.IsInt());
-        int64_t attachment_id = attachment.GetInt();
-
-        if (attachment_id == -1)
-        {
-            attachments.push_back(gfx::AttachmentHandle{.is_swapchain_image = 1, .id = 0});
-        }
-        else
-        {
-            attachments.push_back(gfx::AttachmentHandle{
-                .is_swapchain_image = 0, .id = static_cast<uint64_t>(attachment_id)});
-        }
+        attachments.push_back(attachment.GetInt());
     }
 }
 
@@ -1499,6 +1457,7 @@ void RenderConfig::init()
         renderpasses.push_back(renderpass);
     }
 
+    /*
     assert(document.HasMember("attachment_infos"));
     assert(document["attachment_infos"].IsArray());
 
@@ -1508,15 +1467,20 @@ void RenderConfig::init()
         attachment_info.init(rp);
         attachment_infos.push_back(attachment_info);
     }
+    */
 
     assert(document.HasMember("attachments"));
     assert(document["attachments"].IsArray());
 
-    for (auto & rp: document["attachments"].GetArray())
+    for (auto & a: document["attachments"].GetArray())
     {
         Attachment attachment{};
-        attachment.init(rp);
+        attachment.init(a);
         attachments.push_back(attachment);
+
+        AttachmentInfo info{};
+        info.init(a);
+        attachment_infos.push_back(info);
     }
 
     assert(document.HasMember("framebuffers"));
@@ -2795,7 +2759,7 @@ VkResult RenderDevice::createRenderPass()
 
         for (uint32_t a_i = 0; a_i < attachments.size(); ++a_i)
         {
-            auto const & attachment_info = attachment_infos[renderpasses[r_i].attachments[a_i].id];
+            auto const & attachment_info = attachment_infos[renderpasses[r_i].attachments[a_i]];
 
             attachments[a_i] = attachment_info.description;
 
@@ -3223,20 +3187,26 @@ VkResult RenderDevice::createAttachments()
     for (uint32_t i = 0; i < attachments.size(); ++i)
     {
         auto & attachment = attachments[i];
+        auto & info       = attachment_infos[i];
+
+        if (info.is_swapchain_image)
+        {
+            continue;
+        }
 
         VkFormat           format;
         VkImageUsageFlags  usage;
         VkImageAspectFlags aspect;
         VkImageLayout      final_layout;
 
-        if (attachment.format == Format::USE_COLOR)
+        if (info.format == Format::USE_COLOR)
         {
             format       = swapchain_image_format;
             usage        = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
             aspect       = VK_IMAGE_ASPECT_COLOR_BIT;
             final_layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
         }
-        else if (attachment.format == Format::USE_DEPTH)
+        else if (info.format == Format::USE_DEPTH)
         {
             format       = depth_format;
             usage        = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
@@ -3246,7 +3216,7 @@ VkResult RenderDevice::createAttachments()
 
         VkSampleCountFlagBits samples;
 
-        if (attachment.use_samples)
+        if (info.use_samples)
         {
             samples = physical_device_info.msaa_samples;
         }
@@ -3490,15 +3460,17 @@ VkResult RenderDevice::createFramebuffers(RenderConfig & render_config)
         {
             auto fb_attachments = std::vector<VkImageView>{};
 
-            for (auto attachment_id: framebuffer.attachments)
+            for (auto attachment_handle: framebuffer.attachments)
             {
-                if (attachment_id.is_swapchain_image)
+                auto const & attachment_info = attachment_infos[attachment_handle];
+
+                if (attachment_info.is_swapchain_image)
                 {
                     fb_attachments.push_back(swapchain_image_views[i]);
                 }
                 else
                 {
-                    fb_attachments.push_back(attachments[attachment_id.id].vk_image_view);
+                    fb_attachments.push_back(attachments[attachment_handle].vk_image_view);
                 }
             }
 

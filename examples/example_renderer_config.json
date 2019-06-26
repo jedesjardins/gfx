@@ -6,24 +6,6 @@
 	[
 		{
 			"format": "color",
-			"multisampled": true
-		},
-		{
-			"format": "depth",
-			"multisampled": true
-		}
-	],
-	"framebuffers":
-	[
-		{
-			"renderpass": 0,
-			"attachments": [0, 1, -1]
-		}
-	],
-	"attachment_infos":
-	[
-		{
-			"format": "color",
 			"multisampled": true,
 			"description":
 			{
@@ -45,6 +27,7 @@
 			}
 		},
 		{
+			"is_swapchain_image": true,
 			"format": "color",
 			"multisampled": false,
 			"description":
@@ -54,6 +37,13 @@
 				"initial_layout": "UNDEFINED",
 				"final_layout": "PRESENT_SRC_KHR"
 			}
+		}
+	],
+	"framebuffers":
+	[
+		{
+			"renderpass": 0,
+			"attachments": [0, 1, 2]
 		}
 	],
 	"renderpasses":
