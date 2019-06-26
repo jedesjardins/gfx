@@ -1,5 +1,7 @@
 
+#define JED_GFX_IMPLEMENTATION
 #include "gfx/render_device.hpp"
+#undef JED_GFX_IMPLEMENTATION
 
 #define JED_CMD_IMPLEMENTATION
 #include "cmd/cmd.hpp"
