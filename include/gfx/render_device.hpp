@@ -147,6 +147,7 @@ struct DynamicUniformBuffer
 struct UniformLayout
 {
     VkDescriptorSetLayoutBinding binding;
+
     VkDescriptorSetLayout        vk_descriptorset_layout{VK_NULL_HANDLE};
     VkDescriptorPool             vk_descriptor_pool{VK_NULL_HANDLE};
     size_t                       uniform_count;
@@ -871,9 +872,7 @@ VkDescriptorType getVkDescriptorType(std::string const & type_name)
         {"STORAGE_BUFFER", VK_DESCRIPTOR_TYPE_STORAGE_BUFFER},
         {"UNIFORM_BUFFER_DYNAMIC", VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC},
         {"STORAGE_BUFFER_DYNAMIC", VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC},
-        {"INPUT_ATTACHMENT", VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT},
-        {"SAMPLED_IMAGE", VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE},
-        {"SAMPLED_IMAGE", VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE}};
+        {"INPUT_ATTACHMENT", VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT}};
 
     auto type = types.find(type_name);
     assert(type != types.end());
