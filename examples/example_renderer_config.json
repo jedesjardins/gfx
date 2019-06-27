@@ -11,55 +11,42 @@
 		{
 			"format": "depth",
 			"multisampled": true
-		}
-	],
-	"framebuffers":
-	[
-		{
-			"renderpass": 0,
-			"attachments": [0, 1, -1]
-		}
-	],
-	"attachment_infos":
-	[
-		{
-			"format": "color",
-			"multisampled": true,
-			"description":
-			{
-				"load_op": "CLEAR",
-				"store_op": "DONT_CARE",
-				"initial_layout": "UNDEFINED",
-				"final_layout": "COLOR_ATTACHMENT_OPTIMAL"
-			}
 		},
 		{
-			"format": "depth",
-			"multisampled": true,
-			"description":
-			{
-				"load_op": "CLEAR",
-				"store_op": "DONT_CARE",
-				"initial_layout": "UNDEFINED",
-				"final_layout": "DEPTH_STENCIL_ATTACHMENT_OPTIMAL"
-			}
-		},
-		{
+			"is_swapchain_image": true,
 			"format": "color",
-			"multisampled": false,
-			"description":
-			{
-				"load_op": "DONT_CARE",
-				"store_op": "STORE",
-				"initial_layout": "UNDEFINED",
-				"final_layout": "PRESENT_SRC_KHR"
-			}
+			"multisampled": false
 		}
 	],
 	"renderpasses":
 	[
 		{
-			"attachment_infos": [0, 1, 2],
+			"framebuffer": {
+				"attachments":
+				[
+					{
+						"attachment": 0,
+						"load_op": "CLEAR",
+						"store_op": "DONT_CARE",
+						"initial_layout": "UNDEFINED",
+						"final_layout": "COLOR_ATTACHMENT_OPTIMAL"
+					},
+					{
+						"attachment": 1,
+						"load_op": "CLEAR",
+						"store_op": "DONT_CARE",
+						"initial_layout": "UNDEFINED",
+						"final_layout": "DEPTH_STENCIL_ATTACHMENT_OPTIMAL"
+					},
+					{
+						"attachment": 2,
+						"load_op": "DONT_CARE",
+						"store_op": "STORE",
+						"initial_layout": "UNDEFINED",
+						"final_layout": "PRESENT_SRC_KHR"
+					}
+				]
+			},
 			"subpasses":
 			[
 				{
