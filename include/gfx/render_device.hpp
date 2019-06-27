@@ -3234,8 +3234,11 @@ VkResult RenderDevice::createAttachments()
             return result;
         }
 
+        /*
+        // This is done implicitly by the renderpass dependency
         transitionImageLayout(
             attachment.vk_image, format, VK_IMAGE_LAYOUT_UNDEFINED, final_layout, 1);
+        */
     }
 
     return VK_SUCCESS;
