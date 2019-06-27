@@ -161,16 +161,7 @@ struct UniformLayout
     std::optional<DynamicUniformBuffer> getUniform(UniformHandle handle);
 };
 
-struct Shader
-{
-    std::string shader_name;
-
-    VkShaderModule vk_shader_module{VK_NULL_HANDLE};
-
-    void init(rapidjson::Value & document);
-};
-
-struct Pipeline
+struct PipelineConfig
 {
     ShaderHandle vertex_shader;
     ShaderHandle fragment_shader;
@@ -184,10 +175,13 @@ struct Pipeline
     RenderpassHandle renderpass;
     uint32_t           subpass;
 
+    void init(rapidjson::Value & document);
+};
+
+struct Pipeline
+{
     VkPipeline       vk_pipeline;
     VkPipelineLayout vk_pipeline_layout;
-
-    void init(rapidjson::Value & document);
 };
 
 struct RenderConfig
@@ -212,9 +206,9 @@ struct RenderConfig
 
     std::vector<VkVertexInputAttributeDescription> vertex_attributes;
 
-    std::vector<Shader> shaders;
+    std::vector<std::string> shader_names;
 
-    std::vector<Pipeline> pipelines;
+    std::vector<PipelineConfig> pipeline_configs;
 
     void init();
 };
@@ -544,8 +538,10 @@ private:
 
     std::vector<VkVertexInputAttributeDescription> vertex_attributes;
 
-    std::vector<Shader> shaders;
+    std::vector<std::string> shader_names;
+    std::vector<VkShaderModule> shaders;
 
+    std::vector<PipelineConfig> pipeline_configs;
     std::vector<Pipeline> pipelines;
 
     std::vector<cmd::CommandBucket<int>> buckets;
@@ -1312,14 +1308,7 @@ std::optional<DynamicUniformBuffer> UniformLayout::getUniform(UniformHandle hand
     return uniform;
 }
 
-void Shader::init(rapidjson::Value & document)
-{
-    assert(document.IsString());
-
-    shader_name = document.GetString();
-}
-
-void Pipeline::init(rapidjson::Value & document)
+void PipelineConfig::init(rapidjson::Value & document)
 {
     assert(document.IsObject());
 
@@ -1433,9 +1422,8 @@ void RenderConfig::init()
 
     for (auto & s: document["shaders"].GetArray())
     {
-        Shader shader{};
-        shader.init(s);
-        shaders.push_back(shader);
+        assert(s.IsString());
+        shader_names.push_back(s.GetString());
     }
 
     assert(document.HasMember("uniform_layouts"));
@@ -1481,9 +1469,9 @@ void RenderConfig::init()
 
     for (auto & p: document["pipelines"].GetArray())
     {
-        Pipeline pipeline{};
-        pipeline.init(p);
-        pipelines.push_back(pipeline);
+        PipelineConfig pipeline_config{};
+        pipeline_config.init(p);
+        pipeline_configs.push_back(pipeline_config);
     }
 }
 
@@ -1608,16 +1596,18 @@ bool RenderDevice::init(RenderConfig & render_config)
         return false;
     }
 
-    shaders = std::move(render_config.shaders);
+    shader_names = std::move(render_config.shader_names);
+    shaders.resize(shader_names.size());
     if (createShaders() != VK_SUCCESS)
     {
         return false;
     }
 
-    pipelines         = std::move(render_config.pipelines);
     push_constants    = std::move(render_config.push_constants);
     vertex_bindings   = std::move(render_config.vertex_bindings);
     vertex_attributes = std::move(render_config.vertex_attributes);
+    pipeline_configs  = std::move(render_config.pipeline_configs);
+    pipelines.resize(pipeline_configs.size());
     if (createGraphicsPipeline() != VK_SUCCESS)
     {
         return false;
@@ -1707,7 +1697,7 @@ void RenderDevice::quit()
 
     for (auto & shader: shaders)
     {
-        vkDestroyShaderModule(logical_device, shader.vk_shader_module, nullptr);
+        vkDestroyShaderModule(logical_device, shader, nullptr);
     }
 
     // GRAPHICS PIPELINE
@@ -2936,11 +2926,13 @@ VkResult RenderDevice::createShaders()
 {
     VkResult result;
 
-    for (auto & shader: shaders)
+    for (size_t i = 0; i < shaders.size(); ++i)
     {
-        auto shaderCode = readFile(shader.shader_name);
+        auto & shader = shaders[i];
 
-        result = createShaderModule(shaderCode, shader.vk_shader_module);
+        auto shaderCode = readFile(shader_names[i]);
+
+        result = createShaderModule(shaderCode, shader);
         if (result != VK_SUCCESS)
         {
             return result;
@@ -2964,30 +2956,33 @@ VkResult RenderDevice::createShaderModule(std::vector<char> const & code,
 // GRAPHICS PIPELINE
 VkResult RenderDevice::createGraphicsPipeline()
 {
-    for (auto & pipeline: pipelines)
+    for (size_t i = 0; i < pipelines.size(); ++i)
     {
+        auto & pipeline = pipelines[i];
+        auto & pipeline_config = pipeline_configs[i];
+
         auto vertShaderStageInfo = VkPipelineShaderStageCreateInfo{
             .sType  = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
             .stage  = VK_SHADER_STAGE_VERTEX_BIT,
-            .module = shaders[pipeline.vertex_shader].vk_shader_module,
+            .module = shaders[pipeline_config.vertex_shader],
             .pName  = "main"};
 
         auto fragShaderStageInfo = VkPipelineShaderStageCreateInfo{
             .sType  = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
             .stage  = VK_SHADER_STAGE_FRAGMENT_BIT,
-            .module = shaders[pipeline.fragment_shader].vk_shader_module,
+            .module = shaders[pipeline_config.fragment_shader],
             .pName  = "main"};
 
         VkPipelineShaderStageCreateInfo shaderStages[] = {vertShaderStageInfo, fragShaderStageInfo};
 
         auto bindings = std::vector<VkVertexInputBindingDescription>{};
-        for (auto const & binding: pipeline.vertex_bindings)
+        for (auto const & binding: pipeline_config.vertex_bindings)
         {
             bindings.push_back(vertex_bindings[binding]);
         }
 
         auto attributes = std::vector<VkVertexInputAttributeDescription>{};
-        for (auto const & attribute: pipeline.vertex_attributes)
+        for (auto const & attribute: pipeline_config.vertex_attributes)
         {
             attributes.push_back(vertex_attributes[attribute]);
         }
@@ -3091,7 +3086,7 @@ VkResult RenderDevice::createGraphicsPipeline()
         */
 
         auto pushConstantRanges = std::vector<VkPushConstantRange>{};
-        for (auto const & push_constant: pipeline.push_constants)
+        for (auto const & push_constant: pipeline_config.push_constants)
         {
             pushConstantRanges.push_back(push_constants[push_constant]);
         }
@@ -3123,8 +3118,8 @@ VkResult RenderDevice::createGraphicsPipeline()
             .pColorBlendState    = &colorBlending,
             .pDynamicState       = nullptr, // Optional
             .layout              = pipeline.vk_pipeline_layout,
-            .renderPass          = renderpasses[pipeline.renderpass],
-            .subpass             = pipeline.subpass,
+            .renderPass          = renderpasses[pipeline_config.renderpass],
+            .subpass             = pipeline_config.subpass,
             .basePipelineHandle  = VK_NULL_HANDLE, // Optional
             .basePipelineIndex   = -1              // Optional
         };
