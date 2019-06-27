@@ -70,30 +70,31 @@ enum class Format
     USE_COLOR
 };
 
-struct Attachment
+struct AttachmentConfig
 {
     Format format;
     bool multisampled;
     bool is_swapchain_image;
 
+    void init(rapidjson::Value & document);
+
+    friend bool operator==(AttachmentConfig const & lhs, AttachmentConfig const & rhs);
+    friend bool operator!=(AttachmentConfig const & lhs, AttachmentConfig const & rhs);
+};
+
+struct Attachment
+{
     VkDeviceMemory vk_image_memory{VK_NULL_HANDLE};
     VkImage        vk_image{VK_NULL_HANDLE};
     VkImageView    vk_image_view{VK_NULL_HANDLE};
-
-    void init(rapidjson::Value & document);
-
-    friend bool operator==(Attachment const & lhs, Attachment const & rhs);
-    friend bool operator!=(Attachment const & lhs, Attachment const & rhs);
 };
 
-struct Framebuffer
+struct FramebufferConfig
 {
     std::vector<AttachmentHandle> attachments;
     uint32_t                      width;
     uint32_t                      height;
     uint32_t                      depth;
-
-    std::vector<VkFramebuffer>    vk_framebuffers;
 
     void init(rapidjson::Value & document);
 };
@@ -110,19 +111,18 @@ struct SubpassInfo
     friend bool operator!=(SubpassInfo const & lhs, SubpassInfo const & rhs);
 };
 
-struct Renderpass
+struct RenderpassConfig
 {
 
-    Framebuffer framebuffer;
+    FramebufferConfig framebuffer_config;
     std::vector<VkAttachmentDescription> descriptions;
     std::vector<SubpassInfo>         subpasses;
     std::vector<VkSubpassDependency> subpass_dependencies;
-    VkRenderPass                     vk_renderpass{VK_NULL_HANDLE};
 
     void init(rapidjson::Value & document);
 
-    friend bool operator==(Renderpass const & lhs, Renderpass const & rhs);
-    friend bool operator!=(Renderpass const & lhs, Renderpass const & rhs);
+    friend bool operator==(RenderpassConfig const & lhs, RenderpassConfig const & rhs);
+    friend bool operator!=(RenderpassConfig const & lhs, RenderpassConfig const & rhs);
 };
 
 struct MappedBuffer
@@ -147,6 +147,7 @@ struct DynamicUniformBuffer
 struct UniformLayout
 {
     VkDescriptorSetLayoutBinding binding;
+
     VkDescriptorSetLayout        vk_descriptorset_layout{VK_NULL_HANDLE};
     VkDescriptorPool             vk_descriptor_pool{VK_NULL_HANDLE};
     size_t                       uniform_count;
@@ -161,16 +162,7 @@ struct UniformLayout
     std::optional<DynamicUniformBuffer> getUniform(UniformHandle handle);
 };
 
-struct Shader
-{
-    std::string shader_name;
-
-    VkShaderModule vk_shader_module{VK_NULL_HANDLE};
-
-    void init(rapidjson::Value & document);
-};
-
-struct Pipeline
+struct PipelineConfig
 {
     ShaderHandle vertex_shader;
     ShaderHandle fragment_shader;
@@ -182,12 +174,15 @@ struct Pipeline
     std::vector<PushConstantHandle>  push_constants;
 
     RenderpassHandle renderpass;
-    size_t           subpass;
-
-    VkPipeline       vk_pipeline;
-    VkPipelineLayout vk_pipeline_layout;
+    uint32_t           subpass;
 
     void init(rapidjson::Value & document);
+};
+
+struct Pipeline
+{
+    VkPipeline       vk_pipeline;
+    VkPipelineLayout vk_pipeline_layout;
 };
 
 struct RenderConfig
@@ -200,13 +195,9 @@ struct RenderConfig
 
     size_t dynamic_indices_count;
 
-    //std::vector<AttachmentInfo> attachment_infos;
+    std::vector<RenderpassConfig> renderpass_configs;
 
-    std::vector<Renderpass> renderpasses;
-
-    std::vector<Attachment> attachments;
-
-    //std::vector<Framebuffer> framebuffers;
+    std::vector<AttachmentConfig> attachment_configs;
 
     std::vector<UniformLayout> uniform_layouts;
 
@@ -216,9 +207,9 @@ struct RenderConfig
 
     std::vector<VkVertexInputAttributeDescription> vertex_attributes;
 
-    std::vector<Shader> shaders;
+    std::vector<std::string> shader_names;
 
-    std::vector<Pipeline> pipelines;
+    std::vector<PipelineConfig> pipeline_configs;
 
     void init();
 };
@@ -388,7 +379,7 @@ private:
     // RENDER PASS & ATTACHMENT DESCRIPTIONS
     VkResult createRenderPass();
 
-    VkResult createFramebuffer(Renderpass const& renderpass, Framebuffer & framebuffer);
+    VkResult createFramebuffer(RenderpassConfig const& renderpass_config, VkRenderPass const& renderpass, std::vector<VkFramebuffer> & framebuffers);
 
     VkFormat findDepthFormat();
 
@@ -533,9 +524,12 @@ private:
     // need a way of handling the swapchain images
     // attachments that are used after this frame need to be double buffered etc (i.e. like
     // swapchain) if Store op is DONT_CARE, it doesn't need to be buffered
+    std::vector<AttachmentConfig> attachment_configs;
     std::vector<Attachment> attachments;
 
-    std::vector<Renderpass> renderpasses;
+    std::vector<RenderpassConfig> renderpass_configs;
+    std::vector<VkRenderPass> renderpasses;
+    std::vector<std::vector<VkFramebuffer>> framebuffers;
 
     std::vector<UniformLayout> uniform_layouts;
 
@@ -545,8 +539,10 @@ private:
 
     std::vector<VkVertexInputAttributeDescription> vertex_attributes;
 
-    std::vector<Shader> shaders;
+    std::vector<std::string> shader_names;
+    std::vector<VkShaderModule> shaders;
 
+    std::vector<PipelineConfig> pipeline_configs;
     std::vector<Pipeline> pipelines;
 
     std::vector<cmd::CommandBucket<int>> buckets;
@@ -686,7 +682,7 @@ bool operator!=(VkSubpassDependency const & lhs, VkSubpassDependency const & rhs
     return !(lhs == rhs);
 }
 
-bool operator==(Renderpass const & lhs, Renderpass const & rhs)
+bool operator==(RenderpassConfig const & lhs, RenderpassConfig const & rhs)
 {
     if (lhs.subpasses.size() != rhs.subpasses.size())
     {
@@ -717,7 +713,7 @@ bool operator==(Renderpass const & lhs, Renderpass const & rhs)
     return true;
 }
 
-bool operator!=(Renderpass const & lhs, Renderpass const & rhs)
+bool operator!=(RenderpassConfig const & lhs, RenderpassConfig const & rhs)
 {
     return !(lhs == rhs);
 }
@@ -876,9 +872,7 @@ VkDescriptorType getVkDescriptorType(std::string const & type_name)
         {"STORAGE_BUFFER", VK_DESCRIPTOR_TYPE_STORAGE_BUFFER},
         {"UNIFORM_BUFFER_DYNAMIC", VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC},
         {"STORAGE_BUFFER_DYNAMIC", VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC},
-        {"INPUT_ATTACHMENT", VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT},
-        {"SAMPLED_IMAGE", VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE},
-        {"SAMPLED_IMAGE", VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE}};
+        {"INPUT_ATTACHMENT", VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT}};
 
     auto type = types.find(type_name);
     assert(type != types.end());
@@ -1157,7 +1151,7 @@ VkVertexInputAttributeDescription initVkVertexInputAttributeDescription(rapidjso
     return attribute;
 }
 
-void Attachment::init(rapidjson::Value & document)
+void AttachmentConfig::init(rapidjson::Value & document)
 {
 
     assert(document.IsObject());
@@ -1214,12 +1208,12 @@ void SubpassInfo::init(rapidjson::Value & document)
     }
 }
 
-void Renderpass::init(rapidjson::Value & document)
+void RenderpassConfig::init(rapidjson::Value & document)
 {
     assert(document.IsObject());
 
     assert(document.HasMember("framebuffer"));
-    framebuffer.init(document["framebuffer"]);
+    framebuffer_config.init(document["framebuffer"]);
 
     assert(document["framebuffer"].IsObject());
     auto const& json_framebuffer = document["framebuffer"];
@@ -1250,7 +1244,7 @@ void Renderpass::init(rapidjson::Value & document)
     }
 }
 
-void Framebuffer::init(rapidjson::Value & document)
+void FramebufferConfig::init(rapidjson::Value & document)
 {
     assert(document.IsObject());
 
@@ -1313,14 +1307,7 @@ std::optional<DynamicUniformBuffer> UniformLayout::getUniform(UniformHandle hand
     return uniform;
 }
 
-void Shader::init(rapidjson::Value & document)
-{
-    assert(document.IsString());
-
-    shader_name = document.GetString();
-}
-
-void Pipeline::init(rapidjson::Value & document)
+void PipelineConfig::init(rapidjson::Value & document)
 {
     assert(document.IsObject());
 
@@ -1414,9 +1401,9 @@ void RenderConfig::init()
 
     for (auto & a: document["attachments"].GetArray())
     {
-        Attachment attachment{};
-        attachment.init(a);
-        attachments.push_back(attachment);
+        AttachmentConfig attachment_config{};
+        attachment_config.init(a);
+        attachment_configs.push_back(attachment_config);
     }
 
     assert(document.HasMember("renderpasses"));
@@ -1424,9 +1411,9 @@ void RenderConfig::init()
 
     for (auto & rp: document["renderpasses"].GetArray())
     {
-        Renderpass renderpass{};
-        renderpass.init(rp);
-        renderpasses.push_back(renderpass);
+        RenderpassConfig renderpass_config{};
+        renderpass_config.init(rp);
+        renderpass_configs.push_back(renderpass_config);
     }
 
     assert(document.HasMember("shaders"));
@@ -1434,9 +1421,8 @@ void RenderConfig::init()
 
     for (auto & s: document["shaders"].GetArray())
     {
-        Shader shader{};
-        shader.init(s);
-        shaders.push_back(shader);
+        assert(s.IsString());
+        shader_names.push_back(s.GetString());
     }
 
     assert(document.HasMember("uniform_layouts"));
@@ -1482,9 +1468,9 @@ void RenderConfig::init()
 
     for (auto & p: document["pipelines"].GetArray())
     {
-        Pipeline pipeline{};
-        pipeline.init(p);
-        pipelines.push_back(pipeline);
+        PipelineConfig pipeline_config{};
+        pipeline_config.init(p);
+        pipeline_configs.push_back(pipeline_config);
     }
 }
 
@@ -1588,14 +1574,16 @@ bool RenderDevice::init(RenderConfig & render_config)
         return false;
     }
 
-    attachments = std::move(render_config.attachments);
+    attachment_configs = std::move(render_config.attachment_configs);
+    attachments.resize(attachment_configs.size());
     if (createAttachments() != VK_SUCCESS)
     {
         return false;
     }
 
-    renderpasses     = std::move(render_config.renderpasses);
-    //attachment_infos = std::move(render_config.attachment_infos);
+    renderpass_configs     = std::move(render_config.renderpass_configs);
+    renderpasses.resize(renderpass_configs.size());
+    framebuffers.resize(renderpass_configs.size());
     if (createRenderPass() != VK_SUCCESS)
     {
         return false;
@@ -1607,16 +1595,18 @@ bool RenderDevice::init(RenderConfig & render_config)
         return false;
     }
 
-    shaders = std::move(render_config.shaders);
+    shader_names = std::move(render_config.shader_names);
+    shaders.resize(shader_names.size());
     if (createShaders() != VK_SUCCESS)
     {
         return false;
     }
 
-    pipelines         = std::move(render_config.pipelines);
     push_constants    = std::move(render_config.push_constants);
     vertex_bindings   = std::move(render_config.vertex_bindings);
     vertex_attributes = std::move(render_config.vertex_attributes);
+    pipeline_configs  = std::move(render_config.pipeline_configs);
+    pipelines.resize(pipeline_configs.size());
     if (createGraphicsPipeline() != VK_SUCCESS)
     {
         return false;
@@ -1706,7 +1696,7 @@ void RenderDevice::quit()
 
     for (auto & shader: shaders)
     {
-        vkDestroyShaderModule(logical_device, shader.vk_shader_module, nullptr);
+        vkDestroyShaderModule(logical_device, shader, nullptr);
     }
 
     // GRAPHICS PIPELINE
@@ -1730,15 +1720,19 @@ void RenderDevice::quit()
             logical_device, uniform_layout.vk_descriptorset_layout, nullptr);
     }
 
-    // RENDER PASS
-    for (auto & renderpass: renderpasses)
+    for (auto & buffered_framebuffers: framebuffers)
     {
-        for (auto & framebuffer: renderpass.framebuffer.vk_framebuffers)
+        for (auto & framebuffer: buffered_framebuffers)
         {
             vkDestroyFramebuffer(logical_device, framebuffer, nullptr);
         }
-        vkDestroyRenderPass(logical_device, renderpass.vk_renderpass, nullptr);
-        renderpass.vk_renderpass = VK_NULL_HANDLE;
+    }
+
+    // RENDER PASS
+    for (auto & renderpass: renderpasses)
+    {
+        vkDestroyRenderPass(logical_device, renderpass, nullptr);
+        renderpass = VK_NULL_HANDLE;
     }
 
     for (size_t i = 0; i < swapchain_image_views.size(); i++)
@@ -2676,24 +2670,27 @@ VkResult RenderDevice::createImageView(VkImage            image,
 // RENDER PASS & ATTACHMENT DESCRIPTIONS
 VkResult RenderDevice::createRenderPass()
 {
-    for (auto & renderpass: renderpasses)
+    for (size_t i = 0; i < renderpasses.size(); ++i)
     {
-        for (size_t i = 0; i < renderpass.descriptions.size(); ++i)
-        {
-            auto & description = renderpass.descriptions[i];
-            auto attachment_handle = renderpass.framebuffer.attachments[i];
-            auto const& attachment = attachments[attachment_handle];
+        auto & renderpass_config = renderpass_configs[i];
+        auto & renderpass = renderpasses[i];
 
-            if (attachment.format == Format::USE_COLOR)
+        for (size_t i = 0; i < renderpass_config.descriptions.size(); ++i)
+        {
+            auto & description = renderpass_config.descriptions[i];
+            auto attachment_handle = renderpass_config.framebuffer_config.attachments[i];
+            auto const& attachment_config = attachment_configs[attachment_handle];
+
+            if (attachment_config.format == Format::USE_COLOR)
             {
                 description.format       = swapchain_image_format;
             }
-            else if (attachment.format == Format::USE_DEPTH)
+            else if (attachment_config.format == Format::USE_DEPTH)
             {
                 description.format       = depth_format;
             }
 
-            if (attachment.multisampled)
+            if (attachment_config.multisampled)
             {
                 description.samples = physical_device_info.msaa_samples;
             }
@@ -2704,9 +2701,9 @@ VkResult RenderDevice::createRenderPass()
         }
 
         std::vector<VkSubpassDescription> subpasses;
-        subpasses.reserve(renderpass.subpasses.size());
+        subpasses.reserve(renderpass_config.subpasses.size());
 
-        for (auto & subpass_info: renderpass.subpasses)
+        for (auto & subpass_info: renderpass_config.subpasses)
         {
             subpasses.push_back(VkSubpassDescription{
                 .pipelineBindPoint    = VK_PIPELINE_BIND_POINT_GRAPHICS,
@@ -2719,56 +2716,57 @@ VkResult RenderDevice::createRenderPass()
 
         auto renderPassInfo = VkRenderPassCreateInfo{
             .sType           = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO,
-            .attachmentCount = static_cast<uint32_t>(renderpass.descriptions.size()),
-            .pAttachments    = renderpass.descriptions.data(),
+            .attachmentCount = static_cast<uint32_t>(renderpass_config.descriptions.size()),
+            .pAttachments    = renderpass_config.descriptions.data(),
 
             .subpassCount = static_cast<uint32_t>(subpasses.size()),
             .pSubpasses   = subpasses.data(),
 
-            .dependencyCount = static_cast<uint32_t>(renderpass.subpass_dependencies.size()),
-            .pDependencies   = renderpass.subpass_dependencies.data()};
+            .dependencyCount = static_cast<uint32_t>(renderpass_config.subpass_dependencies.size()),
+            .pDependencies   = renderpass_config.subpass_dependencies.data()};
 
         auto result = vkCreateRenderPass(
-            logical_device, &renderPassInfo, nullptr, &renderpass.vk_renderpass);
+            logical_device, &renderPassInfo, nullptr, &renderpass);
         if (result != VK_SUCCESS)
         {
             return result;
         }
 
-        createFramebuffer(renderpass, renderpass.framebuffer);
+        createFramebuffer(renderpass_config, renderpass, framebuffers[i]);
     }
 
     return VK_SUCCESS;
 }
 
 // FRAMEBUFFER
-VkResult RenderDevice::createFramebuffer(Renderpass const& renderpass, Framebuffer & framebuffer)
+VkResult RenderDevice::createFramebuffer(RenderpassConfig const& config, VkRenderPass const& renderpass, std::vector<VkFramebuffer> & framebuffers)
 {
-    framebuffer.vk_framebuffers.resize(swapchain_image_count);
+    auto const& framebuffer_config = config.framebuffer_config;
+    framebuffers.resize(swapchain_image_count);
 
     for (size_t i = 0; i < swapchain_image_count; ++i)
     {
-        auto & vk_framebuffer = framebuffer.vk_framebuffers[i];
+        auto & framebuffer = framebuffers[i];
 
         auto fb_attachments = std::vector<VkImageView>{};
 
-        for (auto attachment_handle: framebuffer.attachments)
+        for (auto attachment_handle: framebuffer_config.attachments)
         {
-            auto const & attachment = attachments[attachment_handle];
+            auto const & attachment_config = attachment_configs[attachment_handle];
 
-            if (attachment.is_swapchain_image)
+            if (attachment_config.is_swapchain_image)
             {
                 fb_attachments.push_back(swapchain_image_views[i]);
             }
             else
             {
-                fb_attachments.push_back(attachment.vk_image_view);
+                fb_attachments.push_back(attachments[attachment_handle].vk_image_view);
             }
         }
 
         auto framebufferInfo = VkFramebufferCreateInfo{
             .sType           = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO,
-            .renderPass      = renderpass.vk_renderpass,
+            .renderPass      = renderpass,
             .attachmentCount = static_cast<uint32_t>(fb_attachments.size()),
             .pAttachments    = fb_attachments.data(),
             .width           = swapchain_extent.width,
@@ -2776,7 +2774,7 @@ VkResult RenderDevice::createFramebuffer(Renderpass const& renderpass, Framebuff
             .layers          = 1};
 
         auto result = vkCreateFramebuffer(
-            logical_device, &framebufferInfo, nullptr, &vk_framebuffer);
+            logical_device, &framebufferInfo, nullptr, &framebuffer);
         if (result != VK_SUCCESS)
         {
             return result;
@@ -2927,11 +2925,13 @@ VkResult RenderDevice::createShaders()
 {
     VkResult result;
 
-    for (auto & shader: shaders)
+    for (size_t i = 0; i < shaders.size(); ++i)
     {
-        auto shaderCode = readFile(shader.shader_name);
+        auto & shader = shaders[i];
 
-        result = createShaderModule(shaderCode, shader.vk_shader_module);
+        auto shaderCode = readFile(shader_names[i]);
+
+        result = createShaderModule(shaderCode, shader);
         if (result != VK_SUCCESS)
         {
             return result;
@@ -2955,30 +2955,33 @@ VkResult RenderDevice::createShaderModule(std::vector<char> const & code,
 // GRAPHICS PIPELINE
 VkResult RenderDevice::createGraphicsPipeline()
 {
-    for (auto & pipeline: pipelines)
+    for (size_t i = 0; i < pipelines.size(); ++i)
     {
+        auto & pipeline = pipelines[i];
+        auto & pipeline_config = pipeline_configs[i];
+
         auto vertShaderStageInfo = VkPipelineShaderStageCreateInfo{
             .sType  = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
             .stage  = VK_SHADER_STAGE_VERTEX_BIT,
-            .module = shaders[pipeline.vertex_shader].vk_shader_module,
+            .module = shaders[pipeline_config.vertex_shader],
             .pName  = "main"};
 
         auto fragShaderStageInfo = VkPipelineShaderStageCreateInfo{
             .sType  = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
             .stage  = VK_SHADER_STAGE_FRAGMENT_BIT,
-            .module = shaders[pipeline.fragment_shader].vk_shader_module,
+            .module = shaders[pipeline_config.fragment_shader],
             .pName  = "main"};
 
         VkPipelineShaderStageCreateInfo shaderStages[] = {vertShaderStageInfo, fragShaderStageInfo};
 
         auto bindings = std::vector<VkVertexInputBindingDescription>{};
-        for (auto const & binding: pipeline.vertex_bindings)
+        for (auto const & binding: pipeline_config.vertex_bindings)
         {
             bindings.push_back(vertex_bindings[binding]);
         }
 
         auto attributes = std::vector<VkVertexInputAttributeDescription>{};
-        for (auto const & attribute: pipeline.vertex_attributes)
+        for (auto const & attribute: pipeline_config.vertex_attributes)
         {
             attributes.push_back(vertex_attributes[attribute]);
         }
@@ -3082,7 +3085,7 @@ VkResult RenderDevice::createGraphicsPipeline()
         */
 
         auto pushConstantRanges = std::vector<VkPushConstantRange>{};
-        for (auto const & push_constant: pipeline.push_constants)
+        for (auto const & push_constant: pipeline_config.push_constants)
         {
             pushConstantRanges.push_back(push_constants[push_constant]);
         }
@@ -3101,9 +3104,6 @@ VkResult RenderDevice::createGraphicsPipeline()
             return result;
         }
 
-        VkRenderPass renderpass = renderpasses[pipeline.renderpass].vk_renderpass;
-        uint32_t     subpass    = pipeline.subpass;
-
         auto pipelineInfo = VkGraphicsPipelineCreateInfo{
             .sType               = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO,
             .stageCount          = 2,
@@ -3117,8 +3117,8 @@ VkResult RenderDevice::createGraphicsPipeline()
             .pColorBlendState    = &colorBlending,
             .pDynamicState       = nullptr, // Optional
             .layout              = pipeline.vk_pipeline_layout,
-            .renderPass          = renderpass, // render_pass,
-            .subpass             = subpass,
+            .renderPass          = renderpasses[pipeline_config.renderpass],
+            .subpass             = pipeline_config.subpass,
             .basePipelineHandle  = VK_NULL_HANDLE, // Optional
             .basePipelineIndex   = -1              // Optional
         };
@@ -3148,11 +3148,12 @@ VkResult RenderDevice::createCommandPool()
 
 VkResult RenderDevice::createAttachments()
 {
-    for (uint32_t i = 0; i < attachments.size(); ++i)
+    for (uint32_t i = 0; i < attachment_configs.size(); ++i)
     {
         auto & attachment = attachments[i];
+        auto const& attachment_config = attachment_configs[i];
 
-        if (attachment.is_swapchain_image)
+        if (attachment_config.is_swapchain_image)
         {
             continue;
         }
@@ -3162,14 +3163,14 @@ VkResult RenderDevice::createAttachments()
         VkImageAspectFlags aspect;
         VkImageLayout      final_layout;
 
-        if (attachment.format == Format::USE_COLOR)
+        if (attachment_config.format == Format::USE_COLOR)
         {
             format       = swapchain_image_format;
             usage        = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
             aspect       = VK_IMAGE_ASPECT_COLOR_BIT;
             final_layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
         }
-        else if (attachment.format == Format::USE_DEPTH)
+        else if (attachment_config.format == Format::USE_DEPTH)
         {
             format       = depth_format;
             usage        = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
@@ -3179,7 +3180,7 @@ VkResult RenderDevice::createAttachments()
 
         VkSampleCountFlagBits samples;
 
-        if (attachment.multisampled)
+        if (attachment_config.multisampled)
         {
             samples = physical_device_info.msaa_samples;
         }
@@ -3536,8 +3537,8 @@ VkResult RenderDevice::createCommandbuffer(uint32_t        image_index,
 
     auto renderPassInfo = VkRenderPassBeginInfo{
         .sType             = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
-        .renderPass        = renderpasses[0].vk_renderpass,
-        .framebuffer       = renderpasses[0].framebuffer.vk_framebuffers[image_index],//framebuffers[resource_index][0].vk_framebuffer,
+        .renderPass        = renderpasses[0],
+        .framebuffer       = framebuffers[0][image_index],//framebuffers[resource_index][0].vk_framebuffer,
         .renderArea.offset = {0, 0},
         .renderArea.extent = swapchain_extent,
         .clearValueCount   = static_cast<uint32_t>(clearValues.size()),
