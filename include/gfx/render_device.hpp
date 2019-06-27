@@ -125,12 +125,6 @@ struct RenderpassConfig
     friend bool operator!=(RenderpassConfig const & lhs, RenderpassConfig const & rhs);
 };
 
-struct Renderpass
-{
-    std::vector<VkFramebuffer>       vk_framebuffers;
-    VkRenderPass                     vk_renderpass{VK_NULL_HANDLE};
-};
-
 struct MappedBuffer
 {
     void *         data;
@@ -188,7 +182,7 @@ struct Pipeline
     std::vector<PushConstantHandle>  push_constants;
 
     RenderpassHandle renderpass;
-    size_t           subpass;
+    uint32_t           subpass;
 
     VkPipeline       vk_pipeline;
     VkPipelineLayout vk_pipeline_layout;
@@ -390,7 +384,7 @@ private:
     // RENDER PASS & ATTACHMENT DESCRIPTIONS
     VkResult createRenderPass();
 
-    VkResult createFramebuffer(RenderpassConfig const& renderpass_config, Renderpass & renderpass);
+    VkResult createFramebuffer(RenderpassConfig const& renderpass_config, VkRenderPass const& renderpass, std::vector<VkFramebuffer> & framebuffers);
 
     VkFormat findDepthFormat();
 
@@ -539,7 +533,8 @@ private:
     std::vector<Attachment> attachments;
 
     std::vector<RenderpassConfig> renderpass_configs;
-    std::vector<Renderpass> renderpasses;
+    std::vector<VkRenderPass> renderpasses;
+    std::vector<std::vector<VkFramebuffer>> framebuffers;
 
     std::vector<UniformLayout> uniform_layouts;
 
@@ -1601,6 +1596,7 @@ bool RenderDevice::init(RenderConfig & render_config)
 
     renderpass_configs     = std::move(render_config.renderpass_configs);
     renderpasses.resize(renderpass_configs.size());
+    framebuffers.resize(renderpass_configs.size());
     if (createRenderPass() != VK_SUCCESS)
     {
         return false;
@@ -1735,15 +1731,19 @@ void RenderDevice::quit()
             logical_device, uniform_layout.vk_descriptorset_layout, nullptr);
     }
 
-    // RENDER PASS
-    for (auto & renderpass: renderpasses)
+    for (auto & buffered_framebuffers: framebuffers)
     {
-        for (auto & framebuffer: renderpass.vk_framebuffers)
+        for (auto & framebuffer: buffered_framebuffers)
         {
             vkDestroyFramebuffer(logical_device, framebuffer, nullptr);
         }
-        vkDestroyRenderPass(logical_device, renderpass.vk_renderpass, nullptr);
-        renderpass.vk_renderpass = VK_NULL_HANDLE;
+    }
+
+    // RENDER PASS
+    for (auto & renderpass: renderpasses)
+    {
+        vkDestroyRenderPass(logical_device, renderpass, nullptr);
+        renderpass = VK_NULL_HANDLE;
     }
 
     for (size_t i = 0; i < swapchain_image_views.size(); i++)
@@ -2737,27 +2737,27 @@ VkResult RenderDevice::createRenderPass()
             .pDependencies   = renderpass_config.subpass_dependencies.data()};
 
         auto result = vkCreateRenderPass(
-            logical_device, &renderPassInfo, nullptr, &renderpass.vk_renderpass);
+            logical_device, &renderPassInfo, nullptr, &renderpass);
         if (result != VK_SUCCESS)
         {
             return result;
         }
 
-        createFramebuffer(renderpass_config, renderpass);
+        createFramebuffer(renderpass_config, renderpass, framebuffers[i]);
     }
 
     return VK_SUCCESS;
 }
 
 // FRAMEBUFFER
-VkResult RenderDevice::createFramebuffer(RenderpassConfig const& renderpass_config, Renderpass & renderpass)
+VkResult RenderDevice::createFramebuffer(RenderpassConfig const& config, VkRenderPass const& renderpass, std::vector<VkFramebuffer> & framebuffers)
 {
-    auto const& framebuffer_config = renderpass_config.framebuffer_config;
-    renderpass.vk_framebuffers.resize(swapchain_image_count);
+    auto const& framebuffer_config = config.framebuffer_config;
+    framebuffers.resize(swapchain_image_count);
 
     for (size_t i = 0; i < swapchain_image_count; ++i)
     {
-        auto & vk_framebuffer = renderpass.vk_framebuffers[i];
+        auto & framebuffer = framebuffers[i];
 
         auto fb_attachments = std::vector<VkImageView>{};
 
@@ -2777,7 +2777,7 @@ VkResult RenderDevice::createFramebuffer(RenderpassConfig const& renderpass_conf
 
         auto framebufferInfo = VkFramebufferCreateInfo{
             .sType           = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO,
-            .renderPass      = renderpass.vk_renderpass,
+            .renderPass      = renderpass,
             .attachmentCount = static_cast<uint32_t>(fb_attachments.size()),
             .pAttachments    = fb_attachments.data(),
             .width           = swapchain_extent.width,
@@ -2785,7 +2785,7 @@ VkResult RenderDevice::createFramebuffer(RenderpassConfig const& renderpass_conf
             .layers          = 1};
 
         auto result = vkCreateFramebuffer(
-            logical_device, &framebufferInfo, nullptr, &vk_framebuffer);
+            logical_device, &framebufferInfo, nullptr, &framebuffer);
         if (result != VK_SUCCESS)
         {
             return result;
@@ -3110,9 +3110,6 @@ VkResult RenderDevice::createGraphicsPipeline()
             return result;
         }
 
-        VkRenderPass renderpass = renderpasses[pipeline.renderpass].vk_renderpass;
-        uint32_t     subpass    = pipeline.subpass;
-
         auto pipelineInfo = VkGraphicsPipelineCreateInfo{
             .sType               = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO,
             .stageCount          = 2,
@@ -3126,8 +3123,8 @@ VkResult RenderDevice::createGraphicsPipeline()
             .pColorBlendState    = &colorBlending,
             .pDynamicState       = nullptr, // Optional
             .layout              = pipeline.vk_pipeline_layout,
-            .renderPass          = renderpass, // render_pass,
-            .subpass             = subpass,
+            .renderPass          = renderpasses[pipeline.renderpass],
+            .subpass             = pipeline.subpass,
             .basePipelineHandle  = VK_NULL_HANDLE, // Optional
             .basePipelineIndex   = -1              // Optional
         };
@@ -3546,8 +3543,8 @@ VkResult RenderDevice::createCommandbuffer(uint32_t        image_index,
 
     auto renderPassInfo = VkRenderPassBeginInfo{
         .sType             = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
-        .renderPass        = renderpasses[0].vk_renderpass,
-        .framebuffer       = renderpasses[0].vk_framebuffers[image_index],//framebuffers[resource_index][0].vk_framebuffer,
+        .renderPass        = renderpasses[0],
+        .framebuffer       = framebuffers[0][image_index],//framebuffers[resource_index][0].vk_framebuffer,
         .renderArea.offset = {0, 0},
         .renderArea.extent = swapchain_extent,
         .clearValueCount   = static_cast<uint32_t>(clearValues.size()),
