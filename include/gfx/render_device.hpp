@@ -1257,10 +1257,10 @@ void Renderpass::init(rapidjson::Value & document)
 {
     assert(document.IsObject());
 
-    assert(document.HasMember("attachment_infos"));
-    assert(document["attachment_infos"].IsArray());
+    assert(document.HasMember("attachments"));
+    assert(document["attachments"].IsArray());
 
-    for (auto & amnt_info: document["attachment_infos"].GetArray())
+    for (auto & amnt_info: document["attachments"].GetArray())
     {
         assert(amnt_info.IsInt());
         AttachmentHandle attachment = amnt_info.GetInt();
