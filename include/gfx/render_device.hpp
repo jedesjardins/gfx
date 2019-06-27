@@ -89,14 +89,12 @@ struct Attachment
     VkImageView    vk_image_view{VK_NULL_HANDLE};
 };
 
-struct Framebuffer
+struct FramebufferConfig
 {
     std::vector<AttachmentHandle> attachments;
     uint32_t                      width;
     uint32_t                      height;
     uint32_t                      depth;
-
-    std::vector<VkFramebuffer>    vk_framebuffers;
 
     void init(rapidjson::Value & document);
 };
@@ -116,10 +114,12 @@ struct SubpassInfo
 struct Renderpass
 {
 
-    Framebuffer framebuffer;
+    FramebufferConfig framebuffer_config;
     std::vector<VkAttachmentDescription> descriptions;
     std::vector<SubpassInfo>         subpasses;
     std::vector<VkSubpassDependency> subpass_dependencies;
+
+    std::vector<VkFramebuffer>       vk_framebuffers;
     VkRenderPass                     vk_renderpass{VK_NULL_HANDLE};
 
     void init(rapidjson::Value & document);
@@ -203,13 +203,9 @@ struct RenderConfig
 
     size_t dynamic_indices_count;
 
-    //std::vector<AttachmentInfo> attachment_infos;
-
     std::vector<Renderpass> renderpasses;
 
     std::vector<AttachmentConfig> attachment_configs;
-
-    //std::vector<Framebuffer> framebuffers;
 
     std::vector<UniformLayout> uniform_layouts;
 
@@ -391,7 +387,7 @@ private:
     // RENDER PASS & ATTACHMENT DESCRIPTIONS
     VkResult createRenderPass();
 
-    VkResult createFramebuffer(Renderpass const& renderpass, Framebuffer & framebuffer);
+    VkResult createFramebuffer(Renderpass & renderpass);
 
     VkFormat findDepthFormat();
 
@@ -1223,7 +1219,7 @@ void Renderpass::init(rapidjson::Value & document)
     assert(document.IsObject());
 
     assert(document.HasMember("framebuffer"));
-    framebuffer.init(document["framebuffer"]);
+    framebuffer_config.init(document["framebuffer"]);
 
     assert(document["framebuffer"].IsObject());
     auto const& json_framebuffer = document["framebuffer"];
@@ -1254,7 +1250,7 @@ void Renderpass::init(rapidjson::Value & document)
     }
 }
 
-void Framebuffer::init(rapidjson::Value & document)
+void FramebufferConfig::init(rapidjson::Value & document)
 {
     assert(document.IsObject());
 
@@ -1738,7 +1734,7 @@ void RenderDevice::quit()
     // RENDER PASS
     for (auto & renderpass: renderpasses)
     {
-        for (auto & framebuffer: renderpass.framebuffer.vk_framebuffers)
+        for (auto & framebuffer: renderpass.vk_framebuffers)
         {
             vkDestroyFramebuffer(logical_device, framebuffer, nullptr);
         }
@@ -2686,7 +2682,7 @@ VkResult RenderDevice::createRenderPass()
         for (size_t i = 0; i < renderpass.descriptions.size(); ++i)
         {
             auto & description = renderpass.descriptions[i];
-            auto attachment_handle = renderpass.framebuffer.attachments[i];
+            auto attachment_handle = renderpass.framebuffer_config.attachments[i];
             auto const& attachment_config = attachment_configs[attachment_handle];
 
             if (attachment_config.format == Format::USE_COLOR)
@@ -2740,24 +2736,25 @@ VkResult RenderDevice::createRenderPass()
             return result;
         }
 
-        createFramebuffer(renderpass, renderpass.framebuffer);
+        createFramebuffer(renderpass);
     }
 
     return VK_SUCCESS;
 }
 
 // FRAMEBUFFER
-VkResult RenderDevice::createFramebuffer(Renderpass const& renderpass, Framebuffer & framebuffer)
+VkResult RenderDevice::createFramebuffer(Renderpass & renderpass)
 {
-    framebuffer.vk_framebuffers.resize(swapchain_image_count);
+    auto const& framebuffer_config = renderpass.framebuffer_config;
+    renderpass.vk_framebuffers.resize(swapchain_image_count);
 
     for (size_t i = 0; i < swapchain_image_count; ++i)
     {
-        auto & vk_framebuffer = framebuffer.vk_framebuffers[i];
+        auto & vk_framebuffer = renderpass.vk_framebuffers[i];
 
         auto fb_attachments = std::vector<VkImageView>{};
 
-        for (auto attachment_handle: framebuffer.attachments)
+        for (auto attachment_handle: framebuffer_config.attachments)
         {
             auto const & attachment_config = attachment_configs[attachment_handle];
 
@@ -3543,7 +3540,7 @@ VkResult RenderDevice::createCommandbuffer(uint32_t        image_index,
     auto renderPassInfo = VkRenderPassBeginInfo{
         .sType             = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
         .renderPass        = renderpasses[0].vk_renderpass,
-        .framebuffer       = renderpasses[0].framebuffer.vk_framebuffers[image_index],//framebuffers[resource_index][0].vk_framebuffer,
+        .framebuffer       = renderpasses[0].vk_framebuffers[image_index],//framebuffers[resource_index][0].vk_framebuffer,
         .renderArea.offset = {0, 0},
         .renderArea.extent = swapchain_extent,
         .clearValueCount   = static_cast<uint32_t>(clearValues.size()),
