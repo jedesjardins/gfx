@@ -70,20 +70,23 @@ enum class Format
     USE_COLOR
 };
 
-struct Attachment
+struct AttachmentConfig
 {
     Format format;
     bool multisampled;
     bool is_swapchain_image;
 
+    void init(rapidjson::Value & document);
+
+    friend bool operator==(AttachmentConfig const & lhs, AttachmentConfig const & rhs);
+    friend bool operator!=(AttachmentConfig const & lhs, AttachmentConfig const & rhs);
+};
+
+struct Attachment
+{
     VkDeviceMemory vk_image_memory{VK_NULL_HANDLE};
     VkImage        vk_image{VK_NULL_HANDLE};
     VkImageView    vk_image_view{VK_NULL_HANDLE};
-
-    void init(rapidjson::Value & document);
-
-    friend bool operator==(Attachment const & lhs, Attachment const & rhs);
-    friend bool operator!=(Attachment const & lhs, Attachment const & rhs);
 };
 
 struct Framebuffer
@@ -204,7 +207,7 @@ struct RenderConfig
 
     std::vector<Renderpass> renderpasses;
 
-    std::vector<Attachment> attachments;
+    std::vector<AttachmentConfig> attachment_configs;
 
     //std::vector<Framebuffer> framebuffers;
 
@@ -533,6 +536,7 @@ private:
     // need a way of handling the swapchain images
     // attachments that are used after this frame need to be double buffered etc (i.e. like
     // swapchain) if Store op is DONT_CARE, it doesn't need to be buffered
+    std::vector<AttachmentConfig> attachment_configs;
     std::vector<Attachment> attachments;
 
     std::vector<Renderpass> renderpasses;
@@ -1157,7 +1161,7 @@ VkVertexInputAttributeDescription initVkVertexInputAttributeDescription(rapidjso
     return attribute;
 }
 
-void Attachment::init(rapidjson::Value & document)
+void AttachmentConfig::init(rapidjson::Value & document)
 {
 
     assert(document.IsObject());
@@ -1414,9 +1418,9 @@ void RenderConfig::init()
 
     for (auto & a: document["attachments"].GetArray())
     {
-        Attachment attachment{};
-        attachment.init(a);
-        attachments.push_back(attachment);
+        AttachmentConfig attachment_config{};
+        attachment_config.init(a);
+        attachment_configs.push_back(attachment_config);
     }
 
     assert(document.HasMember("renderpasses"));
@@ -1588,7 +1592,8 @@ bool RenderDevice::init(RenderConfig & render_config)
         return false;
     }
 
-    attachments = std::move(render_config.attachments);
+    attachment_configs = std::move(render_config.attachment_configs);
+    attachments.resize(attachment_configs.size());
     if (createAttachments() != VK_SUCCESS)
     {
         return false;
@@ -2682,18 +2687,18 @@ VkResult RenderDevice::createRenderPass()
         {
             auto & description = renderpass.descriptions[i];
             auto attachment_handle = renderpass.framebuffer.attachments[i];
-            auto const& attachment = attachments[attachment_handle];
+            auto const& attachment_config = attachment_configs[attachment_handle];
 
-            if (attachment.format == Format::USE_COLOR)
+            if (attachment_config.format == Format::USE_COLOR)
             {
                 description.format       = swapchain_image_format;
             }
-            else if (attachment.format == Format::USE_DEPTH)
+            else if (attachment_config.format == Format::USE_DEPTH)
             {
                 description.format       = depth_format;
             }
 
-            if (attachment.multisampled)
+            if (attachment_config.multisampled)
             {
                 description.samples = physical_device_info.msaa_samples;
             }
@@ -2754,15 +2759,15 @@ VkResult RenderDevice::createFramebuffer(Renderpass const& renderpass, Framebuff
 
         for (auto attachment_handle: framebuffer.attachments)
         {
-            auto const & attachment = attachments[attachment_handle];
+            auto const & attachment_config = attachment_configs[attachment_handle];
 
-            if (attachment.is_swapchain_image)
+            if (attachment_config.is_swapchain_image)
             {
                 fb_attachments.push_back(swapchain_image_views[i]);
             }
             else
             {
-                fb_attachments.push_back(attachment.vk_image_view);
+                fb_attachments.push_back(attachments[attachment_handle].vk_image_view);
             }
         }
 
@@ -3148,11 +3153,12 @@ VkResult RenderDevice::createCommandPool()
 
 VkResult RenderDevice::createAttachments()
 {
-    for (uint32_t i = 0; i < attachments.size(); ++i)
+    for (uint32_t i = 0; i < attachment_configs.size(); ++i)
     {
         auto & attachment = attachments[i];
+        auto const& attachment_config = attachment_configs[i];
 
-        if (attachment.is_swapchain_image)
+        if (attachment_config.is_swapchain_image)
         {
             continue;
         }
@@ -3162,14 +3168,14 @@ VkResult RenderDevice::createAttachments()
         VkImageAspectFlags aspect;
         VkImageLayout      final_layout;
 
-        if (attachment.format == Format::USE_COLOR)
+        if (attachment_config.format == Format::USE_COLOR)
         {
             format       = swapchain_image_format;
             usage        = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
             aspect       = VK_IMAGE_ASPECT_COLOR_BIT;
             final_layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
         }
-        else if (attachment.format == Format::USE_DEPTH)
+        else if (attachment_config.format == Format::USE_DEPTH)
         {
             format       = depth_format;
             usage        = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
@@ -3179,7 +3185,7 @@ VkResult RenderDevice::createAttachments()
 
         VkSampleCountFlagBits samples;
 
-        if (attachment.multisampled)
+        if (attachment_config.multisampled)
         {
             samples = physical_device_info.msaa_samples;
         }
