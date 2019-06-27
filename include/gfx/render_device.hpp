@@ -70,21 +70,12 @@ enum class Format
     USE_COLOR
 };
 
-struct AttachmentInfo
-{
-    VkAttachmentDescription description;
-    Format                  format;
-    bool                    use_samples;
-    bool                    is_swapchain_image;
-
-    void init(rapidjson::Value & document);
-
-    friend bool operator==(AttachmentInfo const & lhs, AttachmentInfo const & rhs);
-    friend bool operator!=(AttachmentInfo const & lhs, AttachmentInfo const & rhs);
-};
-
 struct Attachment
 {
+    Format format;
+    bool multisampled;
+    bool is_swapchain_image;
+
     VkDeviceMemory vk_image_memory{VK_NULL_HANDLE};
     VkImage        vk_image{VK_NULL_HANDLE};
     VkImageView    vk_image_view{VK_NULL_HANDLE};
@@ -93,6 +84,18 @@ struct Attachment
 
     friend bool operator==(Attachment const & lhs, Attachment const & rhs);
     friend bool operator!=(Attachment const & lhs, Attachment const & rhs);
+};
+
+struct Framebuffer
+{
+    std::vector<AttachmentHandle> attachments;
+    uint32_t                      width;
+    uint32_t                      height;
+    uint32_t                      depth;
+
+    std::vector<VkFramebuffer>    vk_framebuffers;
+
+    void init(rapidjson::Value & document);
 };
 
 struct SubpassInfo
@@ -109,7 +112,9 @@ struct SubpassInfo
 
 struct Renderpass
 {
-    std::vector<AttachmentHandle>    attachments;
+
+    Framebuffer framebuffer;
+    std::vector<VkAttachmentDescription> descriptions;
     std::vector<SubpassInfo>         subpasses;
     std::vector<VkSubpassDependency> subpass_dependencies;
     VkRenderPass                     vk_renderpass{VK_NULL_HANDLE};
@@ -118,18 +123,6 @@ struct Renderpass
 
     friend bool operator==(Renderpass const & lhs, Renderpass const & rhs);
     friend bool operator!=(Renderpass const & lhs, Renderpass const & rhs);
-};
-
-struct Framebuffer
-{
-    RenderpassHandle              renderpass;
-    std::vector<AttachmentHandle> attachments;
-    uint32_t                      width;
-    uint32_t                      height;
-    uint32_t                      depth;
-    VkFramebuffer                 vk_framebuffer;
-
-    void init(rapidjson::Value & document);
 };
 
 struct MappedBuffer
@@ -207,13 +200,13 @@ struct RenderConfig
 
     size_t dynamic_indices_count;
 
-    std::vector<AttachmentInfo> attachment_infos;
+    //std::vector<AttachmentInfo> attachment_infos;
 
     std::vector<Renderpass> renderpasses;
 
     std::vector<Attachment> attachments;
 
-    std::vector<Framebuffer> framebuffers;
+    //std::vector<Framebuffer> framebuffers;
 
     std::vector<UniformLayout> uniform_layouts;
 
@@ -395,6 +388,8 @@ private:
     // RENDER PASS & ATTACHMENT DESCRIPTIONS
     VkResult createRenderPass();
 
+    VkResult createFramebuffer(Renderpass const& renderpass, Framebuffer & framebuffer);
+
     VkFormat findDepthFormat();
 
     VkFormat findSupportedFormat(const std::vector<VkFormat> & candidates,
@@ -463,7 +458,7 @@ private:
     VkResult createSingleTimeUseBuffers();
 
     // COMMANDBUFFER
-    VkResult createCommandbuffer(uint32_t        resource_index,
+    VkResult createCommandbuffer(uint32_t        image_index,
                                  uint32_t        uniform_count,
                                  UniformHandle * p_uniforms);
 
@@ -535,16 +530,12 @@ private:
     std::vector<MappedBuffer> staging_mapped_vertices;
     std::vector<MappedBuffer> staging_mapped_indices;
 
-    std::vector<AttachmentInfo> attachment_infos;
-
-    std::vector<Renderpass> renderpasses;
-
     // need a way of handling the swapchain images
     // attachments that are used after this frame need to be double buffered etc (i.e. like
     // swapchain) if Store op is DONT_CARE, it doesn't need to be buffered
     std::vector<Attachment> attachments;
 
-    std::vector<std::vector<Framebuffer>> framebuffers;
+    std::vector<Renderpass> renderpasses;
 
     std::vector<UniformLayout> uniform_layouts;
 
@@ -639,17 +630,6 @@ bool operator!=(VkAttachmentReference const & lhs, VkAttachmentReference const &
     return !(lhs == rhs);
 }
 
-bool operator==(AttachmentInfo const & lhs, AttachmentInfo const & rhs)
-{
-    return lhs.format == rhs.format && lhs.use_samples == rhs.use_samples
-           && lhs.description == rhs.description;
-}
-
-bool operator!=(AttachmentInfo const & lhs, AttachmentInfo const & rhs)
-{
-    return !(lhs == rhs);
-}
-
 bool operator==(Attachment const & lhs, Attachment const & rhs)
 {
     return true;
@@ -708,19 +688,6 @@ bool operator!=(VkSubpassDependency const & lhs, VkSubpassDependency const & rhs
 
 bool operator==(Renderpass const & lhs, Renderpass const & rhs)
 {
-    if (lhs.attachments.size() != rhs.attachments.size())
-    {
-        return false;
-    }
-
-    for (uint32_t i = 0; i < lhs.attachments.size(); ++i)
-    {
-        if (lhs.attachments[i] != rhs.attachments[i])
-        {
-            return false;
-        }
-    }
-
     if (lhs.subpasses.size() != rhs.subpasses.size())
     {
         return false;
@@ -1190,8 +1157,9 @@ VkVertexInputAttributeDescription initVkVertexInputAttributeDescription(rapidjso
     return attribute;
 }
 
-void gfx::AttachmentInfo::init(rapidjson::Value & document)
+void Attachment::init(rapidjson::Value & document)
 {
+
     assert(document.IsObject());
 
     assert(document.HasMember("format"));
@@ -1208,11 +1176,7 @@ void gfx::AttachmentInfo::init(rapidjson::Value & document)
 
     assert(document.HasMember("multisampled"));
     assert(document["multisampled"].IsBool());
-    use_samples = document["multisampled"].GetBool();
-
-    assert(document.HasMember("description"));
-    assert(document["description"].IsObject());
-    description = initAttachmentDescription(document["description"]);
+    multisampled = document["multisampled"].GetBool();
 
     if (document.HasMember("is_swapchain_image"))
     {
@@ -1224,9 +1188,6 @@ void gfx::AttachmentInfo::init(rapidjson::Value & document)
         is_swapchain_image = false;
     }
 }
-
-void Attachment::init(rapidjson::Value & document)
-{}
 
 void SubpassInfo::init(rapidjson::Value & document)
 {
@@ -1257,15 +1218,16 @@ void Renderpass::init(rapidjson::Value & document)
 {
     assert(document.IsObject());
 
-    assert(document.HasMember("attachments"));
-    assert(document["attachments"].IsArray());
+    assert(document.HasMember("framebuffer"));
+    framebuffer.init(document["framebuffer"]);
 
-    for (auto & amnt_info: document["attachments"].GetArray())
+    assert(document["framebuffer"].IsObject());
+    auto const& json_framebuffer = document["framebuffer"];
+    assert(json_framebuffer.HasMember("attachments"));
+    assert(json_framebuffer["attachments"].IsArray());
+    for (auto & ad: json_framebuffer["attachments"].GetArray())
     {
-        assert(amnt_info.IsInt());
-        AttachmentHandle attachment = amnt_info.GetInt();
-
-        attachments.push_back(attachment);
+        descriptions.push_back(initAttachmentDescription(ad));
     }
 
     assert(document.HasMember("subpasses"));
@@ -1292,17 +1254,17 @@ void Framebuffer::init(rapidjson::Value & document)
 {
     assert(document.IsObject());
 
-    assert(document.HasMember("renderpass"));
-    assert(document["renderpass"].IsInt());
-    renderpass = document["renderpass"].GetInt();
-
     assert(document.HasMember("attachments"));
     assert(document["attachments"].IsArray());
 
     for (auto const & attachment: document["attachments"].GetArray())
     {
-        assert(attachment.IsInt());
-        attachments.push_back(attachment.GetInt());
+        assert(attachment.IsObject());
+        auto const& att_obj = attachment.GetObject();
+
+        assert(att_obj.HasMember("attachment"));
+        assert(att_obj["attachment"].IsInt());
+        attachments.push_back(att_obj["attachment"].GetInt());
     }
 }
 
@@ -1447,16 +1409,6 @@ void RenderConfig::init()
     assert(document["dynamic_indices_count"].IsInt());
     dynamic_indices_count = document["dynamic_indices_count"].GetInt();
 
-    assert(document.HasMember("renderpasses"));
-    assert(document["renderpasses"].IsArray());
-
-    for (auto & rp: document["renderpasses"].GetArray())
-    {
-        Renderpass renderpass{};
-        renderpass.init(rp);
-        renderpasses.push_back(renderpass);
-    }
-
     assert(document.HasMember("attachments"));
     assert(document["attachments"].IsArray());
 
@@ -1465,20 +1417,16 @@ void RenderConfig::init()
         Attachment attachment{};
         attachment.init(a);
         attachments.push_back(attachment);
-
-        AttachmentInfo info{};
-        info.init(a);
-        attachment_infos.push_back(info);
     }
 
-    assert(document.HasMember("framebuffers"));
-    assert(document["framebuffers"].IsArray());
+    assert(document.HasMember("renderpasses"));
+    assert(document["renderpasses"].IsArray());
 
-    for (auto & fb: document["framebuffers"].GetArray())
+    for (auto & rp: document["renderpasses"].GetArray())
     {
-        Framebuffer framebuffer{};
-        framebuffer.init(fb);
-        framebuffers.push_back(framebuffer);
+        Renderpass renderpass{};
+        renderpass.init(rp);
+        renderpasses.push_back(renderpass);
     }
 
     assert(document.HasMember("shaders"));
@@ -1640,8 +1588,14 @@ bool RenderDevice::init(RenderConfig & render_config)
         return false;
     }
 
+    attachments = std::move(render_config.attachments);
+    if (createAttachments() != VK_SUCCESS)
+    {
+        return false;
+    }
+
     renderpasses     = std::move(render_config.renderpasses);
-    attachment_infos = std::move(render_config.attachment_infos);
+    //attachment_infos = std::move(render_config.attachment_infos);
     if (createRenderPass() != VK_SUCCESS)
     {
         return false;
@@ -1669,17 +1623,6 @@ bool RenderDevice::init(RenderConfig & render_config)
     }
 
     if (createCommandPool() != VK_SUCCESS)
-    {
-        return false;
-    }
-
-    attachments = std::move(render_config.attachments);
-    if (createAttachments() != VK_SUCCESS)
-    {
-        return false;
-    }
-
-    if (createFramebuffers(render_config) != VK_SUCCESS)
     {
         return false;
     }
@@ -1758,15 +1701,6 @@ void RenderDevice::quit()
         vkFreeMemory(logical_device, attachment.vk_image_memory, nullptr);
     }
 
-    // FRAMEBUFFERS
-    for (auto & framebuffer_list: framebuffers)
-    {
-        for (auto & framebuffer: framebuffer_list)
-        {
-            vkDestroyFramebuffer(logical_device, framebuffer.vk_framebuffer, nullptr);
-        }
-    }
-
     // COMMAND POOL
     vkDestroyCommandPool(logical_device, command_pool, nullptr);
 
@@ -1797,9 +1731,12 @@ void RenderDevice::quit()
     }
 
     // RENDER PASS
-
     for (auto & renderpass: renderpasses)
     {
+        for (auto & framebuffer: renderpass.framebuffer.vk_framebuffers)
+        {
+            vkDestroyFramebuffer(logical_device, framebuffer, nullptr);
+        }
         vkDestroyRenderPass(logical_device, renderpass.vk_renderpass, nullptr);
         renderpass.vk_renderpass = VK_NULL_HANDLE;
     }
@@ -2741,26 +2678,22 @@ VkResult RenderDevice::createRenderPass()
 {
     for (auto & renderpass: renderpasses)
     {
-        std::vector<VkAttachmentDescription> descriptions;
-        descriptions.reserve(renderpass.attachments.size());
-
-        for (auto const& attachment_handle: renderpass.attachments)
+        for (size_t i = 0; i < renderpass.descriptions.size(); ++i)
         {
-            auto const & attachment_info = attachment_infos[attachment_handle];
+            auto & description = renderpass.descriptions[i];
+            auto attachment_handle = renderpass.framebuffer.attachments[i];
+            auto const& attachment = attachments[attachment_handle];
 
-            VkAttachmentDescription description = attachment_info.description;
-
-            switch (attachment_info.format)
+            if (attachment.format == Format::USE_COLOR)
             {
-            case Format::USE_COLOR:
-                description.format = swapchain_image_format;
-                break;
-            case Format::USE_DEPTH:
-                description.format = depth_format;
-                break;
+                description.format       = swapchain_image_format;
+            }
+            else if (attachment.format == Format::USE_DEPTH)
+            {
+                description.format       = depth_format;
             }
 
-            if (attachment_info.use_samples)
+            if (attachment.multisampled)
             {
                 description.samples = physical_device_info.msaa_samples;
             }
@@ -2768,8 +2701,6 @@ VkResult RenderDevice::createRenderPass()
             {
                 description.samples = VK_SAMPLE_COUNT_1_BIT;
             }
-
-            descriptions.push_back(description);
         }
 
         std::vector<VkSubpassDescription> subpasses;
@@ -2788,8 +2719,8 @@ VkResult RenderDevice::createRenderPass()
 
         auto renderPassInfo = VkRenderPassCreateInfo{
             .sType           = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO,
-            .attachmentCount = static_cast<uint32_t>(descriptions.size()),
-            .pAttachments    = descriptions.data(),
+            .attachmentCount = static_cast<uint32_t>(renderpass.descriptions.size()),
+            .pAttachments    = renderpass.descriptions.data(),
 
             .subpassCount = static_cast<uint32_t>(subpasses.size()),
             .pSubpasses   = subpasses.data(),
@@ -2799,6 +2730,53 @@ VkResult RenderDevice::createRenderPass()
 
         auto result = vkCreateRenderPass(
             logical_device, &renderPassInfo, nullptr, &renderpass.vk_renderpass);
+        if (result != VK_SUCCESS)
+        {
+            return result;
+        }
+
+        createFramebuffer(renderpass, renderpass.framebuffer);
+    }
+
+    return VK_SUCCESS;
+}
+
+// FRAMEBUFFER
+VkResult RenderDevice::createFramebuffer(Renderpass const& renderpass, Framebuffer & framebuffer)
+{
+    framebuffer.vk_framebuffers.resize(swapchain_image_count);
+
+    for (size_t i = 0; i < swapchain_image_count; ++i)
+    {
+        auto & vk_framebuffer = framebuffer.vk_framebuffers[i];
+
+        auto fb_attachments = std::vector<VkImageView>{};
+
+        for (auto attachment_handle: framebuffer.attachments)
+        {
+            auto const & attachment = attachments[attachment_handle];
+
+            if (attachment.is_swapchain_image)
+            {
+                fb_attachments.push_back(swapchain_image_views[i]);
+            }
+            else
+            {
+                fb_attachments.push_back(attachment.vk_image_view);
+            }
+        }
+
+        auto framebufferInfo = VkFramebufferCreateInfo{
+            .sType           = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO,
+            .renderPass      = renderpass.vk_renderpass,
+            .attachmentCount = static_cast<uint32_t>(fb_attachments.size()),
+            .pAttachments    = fb_attachments.data(),
+            .width           = swapchain_extent.width,
+            .height          = swapchain_extent.height,
+            .layers          = 1};
+
+        auto result = vkCreateFramebuffer(
+            logical_device, &framebufferInfo, nullptr, &vk_framebuffer);
         if (result != VK_SUCCESS)
         {
             return result;
@@ -3173,9 +3151,8 @@ VkResult RenderDevice::createAttachments()
     for (uint32_t i = 0; i < attachments.size(); ++i)
     {
         auto & attachment = attachments[i];
-        auto & info       = attachment_infos[i];
 
-        if (info.is_swapchain_image)
+        if (attachment.is_swapchain_image)
         {
             continue;
         }
@@ -3185,14 +3162,14 @@ VkResult RenderDevice::createAttachments()
         VkImageAspectFlags aspect;
         VkImageLayout      final_layout;
 
-        if (info.format == Format::USE_COLOR)
+        if (attachment.format == Format::USE_COLOR)
         {
             format       = swapchain_image_format;
             usage        = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
             aspect       = VK_IMAGE_ASPECT_COLOR_BIT;
             final_layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
         }
-        else if (info.format == Format::USE_DEPTH)
+        else if (attachment.format == Format::USE_DEPTH)
         {
             format       = depth_format;
             usage        = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
@@ -3202,7 +3179,7 @@ VkResult RenderDevice::createAttachments()
 
         VkSampleCountFlagBits samples;
 
-        if (info.use_samples)
+        if (attachment.multisampled)
         {
             samples = physical_device_info.msaa_samples;
         }
@@ -3233,12 +3210,6 @@ VkResult RenderDevice::createAttachments()
         {
             return result;
         }
-
-        /*
-        // This is done implicitly by the renderpass dependency
-        transitionImageLayout(
-            attachment.vk_image, format, VK_IMAGE_LAYOUT_UNDEFINED, final_layout, 1);
-        */
     }
 
     return VK_SUCCESS;
@@ -3436,54 +3407,6 @@ void RenderDevice::endSingleTimeCommands(VkCommandBuffer commandBuffer)
     vkFreeCommandBuffers(logical_device, command_pool, 1, &commandBuffer);
 }
 
-// FRAMEBUFFER
-VkResult RenderDevice::createFramebuffers(RenderConfig & render_config)
-{
-    framebuffers.resize(swapchain_image_count);
-
-    for (size_t i = 0; i < swapchain_image_count; ++i)
-    {
-        framebuffers[i] = render_config.framebuffers;
-
-        for (auto & framebuffer: framebuffers[i])
-        {
-            auto fb_attachments = std::vector<VkImageView>{};
-
-            for (auto attachment_handle: framebuffer.attachments)
-            {
-                auto const & attachment_info = attachment_infos[attachment_handle];
-
-                if (attachment_info.is_swapchain_image)
-                {
-                    fb_attachments.push_back(swapchain_image_views[i]);
-                }
-                else
-                {
-                    fb_attachments.push_back(attachments[attachment_handle].vk_image_view);
-                }
-            }
-
-            auto framebufferInfo = VkFramebufferCreateInfo{
-                .sType           = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO,
-                .renderPass      = renderpasses[framebuffer.renderpass].vk_renderpass,
-                .attachmentCount = static_cast<uint32_t>(fb_attachments.size()),
-                .pAttachments    = fb_attachments.data(),
-                .width           = swapchain_extent.width,
-                .height          = swapchain_extent.height,
-                .layers          = 1};
-
-            auto result = vkCreateFramebuffer(
-                logical_device, &framebufferInfo, nullptr, &framebuffer.vk_framebuffer);
-            if (result != VK_SUCCESS)
-            {
-                return result;
-            }
-        }
-    }
-
-    return VK_SUCCESS;
-}
-
 VkResult RenderDevice::createBuffer(VkDeviceSize          size,
                                     VkBufferUsageFlags    usage,
                                     VkMemoryPropertyFlags properties,
@@ -3575,7 +3498,7 @@ VkResult RenderDevice::createSingleTimeUseBuffers()
 }
 
 // COMMANDBUFFER
-VkResult RenderDevice::createCommandbuffer(uint32_t        resource_index,
+VkResult RenderDevice::createCommandbuffer(uint32_t        image_index,
                                            uint32_t        uniform_count,
                                            UniformHandle * p_uniforms)
 {
@@ -3614,7 +3537,7 @@ VkResult RenderDevice::createCommandbuffer(uint32_t        resource_index,
     auto renderPassInfo = VkRenderPassBeginInfo{
         .sType             = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
         .renderPass        = renderpasses[0].vk_renderpass,
-        .framebuffer       = framebuffers[resource_index][0].vk_framebuffer,
+        .framebuffer       = renderpasses[0].framebuffer.vk_framebuffers[image_index],//framebuffers[resource_index][0].vk_framebuffer,
         .renderArea.offset = {0, 0},
         .renderArea.extent = swapchain_extent,
         .clearValueCount   = static_cast<uint32_t>(clearValues.size()),
