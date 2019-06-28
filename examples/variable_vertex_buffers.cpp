@@ -372,7 +372,7 @@ int main()
             avg_time += frame_time;
         }
 
-        //std::cout << avg_time/frame_times.size() << "\n";
+        // std::cout << avg_time/frame_times.size() << "\n";
     }
 
     render_device.waitForIdle();
