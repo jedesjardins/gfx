@@ -22,6 +22,8 @@
 
 #include "rapidjson/document.h"
 
+#include "stb_image.h"
+
 struct Vertex
 {
     glm::vec3 pos;
