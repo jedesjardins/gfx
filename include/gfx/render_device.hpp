@@ -73,8 +73,8 @@ enum class Format
 struct AttachmentConfig
 {
     Format format;
-    bool multisampled;
-    bool is_swapchain_image;
+    bool   multisampled;
+    bool   is_swapchain_image;
 
     void init(rapidjson::Value & document);
 
@@ -113,11 +113,10 @@ struct SubpassInfo
 
 struct RenderpassConfig
 {
-
-    FramebufferConfig framebuffer_config;
+    FramebufferConfig                    framebuffer_config;
     std::vector<VkAttachmentDescription> descriptions;
-    std::vector<SubpassInfo>         subpasses;
-    std::vector<VkSubpassDependency> subpass_dependencies;
+    std::vector<SubpassInfo>             subpasses;
+    std::vector<VkSubpassDependency>     subpass_dependencies;
 
     void init(rapidjson::Value & document);
 
@@ -174,7 +173,7 @@ struct PipelineConfig
     std::vector<PushConstantHandle>  push_constants;
 
     RenderpassHandle renderpass;
-    uint32_t           subpass;
+    uint32_t         subpass;
 
     void init(rapidjson::Value & document);
 };
@@ -230,6 +229,21 @@ struct Draw
 static_assert(std::is_pod<Draw>::value == true, "Draw must be a POD.");
 
 void draw(void const * data);
+
+struct Copy
+{
+    static cmd::BackendDispatchFunction const DISPATCH_FUNCTION;
+
+    VkCommandBuffer commandbuffer;
+    VkBuffer        srcBuffer;
+    VkBuffer        dstBuffer;
+    VkDeviceSize    srcOffset;
+    VkDeviceSize    dstOffset;
+    VkDeviceSize    size;
+};
+static_assert(std::is_pod<Copy>::value == true, "Copy must be a POD.");
+
+void copy(void const * data);
 
 class RenderDevice
 {
@@ -379,7 +393,9 @@ private:
     // RENDER PASS & ATTACHMENT DESCRIPTIONS
     VkResult createRenderPass();
 
-    VkResult createFramebuffer(RenderpassConfig const& renderpass_config, VkRenderPass const& renderpass, std::vector<VkFramebuffer> & framebuffers);
+    VkResult createFramebuffer(RenderpassConfig const &     renderpass_config,
+                               VkRenderPass const &         renderpass,
+                               std::vector<VkFramebuffer> & framebuffers);
 
     VkFormat findDepthFormat();
 
@@ -446,8 +462,6 @@ private:
     // TODO: rewrite to return VkResult
     VkResult createCommandbuffers();
 
-    VkResult createSingleTimeUseBuffers();
-
     // COMMANDBUFFER
     VkResult createCommandbuffer(uint32_t        image_index,
                                  uint32_t        uniform_count,
@@ -511,9 +525,9 @@ private:
 
     bool framebuffer_resized;
 
-    VkCommandPool                             command_pool;
-    std::vector<VkCommandBuffer>              commandbuffers;
-    std::vector<std::vector<VkCommandBuffer>> one_time_use_buffers;
+    VkCommandPool                command_pool;
+    std::vector<VkCommandBuffer> commandbuffers;
+    std::vector<VkCommandBuffer> transfer_commandbuffers;
 
     std::vector<MappedBuffer> dynamic_mapped_vertices;
     std::vector<MappedBuffer> dynamic_mapped_indices;
@@ -525,10 +539,10 @@ private:
     // attachments that are used after this frame need to be double buffered etc (i.e. like
     // swapchain) if Store op is DONT_CARE, it doesn't need to be buffered
     std::vector<AttachmentConfig> attachment_configs;
-    std::vector<Attachment> attachments;
+    std::vector<Attachment>       attachments;
 
-    std::vector<RenderpassConfig> renderpass_configs;
-    std::vector<VkRenderPass> renderpasses;
+    std::vector<RenderpassConfig>           renderpass_configs;
+    std::vector<VkRenderPass>               renderpasses;
     std::vector<std::vector<VkFramebuffer>> framebuffers;
 
     std::vector<UniformLayout> uniform_layouts;
@@ -539,13 +553,14 @@ private:
 
     std::vector<VkVertexInputAttributeDescription> vertex_attributes;
 
-    std::vector<std::string> shader_names;
+    std::vector<std::string>    shader_names;
     std::vector<VkShaderModule> shaders;
 
     std::vector<PipelineConfig> pipeline_configs;
-    std::vector<Pipeline> pipelines;
+    std::vector<Pipeline>       pipelines;
 
     std::vector<cmd::CommandBucket<int>> buckets;
+    std::vector<cmd::CommandBucket<int>> transfer_buckets;
 
 }; // class RenderDevice
 }; // namespace gfx
@@ -1153,7 +1168,6 @@ VkVertexInputAttributeDescription initVkVertexInputAttributeDescription(rapidjso
 
 void AttachmentConfig::init(rapidjson::Value & document)
 {
-
     assert(document.IsObject());
 
     assert(document.HasMember("format"));
@@ -1216,7 +1230,7 @@ void RenderpassConfig::init(rapidjson::Value & document)
     framebuffer_config.init(document["framebuffer"]);
 
     assert(document["framebuffer"].IsObject());
-    auto const& json_framebuffer = document["framebuffer"];
+    auto const & json_framebuffer = document["framebuffer"];
     assert(json_framebuffer.HasMember("attachments"));
     assert(json_framebuffer["attachments"].IsArray());
     for (auto & ad: json_framebuffer["attachments"].GetArray())
@@ -1254,7 +1268,7 @@ void FramebufferConfig::init(rapidjson::Value & document)
     for (auto const & attachment: document["attachments"].GetArray())
     {
         assert(attachment.IsObject());
-        auto const& att_obj = attachment.GetObject();
+        auto const & att_obj = attachment.GetObject();
 
         assert(att_obj.HasMember("attachment"));
         assert(att_obj["attachment"].IsInt());
@@ -1521,6 +1535,19 @@ void draw(void const * data)
 
 cmd::BackendDispatchFunction const Draw::DISPATCH_FUNCTION = &draw;
 
+void copy(void const * data)
+{
+    Copy const * copydata = reinterpret_cast<Copy const *>(data);
+
+    auto copyRegion = VkBufferCopy{
+        .srcOffset = copydata->srcOffset, .dstOffset = copydata->dstOffset, .size = copydata->size};
+
+    vkCmdCopyBuffer(
+        copydata->commandbuffer, copydata->srcBuffer, copydata->dstBuffer, 1, &copyRegion);
+}
+
+cmd::BackendDispatchFunction const Copy::DISPATCH_FUNCTION = &copy;
+
 //
 // RENDER DEVICE
 //
@@ -1581,7 +1608,7 @@ bool RenderDevice::init(RenderConfig & render_config)
         return false;
     }
 
-    renderpass_configs     = std::move(render_config.renderpass_configs);
+    renderpass_configs = std::move(render_config.renderpass_configs);
     renderpasses.resize(renderpass_configs.size());
     framebuffers.resize(renderpass_configs.size());
     if (createRenderPass() != VK_SUCCESS)
@@ -1622,11 +1649,6 @@ bool RenderDevice::init(RenderConfig & render_config)
         return false;
     }
 
-    if (createSingleTimeUseBuffers() != VK_SUCCESS)
-    {
-        return false;
-    }
-
     if (createSyncObjects() != VK_SUCCESS)
     {
         return false;
@@ -1649,6 +1671,7 @@ bool RenderDevice::init(RenderConfig & render_config)
     for (uint32_t i = 0; i < MAX_BUFFERED_RESOURCES; ++i)
     {
         buckets.emplace_back(6);
+        transfer_buckets.emplace_back(6);
     }
 
     return true;
@@ -1800,16 +1823,29 @@ void RenderDevice::drawFrame(uint32_t uniform_count, UniformHandle * p_uniforms)
     // TRANSFER OPERATIONS
     // submit copy operations to the graphics queue
 
-    if (one_time_use_buffers[currentResource].size())
-    {
-        auto submitCopyInfo = VkSubmitInfo{
-            .sType              = VK_STRUCTURE_TYPE_SUBMIT_INFO,
-            .commandBufferCount = static_cast<uint32_t>(
-                one_time_use_buffers[currentResource].size()),
-            .pCommandBuffers = one_time_use_buffers[currentResource].data()};
+    auto beginInfo = VkCommandBufferBeginInfo{.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
+                                              .flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,
+                                              .pInheritanceInfo = nullptr};
 
-        vkQueueSubmit(graphics_queue, 1, &submitCopyInfo, VK_NULL_HANDLE);
+    result = vkBeginCommandBuffer(transfer_commandbuffers[currentResource], &beginInfo);
+    if (result != VK_SUCCESS)
+    {
+        return;
     }
+
+    transfer_buckets[currentResource].Submit();
+    auto submitTransferInfo = VkSubmitInfo{
+        .sType              = VK_STRUCTURE_TYPE_SUBMIT_INFO,
+        .commandBufferCount = 1,
+        .pCommandBuffers    = &transfer_commandbuffers[currentResource]};
+
+    result = vkEndCommandBuffer(transfer_commandbuffers[currentResource]);
+    if (result != VK_SUCCESS)
+    {
+        return;
+    }
+
+    vkQueueSubmit(graphics_queue, 1, &submitTransferInfo, VK_NULL_HANDLE);
 
     // the graphics queue will wait to do anything in the color_attachment_output stage
     // until the waitSemaphore is signalled by vkAcquireNextImageKHR
@@ -1866,17 +1902,6 @@ void RenderDevice::drawFrame(uint32_t uniform_count, UniformHandle * p_uniforms)
     currentFrame    = (currentFrame + 1) % MAX_FRAMES_IN_FLIGHT;
     currentResource = (currentResource + 1) % MAX_BUFFERED_RESOURCES;
 
-    // clear next frames unused resources
-    if (!one_time_use_buffers[currentResource].empty())
-    {
-        vkFreeCommandBuffers(logical_device,
-                             command_pool,
-                             one_time_use_buffers[currentResource].size(),
-                             one_time_use_buffers[currentResource].data());
-    }
-
-    one_time_use_buffers[currentResource].clear();
-
     // reset buffer offsets for copies
     dynamic_mapped_vertices[currentResource].reset();
     dynamic_mapped_indices[currentResource].reset();
@@ -1884,6 +1909,7 @@ void RenderDevice::drawFrame(uint32_t uniform_count, UniformHandle * p_uniforms)
     staging_mapped_indices[currentResource].reset();
 
     buckets[currentResource].Clear();
+    transfer_buckets[currentResource].Clear();
 }
 
 std::optional<UniformHandle> RenderDevice::newUniform()
@@ -2014,6 +2040,8 @@ void RenderDevice::updateDeviceLocalBuffers(VkBuffer   vertexbuffer,
                                             uint32_t   index_count,
                                             uint32_t * indices)
 {
+    // TODO:
+
     auto & mapped_vertices = staging_mapped_vertices[currentResource];
     auto & mapped_indices  = staging_mapped_indices[currentResource];
 
@@ -2023,32 +2051,23 @@ void RenderDevice::updateDeviceLocalBuffers(VkBuffer   vertexbuffer,
     VkDeviceSize vertex_offset = mapped_vertices.copy(vertex_data_size, vertices);
     VkDeviceSize index_offset  = mapped_indices.copy(index_data_size, indices);
 
-    auto allocInfo = VkCommandBufferAllocateInfo{
-        .sType              = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
-        .level              = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
-        .commandPool        = command_pool,
-        .commandBufferCount = 1};
+    auto & bucket = transfer_buckets[currentResource];
 
-    VkCommandBuffer commandBuffer;
-    vkAllocateCommandBuffers(logical_device, &allocInfo, &commandBuffer);
+    Copy * vertex_command         = bucket.AddCommand<Copy>(0, 0);
+    vertex_command->commandbuffer = transfer_commandbuffers[currentResource];
+    vertex_command->srcBuffer     = mapped_vertices.buffer;
+    vertex_command->dstBuffer     = vertexbuffer;
+    vertex_command->srcOffset     = vertex_offset;
+    vertex_command->dstOffset     = 0;
+    vertex_command->size          = vertex_data_size;
 
-    auto beginInfo = VkCommandBufferBeginInfo{.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
-                                              .flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT};
-
-    vkBeginCommandBuffer(commandBuffer, &beginInfo);
-
-    auto copyRegion = VkBufferCopy{
-        .srcOffset = vertex_offset, .dstOffset = 0, .size = vertex_data_size};
-
-    vkCmdCopyBuffer(commandBuffer, mapped_vertices.buffer, vertexbuffer, 1, &copyRegion);
-
-    copyRegion = VkBufferCopy{.srcOffset = index_offset, .dstOffset = 0, .size = index_data_size};
-
-    vkCmdCopyBuffer(commandBuffer, mapped_indices.buffer, indexbuffer, 1, &copyRegion);
-
-    vkEndCommandBuffer(commandBuffer);
-
-    one_time_use_buffers[currentResource].push_back(commandBuffer);
+    Copy * index_command         = bucket.AddCommand<Copy>(0, 0);
+    index_command->commandbuffer = transfer_commandbuffers[currentResource];
+    index_command->srcBuffer     = mapped_indices.buffer;
+    index_command->dstBuffer     = indexbuffer;
+    index_command->srcOffset     = index_offset;
+    index_command->dstOffset     = 0;
+    index_command->size          = index_data_size;
 }
 
 void RenderDevice::destroyDeviceLocalBuffers(VkBuffer       vertexbuffer,
@@ -2673,21 +2692,21 @@ VkResult RenderDevice::createRenderPass()
     for (size_t i = 0; i < renderpasses.size(); ++i)
     {
         auto & renderpass_config = renderpass_configs[i];
-        auto & renderpass = renderpasses[i];
+        auto & renderpass        = renderpasses[i];
 
         for (size_t i = 0; i < renderpass_config.descriptions.size(); ++i)
         {
-            auto & description = renderpass_config.descriptions[i];
-            auto attachment_handle = renderpass_config.framebuffer_config.attachments[i];
-            auto const& attachment_config = attachment_configs[attachment_handle];
+            auto &       description       = renderpass_config.descriptions[i];
+            auto         attachment_handle = renderpass_config.framebuffer_config.attachments[i];
+            auto const & attachment_config = attachment_configs[attachment_handle];
 
             if (attachment_config.format == Format::USE_COLOR)
             {
-                description.format       = swapchain_image_format;
+                description.format = swapchain_image_format;
             }
             else if (attachment_config.format == Format::USE_DEPTH)
             {
-                description.format       = depth_format;
+                description.format = depth_format;
             }
 
             if (attachment_config.multisampled)
@@ -2725,8 +2744,7 @@ VkResult RenderDevice::createRenderPass()
             .dependencyCount = static_cast<uint32_t>(renderpass_config.subpass_dependencies.size()),
             .pDependencies   = renderpass_config.subpass_dependencies.data()};
 
-        auto result = vkCreateRenderPass(
-            logical_device, &renderPassInfo, nullptr, &renderpass);
+        auto result = vkCreateRenderPass(logical_device, &renderPassInfo, nullptr, &renderpass);
         if (result != VK_SUCCESS)
         {
             return result;
@@ -2739,9 +2757,11 @@ VkResult RenderDevice::createRenderPass()
 }
 
 // FRAMEBUFFER
-VkResult RenderDevice::createFramebuffer(RenderpassConfig const& config, VkRenderPass const& renderpass, std::vector<VkFramebuffer> & framebuffers)
+VkResult RenderDevice::createFramebuffer(RenderpassConfig const &     config,
+                                         VkRenderPass const &         renderpass,
+                                         std::vector<VkFramebuffer> & framebuffers)
 {
-    auto const& framebuffer_config = config.framebuffer_config;
+    auto const & framebuffer_config = config.framebuffer_config;
     framebuffers.resize(swapchain_image_count);
 
     for (size_t i = 0; i < swapchain_image_count; ++i)
@@ -2773,8 +2793,7 @@ VkResult RenderDevice::createFramebuffer(RenderpassConfig const& config, VkRende
             .height          = swapchain_extent.height,
             .layers          = 1};
 
-        auto result = vkCreateFramebuffer(
-            logical_device, &framebufferInfo, nullptr, &framebuffer);
+        auto result = vkCreateFramebuffer(logical_device, &framebufferInfo, nullptr, &framebuffer);
         if (result != VK_SUCCESS)
         {
             return result;
@@ -2957,7 +2976,7 @@ VkResult RenderDevice::createGraphicsPipeline()
 {
     for (size_t i = 0; i < pipelines.size(); ++i)
     {
-        auto & pipeline = pipelines[i];
+        auto & pipeline        = pipelines[i];
         auto & pipeline_config = pipeline_configs[i];
 
         auto vertShaderStageInfo = VkPipelineShaderStageCreateInfo{
@@ -3150,8 +3169,8 @@ VkResult RenderDevice::createAttachments()
 {
     for (uint32_t i = 0; i < attachment_configs.size(); ++i)
     {
-        auto & attachment = attachments[i];
-        auto const& attachment_config = attachment_configs[i];
+        auto &       attachment        = attachments[i];
+        auto const & attachment_config = attachment_configs[i];
 
         if (attachment_config.is_swapchain_image)
         {
@@ -3452,31 +3471,18 @@ void RenderDevice::copyBuffer(VkBuffer     srcBuffer,
                               VkDeviceSize dstOffset,
                               VkDeviceSize size)
 {
-    auto allocInfo = VkCommandBufferAllocateInfo{
-        .sType              = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
-        .level              = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
-        .commandPool        = command_pool,
-        .commandBufferCount = 1};
+    auto & bucket = transfer_buckets[currentResource];
 
-    VkCommandBuffer commandBuffer;
-    vkAllocateCommandBuffers(logical_device, &allocInfo, &commandBuffer);
-
-    auto beginInfo = VkCommandBufferBeginInfo{.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
-                                              .flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT};
-
-    vkBeginCommandBuffer(commandBuffer, &beginInfo);
-
-    auto copyRegion = VkBufferCopy{.srcOffset = srcOffset, .dstOffset = dstOffset, .size = size};
-
-    vkCmdCopyBuffer(commandBuffer, srcBuffer, dstBuffer, 1, &copyRegion);
-
-    vkEndCommandBuffer(commandBuffer);
-
-    one_time_use_buffers[currentResource].push_back(commandBuffer);
+    Copy * vertex_command         = bucket.AddCommand<Copy>(0, 0);
+    vertex_command->commandbuffer = transfer_commandbuffers[currentResource];
+    vertex_command->srcBuffer     = srcBuffer;
+    vertex_command->dstBuffer     = dstBuffer;
+    vertex_command->srcOffset     = srcOffset;
+    vertex_command->dstOffset     = dstOffset;
+    vertex_command->size          = size;
 };
 
 // COMMANDBUFFERS
-// TODO: rewrite to return VkResult
 VkResult RenderDevice::createCommandbuffers()
 {
     commandbuffers.resize(MAX_BUFFERED_RESOURCES);
@@ -3488,14 +3494,19 @@ VkResult RenderDevice::createCommandbuffers()
         .commandBufferCount = (uint32_t)commandbuffers.size()};
 
     auto result = vkAllocateCommandBuffers(logical_device, &allocInfo, commandbuffers.data());
+    if (result != VK_SUCCESS)
+    {
+        return result;
+    }
 
-    return result;
-}
+    transfer_commandbuffers.resize(MAX_BUFFERED_RESOURCES);
 
-VkResult RenderDevice::createSingleTimeUseBuffers()
-{
-    one_time_use_buffers.resize(MAX_BUFFERED_RESOURCES);
-    return VK_SUCCESS;
+    allocInfo = VkCommandBufferAllocateInfo{.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
+                                            .commandPool        = command_pool,
+                                            .level              = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
+                                            .commandBufferCount = (uint32_t)commandbuffers.size()};
+
+    return vkAllocateCommandBuffers(logical_device, &allocInfo, transfer_commandbuffers.data());
 }
 
 // COMMANDBUFFER
@@ -3536,9 +3547,10 @@ VkResult RenderDevice::createCommandbuffer(uint32_t        image_index,
                                                    VkClearValue{.depthStencil = {1.0f, 0}}};
 
     auto renderPassInfo = VkRenderPassBeginInfo{
-        .sType             = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
-        .renderPass        = renderpasses[0],
-        .framebuffer       = framebuffers[0][image_index],//framebuffers[resource_index][0].vk_framebuffer,
+        .sType      = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
+        .renderPass = renderpasses[0],
+        .framebuffer
+        = framebuffers[0][image_index], // framebuffers[resource_index][0].vk_framebuffer,
         .renderArea.offset = {0, 0},
         .renderArea.extent = swapchain_extent,
         .clearValueCount   = static_cast<uint32_t>(clearValues.size()),
