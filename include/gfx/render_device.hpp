@@ -82,11 +82,17 @@ struct AttachmentConfig
     friend bool operator!=(AttachmentConfig const & lhs, AttachmentConfig const & rhs);
 };
 
-struct Attachment
+struct Texture
 {
     VkDeviceMemory vk_image_memory{VK_NULL_HANDLE};
     VkImage        vk_image{VK_NULL_HANDLE};
     VkImageView    vk_image_view{VK_NULL_HANDLE};
+};
+
+struct SampledTexture
+{
+    Texture   texture;
+    VkSampler sampler;
 };
 
 struct FramebufferConfig
@@ -539,7 +545,7 @@ private:
     // attachments that are used after this frame need to be double buffered etc (i.e. like
     // swapchain) if Store op is DONT_CARE, it doesn't need to be buffered
     std::vector<AttachmentConfig> attachment_configs;
-    std::vector<Attachment>       attachments;
+    std::vector<Texture>          attachments;
 
     std::vector<RenderpassConfig>           renderpass_configs;
     std::vector<VkRenderPass>               renderpasses;
@@ -637,16 +643,6 @@ bool operator==(VkAttachmentReference const & lhs, VkAttachmentReference const &
 }
 
 bool operator!=(VkAttachmentReference const & lhs, VkAttachmentReference const & rhs)
-{
-    return !(lhs == rhs);
-}
-
-bool operator==(Attachment const & lhs, Attachment const & rhs)
-{
-    return true;
-}
-
-bool operator!=(Attachment const & lhs, Attachment const & rhs)
 {
     return !(lhs == rhs);
 }
