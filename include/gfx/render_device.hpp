@@ -540,8 +540,7 @@ private:
     std::vector<MappedBuffer> dynamic_mapped_vertices;
     std::vector<MappedBuffer> dynamic_mapped_indices;
 
-    std::vector<MappedBuffer> staging_mapped_vertices;
-    std::vector<MappedBuffer> staging_mapped_indices;
+    std::vector<MappedBuffer> staging_buffer;
 
     // need a way of handling the swapchain images
     // attachments that are used after this frame need to be double buffered etc (i.e. like
@@ -1689,13 +1688,9 @@ void RenderDevice::quit()
         vkDestroyBuffer(logical_device, dynamic_mapped_vertices[i].buffer, nullptr);
         vkFreeMemory(logical_device, dynamic_mapped_vertices[i].memory, nullptr);
 
-        // STAGING INDEXBUFFER
-        vkDestroyBuffer(logical_device, staging_mapped_indices[i].buffer, nullptr);
-        vkFreeMemory(logical_device, staging_mapped_indices[i].memory, nullptr);
-
-        // STAGING VERTEXBUFFER
-        vkDestroyBuffer(logical_device, staging_mapped_vertices[i].buffer, nullptr);
-        vkFreeMemory(logical_device, staging_mapped_vertices[i].memory, nullptr);
+        // STAGING BUFFER
+        vkDestroyBuffer(logical_device, staging_buffer[i].buffer, nullptr);
+        vkFreeMemory(logical_device, staging_buffer[i].memory, nullptr);
     }
 
     for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++)
@@ -1903,8 +1898,7 @@ void RenderDevice::drawFrame(uint32_t uniform_count, UniformHandle * p_uniforms)
     // reset buffer offsets for copies
     dynamic_mapped_vertices[currentResource].reset();
     dynamic_mapped_indices[currentResource].reset();
-    staging_mapped_vertices[currentResource].reset();
-    staging_mapped_indices[currentResource].reset();
+    staging_buffer[currentResource].reset();
 
     buckets[currentResource].Clear();
     transfer_buckets[currentResource].Clear();
@@ -1991,7 +1985,7 @@ bool RenderDevice::createVertexbuffer(VkBuffer &       vertexbuffer,
     VkDeviceSize bufferSize = sizeof(Vertex) * vertex_count;
 
     // copy to staging vertex buffer
-    auto &       mapped_vertices       = staging_mapped_vertices[currentResource];
+    auto &       mapped_vertices       = staging_buffer[currentResource];
     size_t       vertex_data_size      = sizeof(Vertex) * vertex_count;
     VkDeviceSize staging_vertex_offset = mapped_vertices.copy(vertex_data_size, vertices);
 
@@ -2014,7 +2008,7 @@ bool RenderDevice::createIndexbuffer(VkBuffer &       indexbuffer,
 {
     VkDeviceSize bufferSize = sizeof(uint32_t) * index_count;
 
-    auto & mapped_indices = staging_mapped_indices[currentResource];
+    auto & mapped_indices = staging_buffer[currentResource];
 
     size_t index_data_size = sizeof(uint32_t) * index_count;
 
@@ -2039,9 +2033,8 @@ void RenderDevice::updateDeviceLocalBuffers(VkBuffer   vertexbuffer,
                                             uint32_t * indices)
 {
     // TODO:
-
-    auto & mapped_vertices = staging_mapped_vertices[currentResource];
-    auto & mapped_indices  = staging_mapped_indices[currentResource];
+    auto & mapped_vertices = staging_buffer[currentResource];
+    auto & mapped_indices  = staging_buffer[currentResource];
 
     size_t vertex_data_size = sizeof(Vertex) * vertex_count;
     size_t index_data_size  = sizeof(uint32_t) * index_count;
@@ -3672,41 +3665,25 @@ VkResult RenderDevice::createDynamicObjectResources(size_t dynamic_vertices_coun
 VkResult RenderDevice::createStagingObjectResources(size_t dynamic_vertices_count,
                                                     size_t dynamic_indices_count)
 {
-    staging_mapped_vertices.resize(MAX_BUFFERED_RESOURCES);
-    staging_mapped_indices.resize(MAX_BUFFERED_RESOURCES);
+    staging_buffer.resize(MAX_BUFFERED_RESOURCES);
 
     for (uint32_t i = 0; i < MAX_BUFFERED_RESOURCES; ++i)
     {
-        staging_mapped_vertices[i].memory_size = sizeof(Vertex) * dynamic_vertices_count;
-        staging_mapped_indices[i].memory_size  = sizeof(uint32_t) * dynamic_indices_count;
+        staging_buffer[i].memory_size = sizeof(Vertex) * dynamic_vertices_count
+                                        + sizeof(uint32_t) * dynamic_indices_count;
 
-        createBuffer(staging_mapped_vertices[i].memory_size,
+        createBuffer(staging_buffer[i].memory_size,
                      VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
                      VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-                     staging_mapped_vertices[i].buffer,
-                     staging_mapped_vertices[i].memory);
+                     staging_buffer[i].buffer,
+                     staging_buffer[i].memory);
 
         vkMapMemory(logical_device,
-                    staging_mapped_vertices[i].memory,
+                    staging_buffer[i].memory,
                     0,
-                    staging_mapped_vertices[i].memory_size,
+                    staging_buffer[i].memory_size,
                     0,
-                    &staging_mapped_vertices[i].data);
-        // vkUnmapMemory(logical_device, stagingBufferMemory);
-
-        createBuffer(staging_mapped_indices[i].memory_size,
-                     VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-                     VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-                     staging_mapped_indices[i].buffer,
-                     staging_mapped_indices[i].memory);
-
-        vkMapMemory(logical_device,
-                    staging_mapped_indices[i].memory,
-                    0,
-                    staging_mapped_indices[i].memory_size,
-                    0,
-                    &staging_mapped_indices[i].data);
-        // vkUnmapMemory(logical_device, stagingBufferMemory);
+                    &staging_buffer[i].data);
     }
 
     return VK_SUCCESS;
