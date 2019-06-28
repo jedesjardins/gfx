@@ -202,6 +202,8 @@ struct RenderConfig
 
     size_t dynamic_indices_count;
 
+    size_t staging_buffer_size;
+
     std::vector<RenderpassConfig> renderpass_configs;
 
     std::vector<AttachmentConfig> attachment_configs;
@@ -481,8 +483,7 @@ private:
     VkResult createDynamicObjectResources(size_t dynamic_vertices_count,
                                           size_t dynamic_indices_count);
 
-    VkResult createStagingObjectResources(size_t dynamic_vertices_count,
-                                          size_t dynamic_indices_count);
+    VkResult createStagingObjectResources(size_t staging_buffer_size);
 
     GLFWwindow * window{nullptr};
 
@@ -1407,6 +1408,11 @@ void RenderConfig::init()
     assert(document["dynamic_indices_count"].IsInt());
     dynamic_indices_count = document["dynamic_indices_count"].GetInt();
 
+    assert(document.HasMember("staging_buffer_size"));
+    assert(document["staging_buffer_size"].IsNumber());
+    assert(document["staging_buffer_size"].IsInt());
+    staging_buffer_size = document["staging_buffer_size"].GetInt();
+
     assert(document.HasMember("attachments"));
     assert(document["attachments"].IsArray());
 
@@ -1658,8 +1664,7 @@ bool RenderDevice::init(RenderConfig & render_config)
         return false;
     }
 
-    if (createStagingObjectResources(render_config.dynamic_vertices_count,
-                                     render_config.dynamic_indices_count)
+    if (createStagingObjectResources(render_config.staging_buffer_size)
         != VK_SUCCESS)
     {
         return false;
@@ -3662,15 +3667,13 @@ VkResult RenderDevice::createDynamicObjectResources(size_t dynamic_vertices_coun
     return VK_SUCCESS;
 }
 
-VkResult RenderDevice::createStagingObjectResources(size_t dynamic_vertices_count,
-                                                    size_t dynamic_indices_count)
+VkResult RenderDevice::createStagingObjectResources(size_t staging_buffer_size)
 {
     staging_buffer.resize(MAX_BUFFERED_RESOURCES);
 
     for (uint32_t i = 0; i < MAX_BUFFERED_RESOURCES; ++i)
     {
-        staging_buffer[i].memory_size = sizeof(Vertex) * dynamic_vertices_count
-                                        + sizeof(uint32_t) * dynamic_indices_count;
+        staging_buffer[i].memory_size = staging_buffer_size;
 
         createBuffer(staging_buffer[i].memory_size,
                      VK_BUFFER_USAGE_TRANSFER_SRC_BIT,

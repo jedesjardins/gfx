@@ -2,6 +2,7 @@
 	"window_name": "Example Window",
 	"dynamic_vertices_count": 8,
 	"dynamic_indices_count": 12,
+	"staging_buffer_size": 1024,
 	"attachments":
 	[
 		{
