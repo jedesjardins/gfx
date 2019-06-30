@@ -1792,9 +1792,7 @@ void RenderDevice::quit()
 
     for (auto & attachment: attachments)
     {
-        vkDestroyImageView(logical_device, attachment.vk_image_view, nullptr);
-        vkDestroyImage(logical_device, attachment.vk_image, nullptr);
-        vkFreeMemory(logical_device, attachment.vk_image_memory, nullptr);
+        destroyTexture(attachment);
     }
 
     // COMMAND POOL
