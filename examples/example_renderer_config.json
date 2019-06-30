@@ -99,6 +99,13 @@
 			"descriptor_count": 1,
 			"stage": "VERTEX",
 			"uniform_count": 1
+		},
+		{
+			"binding": 1,
+			"descriptor_type": "COMBINED_IMAGE_SAMPLER",
+			"descriptor_count": 1,
+			"stage": "FRAGMENT",
+			"uniform_count": 1
 		}
 	],
 	"push_constants":
@@ -139,7 +146,7 @@
 			"fragment_shader": 1,
 			"vertex_bindings": [0],
 			"vertex_attributes": [0, 1],
-			"uniform_layouts": [0],
+			"uniform_layouts": [0, 1],
 			"push_constants": [0],
 			"renderpass": 0,
 			"subpass": 0

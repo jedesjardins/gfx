@@ -274,16 +274,16 @@ struct SetImageLayout
 {
     static cmd::BackendDispatchFunction const DISPATCH_FUNCTION;
 
-    VkCommandBuffer commandbuffer;
-    VkAccessFlags srcAccessMask;
-    VkAccessFlags dstAccessMask;
-    VkImageLayout oldLayout;
-    VkImageLayout newLayout;
+    VkCommandBuffer      commandbuffer;
+    VkAccessFlags        srcAccessMask;
+    VkAccessFlags        dstAccessMask;
+    VkImageLayout        oldLayout;
+    VkImageLayout        newLayout;
     VkPipelineStageFlags sourceStage;
     VkPipelineStageFlags destinationStage;
-    VkImage image;
-    uint32_t mipLevels;
-    VkImageAspectFlags aspectMask;
+    VkImage              image;
+    uint32_t             mipLevels;
+    VkImageAspectFlags   aspectMask;
 };
 static_assert(std::is_pod<SetImageLayout>::value == true, "SetImageLayout must be a POD.");
 
@@ -343,7 +343,7 @@ public:
                                    VkBuffer       indexbuffer,
                                    VkDeviceMemory index_memory);
 
-    Texture createTexture(char const * texture_path);
+    void createTexture(char const * texture_path);
 
     void destroyTexture(Texture & texture);
 
@@ -607,6 +607,10 @@ private:
 
     std::vector<cmd::CommandBucket<int>> buckets;
     std::vector<cmd::CommandBucket<int>> transfer_buckets;
+
+    Texture         texture;
+    VkSampler       sampler;
+    VkDescriptorSet sampler_descriptor;
 
 }; // class RenderDevice
 }; // namespace gfx
@@ -1593,18 +1597,22 @@ void copyToImage(void const * data)
 {
     auto const * copydata = reinterpret_cast<CopyToImage const *>(data);
 
-    auto region = VkBufferImageCopy{.bufferOffset                = copydata->srcOffset,
-                                    .bufferRowLength             = 0,
-                                    .bufferImageHeight           = 0,
-                                    .imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
-                                    .imageSubresource.mipLevel   = 0,
+    auto region = VkBufferImageCopy{.bufferOffset                    = copydata->srcOffset,
+                                    .bufferRowLength                 = 0,
+                                    .bufferImageHeight               = 0,
+                                    .imageSubresource.aspectMask     = VK_IMAGE_ASPECT_COLOR_BIT,
+                                    .imageSubresource.mipLevel       = 0,
                                     .imageSubresource.baseArrayLayer = 0,
                                     .imageSubresource.layerCount     = 1,
                                     .imageOffset                     = {0, 0, 0},
-                                    .imageExtent                     = {copydata->width, copydata->height, 1}};
+                                    .imageExtent = {copydata->width, copydata->height, 1}};
 
-    vkCmdCopyBufferToImage(
-        copydata->commandbuffer, copydata->srcBuffer, copydata->dstImage, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
+    vkCmdCopyBufferToImage(copydata->commandbuffer,
+                           copydata->srcBuffer,
+                           copydata->dstImage,
+                           VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                           1,
+                           &region);
 }
 
 cmd::BackendDispatchFunction const CopyToImage::DISPATCH_FUNCTION = &copyToImage;
@@ -1624,14 +1632,19 @@ void setImageLayout(void const * data)
                                         .subresourceRange.baseArrayLayer = 0,
                                         .subresourceRange.layerCount     = 1,
                                         .subresourceRange.aspectMask     = layoutdata->aspectMask,
-                                        .srcAccessMask                   = layoutdata->srcAccessMask,
-                                        .dstAccessMask                   = layoutdata->dstAccessMask};
+                                        .srcAccessMask = layoutdata->srcAccessMask,
+                                        .dstAccessMask = layoutdata->dstAccessMask};
 
-    vkCmdPipelineBarrier(
-            layoutdata->commandbuffer,
-            layoutdata->sourceStage,
-            layoutdata->destinationStage,
-            0,0, nullptr, 0, nullptr, 1, &barrier);
+    vkCmdPipelineBarrier(layoutdata->commandbuffer,
+                         layoutdata->sourceStage,
+                         layoutdata->destinationStage,
+                         0,
+                         0,
+                         nullptr,
+                         0,
+                         nullptr,
+                         1,
+                         &barrier);
 }
 
 cmd::BackendDispatchFunction const SetImageLayout::DISPATCH_FUNCTION = &setImageLayout;
@@ -1749,8 +1762,7 @@ bool RenderDevice::init(RenderConfig & render_config)
         return false;
     }
 
-    if (createStagingObjectResources(render_config.staging_buffer_size)
-        != VK_SUCCESS)
+    if (createStagingObjectResources(render_config.staging_buffer_size) != VK_SUCCESS)
     {
         return false;
     }
@@ -1809,6 +1821,9 @@ void RenderDevice::quit()
         vkDestroyPipeline(logical_device, pipeline.vk_pipeline, nullptr);
         vkDestroyPipelineLayout(logical_device, pipeline.vk_pipeline_layout, nullptr);
     }
+
+    destroyTexture(texture);
+    vkDestroySampler(logical_device, sampler, nullptr);
 
     // DESCRIPTORSET LAYOUT
     for (auto & uniform_layout: uniform_layouts)
@@ -2164,26 +2179,24 @@ void RenderDevice::destroyDeviceLocalBuffers(VkBuffer       vertexbuffer,
     vkFreeMemory(logical_device, vertex_memory, nullptr);
 }
 
-Texture RenderDevice::createTexture(char const * texture_path)
+void RenderDevice::createTexture(char const * texture_path)
 {
     int       texWidth, texHeight, texChannels;
-    stbi_uc * pixels = stbi_load(
-        texture_path, &texWidth, &texHeight, &texChannels, STBI_rgb_alpha);
+    stbi_uc * pixels = stbi_load(texture_path, &texWidth, &texHeight, &texChannels, STBI_rgb_alpha);
 
     VkDeviceSize imageSize = texWidth * texHeight * 4;
 
-    //mipLevels = static_cast<uint32_t>(std::floor(std::log2(std::max(texWidth, texHeight)))) + 1;
+    // mipLevels = static_cast<uint32_t>(std::floor(std::log2(std::max(texWidth, texHeight)))) + 1;
 
     if (!pixels)
     {
         throw std::runtime_error("failed to load texture image!");
     }
 
-    VkDeviceSize pixel_data_offset = staging_buffer[currentResource].copy(static_cast<size_t>(imageSize), pixels);
+    VkDeviceSize pixel_data_offset = staging_buffer[currentResource].copy(
+        static_cast<size_t>(imageSize), pixels);
 
     stbi_image_free(pixels);
-
-    Texture texture;
 
     createImage(texWidth,
                 texHeight,
@@ -2196,43 +2209,100 @@ Texture RenderDevice::createTexture(char const * texture_path)
                 texture.vk_image,
                 texture.vk_image_memory);
 
+    createImageView(texture.vk_image,
+                    texture.vk_image_view,
+                    VK_FORMAT_R8G8B8A8_UNORM,
+                    VK_IMAGE_ASPECT_COLOR_BIT,
+                    1);
+
     auto & bucket = transfer_buckets[currentResource];
 
-    SetImageLayout * dst_optimal_command = bucket.AddCommand<SetImageLayout>(0, 0);
-    dst_optimal_command->commandbuffer = transfer_commandbuffers[currentResource];
-    dst_optimal_command->srcAccessMask = 0;
-    dst_optimal_command->dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-    dst_optimal_command->oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-    dst_optimal_command->newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-    dst_optimal_command->image = texture.vk_image;
-    dst_optimal_command->mipLevels = 1;
-    dst_optimal_command->aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-    dst_optimal_command->sourceStage = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
+    SetImageLayout * dst_optimal_command  = bucket.AddCommand<SetImageLayout>(0, 0);
+    dst_optimal_command->commandbuffer    = transfer_commandbuffers[currentResource];
+    dst_optimal_command->srcAccessMask    = 0;
+    dst_optimal_command->dstAccessMask    = VK_ACCESS_TRANSFER_WRITE_BIT;
+    dst_optimal_command->oldLayout        = VK_IMAGE_LAYOUT_UNDEFINED;
+    dst_optimal_command->newLayout        = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+    dst_optimal_command->image            = texture.vk_image;
+    dst_optimal_command->mipLevels        = 1;
+    dst_optimal_command->aspectMask       = VK_IMAGE_ASPECT_COLOR_BIT;
+    dst_optimal_command->sourceStage      = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
     dst_optimal_command->destinationStage = VK_PIPELINE_STAGE_TRANSFER_BIT;
 
-    CopyToImage * copy_command = bucket.AddCommand<CopyToImage>(0, 0);
+    CopyToImage * copy_command  = bucket.AddCommand<CopyToImage>(0, 0);
     copy_command->commandbuffer = transfer_commandbuffers[currentResource];
-    copy_command->srcBuffer = staging_buffer[currentResource].buffer;
-    copy_command->srcOffset = pixel_data_offset;
-    copy_command->dstImage = texture.vk_image;
-    copy_command->width = static_cast<uint32_t>(texWidth);
-    copy_command->height = static_cast<uint32_t>(texHeight);
+    copy_command->srcBuffer     = staging_buffer[currentResource].buffer;
+    copy_command->srcOffset     = pixel_data_offset;
+    copy_command->dstImage      = texture.vk_image;
+    copy_command->width         = static_cast<uint32_t>(texWidth);
+    copy_command->height        = static_cast<uint32_t>(texHeight);
 
-    SetImageLayout * shader_optimal_command = bucket.AddCommand<SetImageLayout>(0, 0);
-    shader_optimal_command->commandbuffer = transfer_commandbuffers[currentResource];
-    shader_optimal_command->srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-    shader_optimal_command->dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
-    shader_optimal_command->oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-    shader_optimal_command->newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-    shader_optimal_command->image = texture.vk_image;
-    shader_optimal_command->mipLevels = 1;
-    shader_optimal_command->aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-    shader_optimal_command->sourceStage = VK_PIPELINE_STAGE_TRANSFER_BIT;
+    SetImageLayout * shader_optimal_command  = bucket.AddCommand<SetImageLayout>(0, 0);
+    shader_optimal_command->commandbuffer    = transfer_commandbuffers[currentResource];
+    shader_optimal_command->srcAccessMask    = VK_ACCESS_TRANSFER_WRITE_BIT;
+    shader_optimal_command->dstAccessMask    = VK_ACCESS_SHADER_READ_BIT;
+    shader_optimal_command->oldLayout        = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+    shader_optimal_command->newLayout        = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    shader_optimal_command->image            = texture.vk_image;
+    shader_optimal_command->mipLevels        = 1;
+    shader_optimal_command->aspectMask       = VK_IMAGE_ASPECT_COLOR_BIT;
+    shader_optimal_command->sourceStage      = VK_PIPELINE_STAGE_TRANSFER_BIT;
     shader_optimal_command->destinationStage = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
 
-    //generateMipmaps(textureImage, VK_FORMAT_R8G8B8A8_UNORM, texWidth, texHeight, mipLevels);
+    auto samplerInfo = VkSamplerCreateInfo{.sType        = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
+                                           .magFilter    = VK_FILTER_NEAREST,
+                                           .minFilter    = VK_FILTER_NEAREST,
+                                           .addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT,
+                                           .addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT,
+                                           .addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT,
+                                           .anisotropyEnable = VK_TRUE,
+                                           .maxAnisotropy    = 16,
+                                           .borderColor      = VK_BORDER_COLOR_INT_OPAQUE_BLACK,
+                                           .unnormalizedCoordinates = VK_FALSE,
+                                           .compareEnable           = VK_FALSE,
+                                           .compareOp               = VK_COMPARE_OP_ALWAYS,
+                                           .mipmapMode = VK_SAMPLER_MIPMAP_MODE_NEAREST,
+                                           .mipLodBias = 0.0f,
+                                           .minLod     = 0.0f,
+                                           .maxLod     = 1};
 
-    return texture;
+    if (vkCreateSampler(logical_device, &samplerInfo, nullptr, &sampler) != VK_SUCCESS)
+    {
+        throw std::runtime_error("failed to create texture sampler!");
+    }
+
+    // create the descriptors
+    UniformLayout & uniform_layout = uniform_layouts[1];
+
+    auto allocInfo = VkDescriptorSetAllocateInfo{
+        .sType              = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
+        .descriptorPool     = uniform_layout.vk_descriptor_pool,
+        .descriptorSetCount = 1,
+        .pSetLayouts        = &uniform_layout.vk_descriptorset_layout};
+
+    auto result = vkAllocateDescriptorSets(logical_device, &allocInfo, &sampler_descriptor);
+    if (result != VK_SUCCESS)
+    {
+        std::cout << "ERROR allocating descriptorsets\n";
+        return; // result;
+    }
+
+    auto imageInfo = VkDescriptorImageInfo{.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                                           .imageView   = texture.vk_image_view,
+                                           .sampler     = sampler};
+
+    auto write_info = VkWriteDescriptorSet{
+        .sType            = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+        .dstSet           = sampler_descriptor,
+        .dstBinding       = 1,
+        .dstArrayElement  = 0,
+        .descriptorType   = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+        .descriptorCount  = 1,
+        .pBufferInfo      = nullptr,
+        .pImageInfo       = &imageInfo,
+        .pTexelBufferView = nullptr};
+
+    vkUpdateDescriptorSets(logical_device, 1, &write_info, 0, nullptr);
 }
 
 void RenderDevice::destroyTexture(Texture & texture)
@@ -3029,6 +3099,12 @@ VkResult RenderDevice::createUniformLayouts()
             return result;
         }
 
+        // TODO REMOVE, UNIFORM LAYOUT SHOULD BE ABLE TO HANDLE THIS
+        if (uniform_layout.binding.descriptorType == VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER)
+        {
+            continue;
+        }
+
         // create the uniforms
         VkDeviceSize bufferSize = sizeof(glm::mat4);
 
@@ -3267,10 +3343,17 @@ VkResult RenderDevice::createGraphicsPipeline()
             pushConstantRanges.push_back(push_constants[push_constant]);
         }
 
+        std::vector<VkDescriptorSetLayout> layouts;
+
+        for (auto & layout_handle: pipeline_config.uniform_layouts)
+        {
+            layouts.push_back(uniform_layouts[layout_handle].vk_descriptorset_layout);
+        }
+
         auto pipelineLayoutInfo = VkPipelineLayoutCreateInfo{
             .sType                  = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
-            .setLayoutCount         = 1,
-            .pSetLayouts            = &uniform_layouts[0].vk_descriptorset_layout,
+            .setLayoutCount         = static_cast<uint32_t>(layouts.size()),
+            .pSetLayouts            = layouts.data(),
             .pushConstantRangeCount = static_cast<uint32_t>(pushConstantRanges.size()),
             .pPushConstantRanges    = pushConstantRanges.data()};
 
@@ -3731,6 +3814,7 @@ VkResult RenderDevice::createCommandbuffer(uint32_t        image_index,
         descriptorsets.push_back(uniform.vk_descriptorset);
         dynamic_offsets.push_back(uniform.uniform_buffers[currentResource].offset);
     }
+    descriptorsets.push_back(sampler_descriptor);
 
     vkCmdBindDescriptorSets(commandbuffers[currentResource],
                             VK_PIPELINE_BIND_POINT_GRAPHICS,

@@ -296,7 +296,7 @@ int main()
 
     std::vector<Object> objects{};
 
-    auto texture = render_device.createTexture("../sword.png");
+    render_device.createTexture("../sword.png");
 
     objects.emplace_back(render_device,
                          ObjectType::STATIC,
@@ -385,8 +385,6 @@ int main()
 
     objects[0].destroyStaticObject(render_device);
     objects[1].destroyStaticObject(render_device);
-
-    render_device.destroyTexture(texture);
 
     render_device.quit();
 
