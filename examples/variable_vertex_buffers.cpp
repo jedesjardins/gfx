@@ -7,6 +7,10 @@
 #include "cmd/cmd.hpp"
 #undef JED_CMD_IMPLEMENTATION
 
+#define STB_IMAGE_IMPLEMENTATION
+#include "stb_image.h"
+#undef STB_IMAGE_IMPLEMENTATION
+
 #include <vulkan/vulkan.h>
 #include <GLFW/glfw3.h>
 
@@ -292,6 +296,8 @@ int main()
 
     std::vector<Object> objects{};
 
+    auto texture = render_device.createTexture("../sword.png");
+
     objects.emplace_back(render_device,
                          ObjectType::STATIC,
                          obj1_vertices.size(),
@@ -379,6 +385,8 @@ int main()
 
     objects[0].destroyStaticObject(render_device);
     objects[1].destroyStaticObject(render_device);
+
+    render_device.destroyTexture(texture);
 
     render_device.quit();
 
