@@ -332,7 +332,7 @@ int main()
 
     glm::mat4 view = glm::scale(glm::mat4(1.0), glm::vec3(1.f, -1.f, 1.f));
 
-    auto opt_view_handle = render_device.newUniform();
+    auto opt_view_handle = render_device.newUniform(0, 16*4, glm::value_ptr(view));
 
     gfx::UniformHandle view_handle = opt_view_handle.value();
 
@@ -347,7 +347,7 @@ int main()
     {
         glfwPollEvents();
 
-        render_device.updateUniform(view_handle, view);
+        //render_device.updateUniform(view_handle, view);
 
         if (++i % 10 == 0)
         {

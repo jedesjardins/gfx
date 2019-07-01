@@ -145,10 +145,10 @@ struct MappedBuffer
     void reset();
 };
 
-struct DynamicUniformBuffer
+struct DynamicBufferUniform
 {
-    VkDescriptorSet const &   vk_descriptorset;
-    std::vector<MappedBuffer> uniform_buffers;
+    VkDescriptorSet vk_descriptorset;
+    VkDeviceSize    offset;
 };
 
 struct UniformLayout
@@ -159,14 +159,14 @@ struct UniformLayout
     VkDescriptorPool             vk_descriptor_pool{VK_NULL_HANDLE};
     size_t                       uniform_count;
     VkDeviceSize                 uniform_size;
-    std::vector<VkDescriptorSet> vk_descriptorsets; // currentFrame
-    std::vector<MappedBuffer>    uniform_buffers;   // currentFrame
+    std::vector<VkDescriptorSet> vk_descriptorsets;
+    std::vector<MappedBuffer>    uniform_buffers;
 
     void init(rapidjson::Value & document);
 
-    std::optional<UniformHandle> newUniform();
+    std::optional<UniformHandle> newUniform(VkDeviceSize size, void * data_ptr);
 
-    std::optional<DynamicUniformBuffer> getUniform(UniformHandle handle);
+    std::optional<DynamicBufferUniform> getUniform(UniformHandle handle);
 };
 
 struct PipelineConfig
@@ -302,9 +302,11 @@ public:
 
     void drawFrame(uint32_t uniform_count, UniformHandle * p_uniforms);
 
-    std::optional<UniformHandle> newUniform();
+    template <typename... Args>
+    std::optional<UniformHandle> newUniform(UniformLayoutHandle layout_handle, Args &&... args);
 
-    void updateUniform(UniformHandle handle, glm::mat4 const & data);
+    template <typename... Args>
+    void updateUniform(UniformHandle handle, Args &&... args);
 
     void dynamicDraw(PipelineHandle    pipeline,
                      glm::mat4 const & transform,
@@ -1326,7 +1328,7 @@ void UniformLayout::init(rapidjson::Value & document)
     uniform_count = document["uniform_count"].GetInt();
 }
 
-std::optional<UniformHandle> UniformLayout::newUniform()
+std::optional<UniformHandle> UniformLayout::newUniform(VkDeviceSize size, void * data_ptr)
 {
     if (uniform_buffers[0].offset >= uniform_buffers[0].memory_size)
     {
@@ -1335,28 +1337,21 @@ std::optional<UniformHandle> UniformLayout::newUniform()
 
     auto next_id = uniform_buffers[0].offset / uniform_size;
 
-    for (auto & uniform_buffer: uniform_buffers)
-    {
-        uniform_buffer.offset += uniform_size;
-    }
+    // copy into this uniform buffer slot, don't increase offset (use it later to draw)
+    uniform_buffers[0].copy(size, data_ptr);
 
     return UniformHandle{.uniform_layout_id = 0, .uniform_id = next_id};
 }
 
-std::optional<DynamicUniformBuffer> UniformLayout::getUniform(UniformHandle handle)
+std::optional<DynamicBufferUniform> UniformLayout::getUniform(UniformHandle handle)
 {
     if (handle.uniform_id >= uniform_count)
     {
         return std::nullopt;
     }
 
-    auto uniform = DynamicUniformBuffer{.vk_descriptorset = vk_descriptorsets[0],
-                                        .uniform_buffers  = uniform_buffers};
-
-    for (auto & uniform_buffer: uniform.uniform_buffers)
-    {
-        uniform_buffer.offset = handle.uniform_id * uniform_size;
-    }
+    auto uniform = DynamicBufferUniform{.vk_descriptorset = vk_descriptorsets[0],
+                                        .offset           = uniform_size * handle.uniform_id};
 
     return uniform;
 }
@@ -2008,34 +2003,18 @@ void RenderDevice::drawFrame(uint32_t uniform_count, UniformHandle * p_uniforms)
     transfer_buckets[currentResource].Clear();
 }
 
-std::optional<UniformHandle> RenderDevice::newUniform()
+template <typename... Args>
+std::optional<UniformHandle> RenderDevice::newUniform(UniformLayoutHandle layout_handle,
+                                                      Args &&... args)
 {
-    auto handle = uniform_layouts[0].newUniform();
-    if (!handle.has_value())
+    auto uniform_handle = uniform_layouts[layout_handle].newUniform(std::forward<Args>(args)...);
+    if (!uniform_handle.has_value())
     {
         return std::nullopt;
     }
 
-    handle.value().uniform_layout_id = 0;
-    return handle;
-}
-
-void RenderDevice::updateUniform(UniformHandle handle, glm::mat4 const & data)
-{
-    UniformLayout layout = uniform_layouts[handle.uniform_layout_id];
-
-    auto opt_uniform = layout.getUniform(handle);
-
-    if (!opt_uniform.has_value())
-    {
-        throw std::runtime_error("in updateUniform, no uniform returned from getUniform!");
-    }
-
-    auto uniform = opt_uniform.value();
-
-    // copy into this uniform buffer slot, don't increase offset (use it later to draw)
-    uniform.uniform_buffers[currentFrame].offset = uniform.uniform_buffers[currentFrame].copy(
-        sizeof(glm::mat4), static_cast<void const *>(glm::value_ptr(data)));
+    uniform_handle.value().uniform_layout_id = layout_handle;
+    return uniform_handle;
 }
 
 void RenderDevice::dynamicDraw(PipelineHandle    pipeline,
@@ -3812,7 +3791,7 @@ VkResult RenderDevice::createCommandbuffer(uint32_t        image_index,
         auto const & uniform = opt_uniform.value();
 
         descriptorsets.push_back(uniform.vk_descriptorset);
-        dynamic_offsets.push_back(uniform.uniform_buffers[currentResource].offset);
+        dynamic_offsets.push_back(uniform.offset);
     }
     descriptorsets.push_back(sampler_descriptor);
 
