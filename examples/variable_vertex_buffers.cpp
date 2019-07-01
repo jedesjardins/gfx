@@ -7,6 +7,10 @@
 #include "cmd/cmd.hpp"
 #undef JED_CMD_IMPLEMENTATION
 
+#define STB_IMAGE_IMPLEMENTATION
+#include "stb_image.h"
+#undef STB_IMAGE_IMPLEMENTATION
+
 #include <vulkan/vulkan.h>
 #include <GLFW/glfw3.h>
 
@@ -291,6 +295,8 @@ int main()
     }
 
     std::vector<Object> objects{};
+
+    render_device.createTexture("../sword.png");
 
     objects.emplace_back(render_device,
                          ObjectType::STATIC,
