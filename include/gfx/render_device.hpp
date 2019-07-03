@@ -164,7 +164,7 @@ struct UniformLayout
 
     std::vector<VkDescriptorSet> descriptor_sets;
 
-    std::vector<DynamicBufferUniform> uniforms;
+    std::variant<std::vector<DynamicBufferUniform>, std::vector<VkDescriptorSet>> uniforms;
 
     void init(rapidjson::Value & document);
 
@@ -172,7 +172,8 @@ struct UniformLayout
                                                VkDeviceSize        size,
                                                void *              data_ptr);
 
-    std::optional<DynamicBufferUniform> getUniform(UniformHandle handle);
+    std::optional<std::variant<VkDescriptorSet, DynamicBufferUniform>> getUniform(
+        UniformHandle handle);
 
     void destroyUniform(UniformHandle handle);
 
@@ -1341,6 +1342,15 @@ std::optional<UniformHandle> UniformLayout::createUniform(UniformBufferPool & po
                                                           VkDeviceSize        size,
                                                           void *              data_ptr)
 {
+    assert(binding.descriptorType == VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC
+           || binding.descriptorType == VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC);
+
+    if (binding.descriptorType != VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC
+        && binding.descriptorType != VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC)
+    {
+        return std::nullopt;
+    }
+
     // find open uniform buffer and offset
     size_t uniform_buffer_index = 0;
     auto & uniform_buffer       = pool.uniform_buffers[0][uniform_buffer_index];
@@ -1350,14 +1360,30 @@ std::optional<UniformHandle> UniformLayout::createUniform(UniformBufferPool & po
     uniform.vk_descriptorset = descriptor_sets[uniform_buffer_index];
     uniform.offset           = uniform_buffer.copy(size, data_ptr);
 
-    uniforms.push_back(uniform);
+    auto & buffer_uniforms = std::get<std::vector<DynamicBufferUniform>>(uniforms);
 
-    return UniformHandle{.uniform_layout_id = 0, .uniform_id = uniforms.size() - 1};
+    buffer_uniforms.push_back(uniform);
+
+    return UniformHandle{.uniform_layout_id = 0, .uniform_id = buffer_uniforms.size() - 1};
 }
 
-std::optional<DynamicBufferUniform> UniformLayout::getUniform(UniformHandle handle)
+std::optional<std::variant<VkDescriptorSet, DynamicBufferUniform>> UniformLayout::getUniform(
+    UniformHandle handle)
 {
-    return uniforms[handle.uniform_id];
+    // return std::get<std::vector<DynamicBufferUniform>>(uniforms)[handle.uniform_id];
+
+    std::optional<std::variant<VkDescriptorSet, DynamicBufferUniform>> what{};
+
+    if (std::holds_alternative<std::vector<VkDescriptorSet>>(uniforms))
+    {
+        what = std::get<std::vector<VkDescriptorSet>>(uniforms)[handle.uniform_id];
+    }
+    else
+    {
+        what = std::get<std::vector<DynamicBufferUniform>>(uniforms)[handle.uniform_id];
+    }
+
+    return what;
 }
 
 void UniformLayout::destroyUniform(UniformHandle handle)
@@ -3816,10 +3842,21 @@ VkResult RenderDevice::createCommandbuffer(uint32_t        image_index,
         auto uniform_handle = p_uniforms[i];
         auto opt_uniform    = uniform_layouts[uniform_handle.uniform_layout_id].getUniform(
             uniform_handle);
-        auto const & uniform = opt_uniform.value();
+        auto const & variant_uniform = opt_uniform.value();
 
-        descriptorsets.push_back(uniform.vk_descriptorset);
-        dynamic_offsets.push_back(uniform.offset);
+        if (std::holds_alternative<DynamicBufferUniform>(variant_uniform))
+        {
+            auto const & uniform = std::get<DynamicBufferUniform>(variant_uniform);
+
+            descriptorsets.push_back(uniform.vk_descriptorset);
+            dynamic_offsets.push_back(uniform.offset);
+        }
+        else
+        {
+            auto const & descriptorset = std::get<VkDescriptorSet>(variant_uniform);
+
+            descriptorsets.push_back(descriptorset);
+        }
     }
     descriptorsets.push_back(sampler_descriptor);
 
