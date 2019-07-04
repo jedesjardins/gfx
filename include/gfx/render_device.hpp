@@ -162,9 +162,8 @@ struct UniformLayout
     VkDescriptorSetLayout        vk_descriptorset_layout{VK_NULL_HANDLE};
     VkDescriptorPool             vk_descriptor_pool{VK_NULL_HANDLE};
 
-    std::vector<VkDescriptorSet> descriptor_sets;
-
-    std::variant<std::vector<DynamicBufferUniform>, std::vector<VkDescriptorSet>> uniforms;
+    std::vector<VkDescriptorSet>      descriptor_sets;
+    std::vector<DynamicBufferUniform> dynamic_uniform_offsets;
 
     void init(rapidjson::Value & document);
 
@@ -172,8 +171,9 @@ struct UniformLayout
                                                VkDeviceSize        size,
                                                void *              data_ptr);
 
-    std::optional<std::variant<VkDescriptorSet, DynamicBufferUniform>> getUniform(
-        UniformHandle handle);
+    std::optional<VkDescriptorSet> getUniform(UniformHandle handle);
+
+    std::optional<VkDeviceSize> getUniformDynamicOffset(UniformHandle handle);
 
     void destroyUniform(UniformHandle handle);
 
@@ -1360,28 +1360,31 @@ std::optional<UniformHandle> UniformLayout::createUniform(UniformBufferPool & po
     uniform.vk_descriptorset = descriptor_sets[uniform_buffer_index];
     uniform.offset           = uniform_buffer.copy(size, data_ptr);
 
-    auto & buffer_uniforms = std::get<std::vector<DynamicBufferUniform>>(uniforms);
+    dynamic_uniform_offsets.push_back(uniform);
 
-    buffer_uniforms.push_back(uniform);
-
-    return UniformHandle{.uniform_layout_id = 0, .uniform_id = buffer_uniforms.size() - 1};
+    return UniformHandle{.uniform_layout_id = 0, .uniform_id = dynamic_uniform_offsets.size() - 1};
 }
 
-std::optional<std::variant<VkDescriptorSet, DynamicBufferUniform>> UniformLayout::getUniform(
-    UniformHandle handle)
+std::optional<VkDescriptorSet> UniformLayout::getUniform(UniformHandle handle)
 {
-    std::optional<std::variant<VkDescriptorSet, DynamicBufferUniform>> what{};
-
-    if (std::holds_alternative<std::vector<VkDescriptorSet>>(uniforms))
+    if (binding.descriptorType == VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC
+        || binding.descriptorType == VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC)
     {
-        what = std::get<std::vector<VkDescriptorSet>>(uniforms)[handle.uniform_id];
-    }
-    else
-    {
-        what = std::get<std::vector<DynamicBufferUniform>>(uniforms)[handle.uniform_id];
+        return dynamic_uniform_offsets[handle.uniform_id].vk_descriptorset;
     }
 
-    return what;
+    return std::nullopt;
+}
+
+std::optional<VkDeviceSize> UniformLayout::getUniformDynamicOffset(UniformHandle handle)
+{
+    if (binding.descriptorType != VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC
+        && binding.descriptorType != VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC)
+    {
+        return std::nullopt;
+    }
+
+    return dynamic_uniform_offsets[handle.uniform_id].offset;
 }
 
 void UniformLayout::destroyUniform(UniformHandle handle)
@@ -3840,6 +3843,28 @@ VkResult RenderDevice::createCommandbuffer(uint32_t        image_index,
         auto uniform_handle = p_uniforms[i];
         auto opt_uniform    = uniform_layouts[uniform_handle.uniform_layout_id].getUniform(
             uniform_handle);
+
+        std::cout << uniform_handle.uniform_layout_id << " " << uniform_handle.uniform_id << "\n";
+
+        if (opt_uniform.has_value())
+        {
+            descriptorsets.push_back(opt_uniform.value());
+        }
+        else
+        {
+            std::cout << "No descriptorset\n";
+            continue;
+        }
+
+        auto opt_offset = uniform_layouts[uniform_handle.uniform_layout_id].getUniformDynamicOffset(
+            uniform_handle);
+
+        if (opt_offset.has_value())
+        {
+            dynamic_offsets.push_back(opt_offset.value());
+        }
+
+        /*
         auto const & variant_uniform = opt_uniform.value();
 
         if (std::holds_alternative<DynamicBufferUniform>(variant_uniform))
@@ -3855,6 +3880,7 @@ VkResult RenderDevice::createCommandbuffer(uint32_t        image_index,
 
             descriptorsets.push_back(descriptorset);
         }
+        */
     }
     descriptorsets.push_back(sampler_descriptor);
 
