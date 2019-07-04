@@ -1370,8 +1370,6 @@ std::optional<UniformHandle> UniformLayout::createUniform(UniformBufferPool & po
 std::optional<std::variant<VkDescriptorSet, DynamicBufferUniform>> UniformLayout::getUniform(
     UniformHandle handle)
 {
-    // return std::get<std::vector<DynamicBufferUniform>>(uniforms)[handle.uniform_id];
-
     std::optional<std::variant<VkDescriptorSet, DynamicBufferUniform>> what{};
 
     if (std::holds_alternative<std::vector<VkDescriptorSet>>(uniforms))
