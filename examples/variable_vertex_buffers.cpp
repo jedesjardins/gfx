@@ -347,12 +347,12 @@ int main()
     {
         glfwPollEvents();
 
-        view *= glm::vec4(1.f, -1.f, 1.f, 1.f);
-
-        render_device.updateUniform(view_handle, sizeof(glm::mat4), glm::value_ptr(view));
-
         if (++i % 10 == 0)
         {
+            view *= glm::vec4(1.f, -1.f, 1.f, 1.f);
+
+            render_device.updateUniform(view_handle, sizeof(glm::mat4), glm::value_ptr(view));
+
             obj1_vertices[0].pos.y -= .01f;
 
             objects[0].updateStaticObject(render_device,

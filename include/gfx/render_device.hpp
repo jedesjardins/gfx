@@ -147,8 +147,8 @@ struct MappedBuffer
 
 struct DynamicBufferUniform
 {
-    VkDescriptorSet vk_descriptorset;
-    VkDeviceSize    offset;
+    size_t       descriptorset;
+    VkDeviceSize offset;
 };
 
 struct UniformBufferPool
@@ -177,7 +177,10 @@ struct UniformLayout
 
     void destroyUniform(UniformHandle handle);
 
-    void updateUniform(UniformHandle handle, VkDeviceSize size, void * data_ptr);
+    void updateUniform(UniformHandle       handle,
+                       UniformBufferPool & pool,
+                       VkDeviceSize        size,
+                       void *              data_ptr);
 };
 
 struct PipelineConfig
@@ -1357,8 +1360,9 @@ std::optional<UniformHandle> UniformLayout::createUniform(UniformBufferPool & po
 
     // create Uniform
     DynamicBufferUniform uniform{};
-    uniform.vk_descriptorset = descriptor_sets[uniform_buffer_index];
-    uniform.offset           = uniform_buffer.copy(size, data_ptr);
+    uniform.descriptorset = uniform_buffer_index;
+    uniform.offset        = uniform_buffer.copy(size, data_ptr);
+    uniform_buffer.offset = uniform.offset + 256;
 
     dynamic_uniform_offsets.push_back(uniform);
 
@@ -1370,7 +1374,7 @@ std::optional<VkDescriptorSet> UniformLayout::getUniform(UniformHandle handle)
     if (binding.descriptorType == VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC
         || binding.descriptorType == VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC)
     {
-        return dynamic_uniform_offsets[handle.uniform_id].vk_descriptorset;
+        return descriptor_sets[dynamic_uniform_offsets[handle.uniform_id].descriptorset];
     }
 
     return std::nullopt;
@@ -1392,8 +1396,27 @@ void UniformLayout::destroyUniform(UniformHandle handle)
     // no op
 }
 
-void UniformLayout::updateUniform(UniformHandle handle, VkDeviceSize size, void * data_ptr)
+void UniformLayout::updateUniform(UniformHandle       handle,
+                                  UniformBufferPool & pool,
+                                  VkDeviceSize        size,
+                                  void *              data_ptr)
 {
+    assert(binding.descriptorType == VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC
+           || binding.descriptorType == VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC);
+
+    // find open uniform buffer and offset
+    size_t uniform_buffer_index = 0;
+    auto & uniform_buffer       = pool.uniform_buffers[0][uniform_buffer_index];
+
+    DynamicBufferUniform & uniform = dynamic_uniform_offsets[handle.uniform_id];
+    uniform.offset                 = uniform_buffer.copy(size, data_ptr);
+
+    uniform_buffer.offset = uniform.offset + 256;
+    if (uniform_buffer.offset >= uniform_buffer.memory_size)
+    {
+        uniform_buffer.offset = 0;
+    }
+
     // no op (for now)
     // get new offset
     // release old offset
@@ -2070,7 +2093,8 @@ std::optional<UniformHandle> RenderDevice::newUniform(UniformLayoutHandle layout
 template <typename... Args>
 void RenderDevice::updateUniform(UniformHandle handle, Args &&... args)
 {
-    uniform_layouts[handle.uniform_layout_id].updateUniform(handle, std::forward<Args>(args)...);
+    uniform_layouts[handle.uniform_layout_id].updateUniform(
+        handle, uniform_buffer_pool, std::forward<Args>(args)...);
 }
 
 void RenderDevice::dynamicDraw(PipelineHandle    pipeline,
@@ -3104,7 +3128,7 @@ void RenderDevice::createUniformBufferPool()
 
     auto & uniform_buffer = uniform_buffer_pool.uniform_buffers[0][0];
 
-    uniform_buffer.memory_size = 256 * 4;
+    uniform_buffer.memory_size = 256 * 8;
 
     createBuffer(uniform_buffer.memory_size,
                  VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
@@ -3124,6 +3148,12 @@ VkResult RenderDevice::createUniformLayouts()
 {
     for (auto & uniform_layout: uniform_layouts)
     {
+        size_t uniform_alignment
+            = physical_device_info.properties.limits.minUniformBufferOffsetAlignment;
+
+        int uniform_count = physical_device_info.properties.limits.maxUniformBufferRange
+                            / uniform_alignment;
+
         auto layoutInfo = VkDescriptorSetLayoutCreateInfo{
             .sType        = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
             .bindingCount = 1,
@@ -3160,7 +3190,7 @@ VkResult RenderDevice::createUniformLayouts()
         }
 
         // create the uniforms
-        VkDeviceSize bufferSize = sizeof(glm::mat4);
+        VkDeviceSize bufferSize = uniform_size; // sizeof(glm::mat4);
 
         // create the descriptors
         std::vector<VkDescriptorSetLayout> layouts{static_cast<size_t>(MAX_BUFFERED_RESOURCES),
@@ -3187,7 +3217,8 @@ VkResult RenderDevice::createUniformLayouts()
             auto bufferInfo = VkDescriptorBufferInfo{
                 .buffer = uniform_buffer_pool.uniform_buffers[0][i].buffer,
                 .offset = 0,
-                .range  = uniform_buffer_pool.uniform_buffers[0][i].memory_size};
+                .range  = sizeof(
+                    glm::mat4)}; // uniform_buffer_pool.uniform_buffers[0][i].memory_size};
 
             auto descriptorWrite = VkWriteDescriptorSet{
                 .sType            = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
@@ -3843,8 +3874,6 @@ VkResult RenderDevice::createCommandbuffer(uint32_t        image_index,
         auto uniform_handle = p_uniforms[i];
         auto opt_uniform    = uniform_layouts[uniform_handle.uniform_layout_id].getUniform(
             uniform_handle);
-
-        std::cout << uniform_handle.uniform_layout_id << " " << uniform_handle.uniform_id << "\n";
 
         if (opt_uniform.has_value())
         {
