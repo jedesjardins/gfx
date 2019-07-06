@@ -3190,7 +3190,7 @@ VkResult RenderDevice::createUniformLayouts()
         }
 
         // create the uniforms
-        VkDeviceSize bufferSize = uniform_size; // sizeof(glm::mat4);
+        VkDeviceSize bufferSize = uniform_alignment; // sizeof(glm::mat4);
 
         // create the descriptors
         std::vector<VkDescriptorSetLayout> layouts{static_cast<size_t>(MAX_BUFFERED_RESOURCES),
@@ -3217,8 +3217,7 @@ VkResult RenderDevice::createUniformLayouts()
             auto bufferInfo = VkDescriptorBufferInfo{
                 .buffer = uniform_buffer_pool.uniform_buffers[0][i].buffer,
                 .offset = 0,
-                .range  = sizeof(
-                    glm::mat4)}; // uniform_buffer_pool.uniform_buffers[0][i].memory_size};
+                .range  = bufferSize};
 
             auto descriptorWrite = VkWriteDescriptorSet{
                 .sType            = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
@@ -3892,24 +3891,6 @@ VkResult RenderDevice::createCommandbuffer(uint32_t        image_index,
         {
             dynamic_offsets.push_back(opt_offset.value());
         }
-
-        /*
-        auto const & variant_uniform = opt_uniform.value();
-
-        if (std::holds_alternative<DynamicBufferUniform>(variant_uniform))
-        {
-            auto const & uniform = std::get<DynamicBufferUniform>(variant_uniform);
-
-            descriptorsets.push_back(uniform.vk_descriptorset);
-            dynamic_offsets.push_back(uniform.offset);
-        }
-        else
-        {
-            auto const & descriptorset = std::get<VkDescriptorSet>(variant_uniform);
-
-            descriptorsets.push_back(descriptorset);
-        }
-        */
     }
     descriptorsets.push_back(sampler_descriptor);
 
