@@ -145,43 +145,52 @@ struct MappedBuffer
     void reset();
 };
 
-struct DynamicBufferUniform
-{
-    size_t       descriptorset;
-    VkDeviceSize offset;
-};
-
 struct UniformBufferPool
 {
     std::vector<std::vector<MappedBuffer>> uniform_buffers;
 };
 
-struct UniformLayout
+struct DynamicBufferUniform
 {
-    VkDescriptorSetLayoutBinding binding;
-    VkDescriptorSetLayout        vk_descriptorset_layout{VK_NULL_HANDLE};
-    VkDescriptorPool             vk_descriptor_pool{VK_NULL_HANDLE};
+    size_t       descriptor_set;
+    VkDeviceSize offset;
+};
 
-    std::vector<VkDescriptorSet>      descriptor_sets;
-    std::vector<DynamicBufferUniform> dynamic_uniform_offsets;
+struct SamplerCollection
+{
+    std::vector<VkDescriptorSet> descriptor_sets;
 
-    void init(rapidjson::Value & document);
+    std::optional<UniformHandle>   createUniform(VkDevice & logical_device,
+                                                 Texture    texture,
+                                                 VkSampler  sampler);
+    std::optional<VkDescriptorSet> getUniform(UniformHandle handle);
+    std::optional<VkDeviceSize>    getDynamicOffset(UniformHandle handle);
+    void                           destroy(VkDevice & logical_device);
+};
 
-    std::optional<UniformHandle> createUniform(UniformBufferPool & pool,
-                                               VkDeviceSize        size,
-                                               void *              data_ptr);
+struct DynamicBufferCollection
+{
+    // following map one to one
+    std::vector<VkDescriptorSet> descriptor_sets;
+    std::vector<MappedBuffer>    uniform_buffers;
+
+    // maps many uniforms to one descriptor_set, etc.
+    std::vector<DynamicBufferUniform> uniforms;
+
+    std::optional<UniformHandle> createUniform(VkDeviceSize size, void * data_ptr);
+
+    void updateUniform(UniformHandle handle, VkDeviceSize size, void * data_ptr);
 
     std::optional<VkDescriptorSet> getUniform(UniformHandle handle);
 
-    std::optional<VkDeviceSize> getUniformDynamicOffset(UniformHandle handle);
+    std::optional<VkDeviceSize> getDynamicOffset(UniformHandle handle);
 
     void destroyUniform(UniformHandle handle);
 
-    void updateUniform(UniformHandle       handle,
-                       UniformBufferPool & pool,
-                       VkDeviceSize        size,
-                       void *              data_ptr);
+    void destroy(VkDevice & logical_device);
 };
+
+using UniformVariant = std::variant<DynamicBufferCollection, SamplerCollection>;
 
 struct PipelineConfig
 {
@@ -222,7 +231,7 @@ struct RenderConfig
 
     std::vector<AttachmentConfig> attachment_configs;
 
-    std::vector<UniformLayout> uniform_layouts;
+    std::vector<VkDescriptorSetLayoutBinding> uniform_layout_infos;
 
     std::vector<VkPushConstantRange> push_constants;
 
@@ -318,6 +327,12 @@ public:
 
     template <typename... Args>
     std::optional<UniformHandle> newUniform(UniformLayoutHandle layout_handle, Args &&... args);
+
+    std::optional<UniformHandle> newUniform(UniformLayoutHandle layout_handle);
+
+    std::optional<VkDescriptorSet> getUniform(UniformHandle handle);
+
+    std::optional<VkDeviceSize> getDynamicOffset(UniformHandle handle);
 
     template <typename... Args>
     void updateUniform(UniformHandle handle, Args &&... args);
@@ -471,6 +486,10 @@ private:
 
     VkResult createUniformLayouts();
 
+    void createDynamicBufferCollection(DynamicBufferCollection & collection,
+                                       VkDescriptorSetLayout     layout,
+                                       VkDescriptorPool          pool);
+
     // SHADERS
     VkResult createShaders();
 
@@ -609,8 +628,12 @@ private:
     std::vector<VkRenderPass>               renderpasses;
     std::vector<std::vector<VkFramebuffer>> framebuffers;
 
-    std::vector<UniformLayout> uniform_layouts;
-    UniformBufferPool          uniform_buffer_pool;
+    std::vector<VkDescriptorSetLayoutBinding> uniform_layout_infos;
+    std::vector<VkDescriptorSetLayout>        uniform_layouts;
+    std::vector<VkDescriptorPool>             pools;
+    std::vector<UniformVariant>               uniform_collections;
+
+    UniformBufferPool uniform_buffer_pool;
 
     std::vector<VkPushConstantRange> push_constants;
 
@@ -627,9 +650,8 @@ private:
     std::vector<cmd::CommandBucket<int>> buckets;
     std::vector<cmd::CommandBucket<int>> transfer_buckets;
 
-    Texture         texture;
-    VkSampler       sampler;
-    VkDescriptorSet sampler_descriptor;
+    Texture   texture;
+    VkSampler sampler;
 
 }; // class RenderDevice
 }; // namespace gfx
@@ -1335,93 +1357,101 @@ void FramebufferConfig::init(rapidjson::Value & document)
     }
 }
 
-void UniformLayout::init(rapidjson::Value & document)
+std::optional<UniformHandle> DynamicBufferCollection::createUniform(VkDeviceSize size,
+                                                                    void *       data_ptr)
 {
-    assert(document.IsObject());
-    binding = initVkDescriptorSetLayoutBinding(document);
-}
-
-std::optional<UniformHandle> UniformLayout::createUniform(UniformBufferPool & pool,
-                                                          VkDeviceSize        size,
-                                                          void *              data_ptr)
-{
-    assert(binding.descriptorType == VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC
-           || binding.descriptorType == VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC);
-
-    if (binding.descriptorType != VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC
-        && binding.descriptorType != VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC)
-    {
-        return std::nullopt;
-    }
-
-    // find open uniform buffer and offset
-    size_t uniform_buffer_index = 0;
-    auto & uniform_buffer       = pool.uniform_buffers[0][uniform_buffer_index];
+    size_t descriptor_index = 0;
+    auto & uniform_buffer   = uniform_buffers[descriptor_index];
 
     // create Uniform
     DynamicBufferUniform uniform{};
-    uniform.descriptorset = uniform_buffer_index;
-    uniform.offset        = uniform_buffer.copy(size, data_ptr);
-    uniform_buffer.offset = uniform.offset + 256;
+    uniform.descriptor_set = descriptor_index;
+    uniform.offset         = uniform_buffer.copy(size, data_ptr);
+    uniform_buffer.offset  = uniform.offset + 256;
 
-    dynamic_uniform_offsets.push_back(uniform);
+    uniforms.push_back(uniform);
 
-    return UniformHandle{.uniform_layout_id = 0, .uniform_id = dynamic_uniform_offsets.size() - 1};
+    return UniformHandle{.uniform_layout_id = 0, .uniform_id = uniforms.size() - 1};
 }
 
-std::optional<VkDescriptorSet> UniformLayout::getUniform(UniformHandle handle)
+void DynamicBufferCollection::updateUniform(UniformHandle handle, VkDeviceSize size, void * data_ptr)
 {
-    if (binding.descriptorType == VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC
-        || binding.descriptorType == VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC)
-    {
-        return descriptor_sets[dynamic_uniform_offsets[handle.uniform_id].descriptorset];
-    }
+    auto & uniform = uniforms[handle.uniform_id];
+    auto & uniform_buffer = uniform_buffers[uniform.descriptor_set];
 
-    return std::nullopt;
-}
-
-std::optional<VkDeviceSize> UniformLayout::getUniformDynamicOffset(UniformHandle handle)
-{
-    if (binding.descriptorType != VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC
-        && binding.descriptorType != VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC)
-    {
-        return std::nullopt;
-    }
-
-    return dynamic_uniform_offsets[handle.uniform_id].offset;
-}
-
-void UniformLayout::destroyUniform(UniformHandle handle)
-{
-    // no op
-}
-
-void UniformLayout::updateUniform(UniformHandle       handle,
-                                  UniformBufferPool & pool,
-                                  VkDeviceSize        size,
-                                  void *              data_ptr)
-{
-    assert(binding.descriptorType == VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC
-           || binding.descriptorType == VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC);
-
-    // find open uniform buffer and offset
-    size_t uniform_buffer_index = 0;
-    auto & uniform_buffer       = pool.uniform_buffers[0][uniform_buffer_index];
-
-    DynamicBufferUniform & uniform = dynamic_uniform_offsets[handle.uniform_id];
-    uniform.offset                 = uniform_buffer.copy(size, data_ptr);
+    uniform.offset = uniform_buffer.copy(size, data_ptr);
 
     uniform_buffer.offset = uniform.offset + 256;
     if (uniform_buffer.offset >= uniform_buffer.memory_size)
     {
         uniform_buffer.offset = 0;
     }
-
-    // no op (for now)
-    // get new offset
-    // release old offset
-    // copy into new offset
 }
+
+std::optional<VkDescriptorSet> DynamicBufferCollection::getUniform(UniformHandle handle)
+{
+    if (uniforms.size() > handle.uniform_id)
+    {
+        return descriptor_sets[uniforms[handle.uniform_id].descriptor_set];
+    }
+    else
+    {
+        return std::nullopt;
+    }
+}
+
+std::optional<VkDeviceSize> DynamicBufferCollection::getDynamicOffset(UniformHandle handle)
+{
+    return uniforms[handle.uniform_id].offset;
+}
+
+void DynamicBufferCollection::destroy(VkDevice & logical_device)
+{
+    for (auto & mapped_buffer: uniform_buffers)
+    {
+        vkDestroyBuffer(logical_device, mapped_buffer.buffer, nullptr);
+        vkFreeMemory(logical_device, mapped_buffer.memory, nullptr);
+    }
+}
+
+std::optional<UniformHandle> SamplerCollection::createUniform(VkDevice & logical_device,
+                                                              Texture    texture,
+                                                              VkSampler  sampler)
+{
+    size_t descriptor_set_index = 0;
+
+    auto imageInfo = VkDescriptorImageInfo{.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                                           .imageView   = texture.vk_image_view,
+                                           .sampler     = sampler};
+
+    auto descriptorWrite = VkWriteDescriptorSet{
+        .sType            = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+        .dstSet           = descriptor_sets[0],
+        .dstBinding       = 1,
+        .dstArrayElement  = 0,
+        .descriptorType   = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+        .descriptorCount  = 1,
+        .pBufferInfo      = nullptr,
+        .pImageInfo       = &imageInfo,
+        .pTexelBufferView = nullptr};
+
+    vkUpdateDescriptorSets(logical_device, 1, &descriptorWrite, 0, nullptr);
+
+    return UniformHandle{.uniform_id = descriptor_set_index};
+}
+
+std::optional<VkDescriptorSet> SamplerCollection::getUniform(UniformHandle handle)
+{
+    return descriptor_sets[handle.uniform_id];
+}
+
+std::optional<VkDeviceSize> SamplerCollection::getDynamicOffset(UniformHandle handle)
+{
+    return std::nullopt;
+}
+
+void SamplerCollection::destroy(VkDevice & logical_device)
+{}
 
 void PipelineConfig::init(rapidjson::Value & document)
 {
@@ -1551,9 +1581,7 @@ void RenderConfig::init()
 
     for (auto & ul: document["uniform_layouts"].GetArray())
     {
-        UniformLayout layout{};
-        layout.init(ul);
-        uniform_layouts.push_back(layout);
+        uniform_layout_infos.push_back(initVkDescriptorSetLayoutBinding(ul));
     }
 
     assert(document.HasMember("push_constants"));
@@ -1781,7 +1809,7 @@ bool RenderDevice::init(RenderConfig & render_config)
 
     createUniformBufferPool();
 
-    uniform_layouts = std::move(render_config.uniform_layouts);
+    uniform_layout_infos = std::move(render_config.uniform_layout_infos);
     if (createUniformLayouts() != VK_SUCCESS)
     {
         return false;
@@ -1898,12 +1926,19 @@ void RenderDevice::quit()
     destroyTexture(texture);
     vkDestroySampler(logical_device, sampler, nullptr);
 
-    // DESCRIPTORSET LAYOUT
     for (auto & uniform_layout: uniform_layouts)
     {
-        vkDestroyDescriptorPool(logical_device, uniform_layout.vk_descriptor_pool, nullptr);
-        vkDestroyDescriptorSetLayout(
-            logical_device, uniform_layout.vk_descriptorset_layout, nullptr);
+        vkDestroyDescriptorSetLayout(logical_device, uniform_layout, nullptr);
+    }
+
+    for (auto & pool: pools)
+    {
+        vkDestroyDescriptorPool(logical_device, pool, nullptr);
+    }
+
+    for (auto & collection: uniform_collections)
+    {
+        std::visit([&](auto && collection) { collection.destroy(logical_device); }, collection);
     }
 
     for (auto & buffered_framebuffers: framebuffers)
@@ -2075,26 +2110,90 @@ void RenderDevice::drawFrame(uint32_t uniform_count, UniformHandle * p_uniforms)
     transfer_buckets[currentResource].Clear();
 }
 
+// TODO: remove is_same and replace with a Has Method
+
 template <typename... Args>
 std::optional<UniformHandle> RenderDevice::newUniform(UniformLayoutHandle layout_handle,
                                                       Args &&... args)
 {
-    auto uniform_handle = uniform_layouts[layout_handle].createUniform(uniform_buffer_pool,
-                                                                       std::forward<Args>(args)...);
-    if (!uniform_handle.has_value())
+    auto & uniform_collection = uniform_collections[layout_handle];
+
+    auto opt_uniform_handle = std::visit(
+        [&](auto && collection) -> std::optional<UniformHandle> {
+            using T = std::decay_t<decltype(collection)>;
+            if constexpr (std::is_same_v<T, DynamicBufferCollection>)
+                return collection.createUniform(std::forward<Args>(args)...);
+            else
+                return std::nullopt;
+        },
+        uniform_collection);
+
+    if (opt_uniform_handle)
     {
-        return std::nullopt;
+        opt_uniform_handle.value().uniform_layout_id = layout_handle;
     }
 
-    uniform_handle.value().uniform_layout_id = layout_handle;
-    return uniform_handle;
+    return opt_uniform_handle;
+}
+
+std::optional<UniformHandle> RenderDevice::newUniform(UniformLayoutHandle layout_handle)
+{
+    auto & uniform_collection = uniform_collections[layout_handle];
+
+    auto opt_uniform_handle = std::visit(
+        [&](auto && collection) -> std::optional<UniformHandle> {
+            using T = std::decay_t<decltype(collection)>;
+            if constexpr (std::is_same_v<T, SamplerCollection>)
+                return collection.createUniform(logical_device, texture, sampler);
+            else
+                return std::nullopt;
+        },
+        uniform_collection);
+
+    if (opt_uniform_handle)
+    {
+        opt_uniform_handle.value().uniform_layout_id = layout_handle;
+    }
+
+    return opt_uniform_handle;
+}
+
+std::optional<VkDescriptorSet> RenderDevice::getUniform(UniformHandle handle)
+{
+    auto & uniform_collection = uniform_collections[handle.uniform_layout_id];
+
+    return std::visit(
+        [handle](auto && collection) -> std::optional<VkDescriptorSet> {
+            return collection.getUniform(handle);
+        },
+        uniform_collection);
+}
+
+std::optional<VkDeviceSize> RenderDevice::getDynamicOffset(UniformHandle handle)
+{
+    auto & uniform_collection = uniform_collections[handle.uniform_layout_id];
+
+    return std::visit(
+        [handle](auto && collection) -> std::optional<VkDeviceSize> {
+            return collection.getDynamicOffset(handle);
+        },
+        uniform_collection);
 }
 
 template <typename... Args>
 void RenderDevice::updateUniform(UniformHandle handle, Args &&... args)
 {
-    uniform_layouts[handle.uniform_layout_id].updateUniform(
-        handle, uniform_buffer_pool, std::forward<Args>(args)...);
+    auto & uniform_collection = uniform_collections[handle.uniform_layout_id];
+
+    std::visit(
+        [&](auto && collection) {
+            using T = std::decay_t<decltype(collection)>;
+            if constexpr (std::is_same_v<T, DynamicBufferCollection>)
+            {
+                collection.updateUniform(handle, std::forward<Args>(args)...);
+            }
+        },
+        uniform_collection);
 }
 
 void RenderDevice::dynamicDraw(PipelineHandle    pipeline,
@@ -2329,39 +2428,6 @@ void RenderDevice::createTexture(char const * texture_path)
     {
         throw std::runtime_error("failed to create texture sampler!");
     }
-
-    // create the descriptors
-    UniformLayout & uniform_layout = uniform_layouts[1];
-
-    auto allocInfo = VkDescriptorSetAllocateInfo{
-        .sType              = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
-        .descriptorPool     = uniform_layout.vk_descriptor_pool,
-        .descriptorSetCount = 1,
-        .pSetLayouts        = &uniform_layout.vk_descriptorset_layout};
-
-    auto result = vkAllocateDescriptorSets(logical_device, &allocInfo, &sampler_descriptor);
-    if (result != VK_SUCCESS)
-    {
-        std::cout << "ERROR allocating descriptorsets\n";
-        return; // result;
-    }
-
-    auto imageInfo = VkDescriptorImageInfo{.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-                                           .imageView   = texture.vk_image_view,
-                                           .sampler     = sampler};
-
-    auto write_info = VkWriteDescriptorSet{
-        .sType            = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-        .dstSet           = sampler_descriptor,
-        .dstBinding       = 1,
-        .dstArrayElement  = 0,
-        .descriptorType   = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
-        .descriptorCount  = 1,
-        .pBufferInfo      = nullptr,
-        .pImageInfo       = &imageInfo,
-        .pTexelBufferView = nullptr};
-
-    vkUpdateDescriptorSets(logical_device, 1, &write_info, 0, nullptr);
 }
 
 void RenderDevice::destroyTexture(Texture & texture)
@@ -3146,95 +3212,193 @@ void RenderDevice::createUniformBufferPool()
 
 VkResult RenderDevice::createUniformLayouts()
 {
-    for (auto & uniform_layout: uniform_layouts)
-    {
-        size_t uniform_alignment
-            = physical_device_info.properties.limits.minUniformBufferOffsetAlignment;
+    uniform_layouts.resize(uniform_layout_infos.size());
+    pools.resize(uniform_layout_infos.size());
+    uniform_collections.resize(uniform_layout_infos.size());
 
-        int uniform_count = physical_device_info.properties.limits.maxUniformBufferRange
-                            / uniform_alignment;
+    for (size_t i = 0; i < uniform_layout_infos.size(); ++i)
+    {
+        auto const & uniform_layout_info = uniform_layout_infos[i];
+        auto &       uniform_layout      = uniform_layouts[i];
+        auto &       pool                = pools[i];
+        auto &       uniform_collection  = uniform_collections[i];
 
         auto layoutInfo = VkDescriptorSetLayoutCreateInfo{
             .sType        = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
             .bindingCount = 1,
-            .pBindings    = &uniform_layout.binding};
+            .pBindings    = &uniform_layout_info};
 
         auto result = vkCreateDescriptorSetLayout(
-            logical_device, &layoutInfo, nullptr, &uniform_layout.vk_descriptorset_layout);
+            logical_device, &layoutInfo, nullptr, &uniform_layout);
         if (result != VK_SUCCESS)
         {
             return result;
         }
 
-        auto poolsize = VkDescriptorPoolSize{
-            .type            = uniform_layout.binding.descriptorType,
-            .descriptorCount = static_cast<uint32_t>(MAX_BUFFERED_RESOURCES)};
+        auto poolsize = VkDescriptorPoolSize{.type            = uniform_layout_info.descriptorType,
+                                             .descriptorCount = 1};
 
         auto poolInfo = VkDescriptorPoolCreateInfo{
             .sType         = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
             .poolSizeCount = 1,
             .pPoolSizes    = &poolsize,
-            .maxSets       = static_cast<uint32_t>(MAX_BUFFERED_RESOURCES)};
+            .maxSets       = 1};
 
-        result = vkCreateDescriptorPool(
-            logical_device, &poolInfo, nullptr, &uniform_layout.vk_descriptor_pool);
+        result = vkCreateDescriptorPool(logical_device, &poolInfo, nullptr, &pool);
         if (result != VK_SUCCESS)
         {
             return result;
         }
 
-        // TODO REMOVE, UNIFORM LAYOUT SHOULD BE ABLE TO HANDLE THIS
-        if (uniform_layout.binding.descriptorType == VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER)
+        if (uniform_layout_info.descriptorType == VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC
+            || uniform_layout_info.descriptorType == VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC)
         {
-            continue;
+            std::vector<MappedBuffer> uniform_buffers{1};
+
+            MappedBuffer & uniform_buffer = uniform_buffers[0];
+
+            uniform_buffer.memory_size = 256 * 8;
+
+            createBuffer(uniform_buffer.memory_size,
+                         VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+                         VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                         uniform_buffer.buffer,
+                         uniform_buffer.memory);
+
+            vkMapMemory(logical_device,
+                        uniform_buffer.memory,
+                        0,
+                        uniform_buffer.memory_size,
+                        0,
+                        &uniform_buffer.data);
+
+            // ALLOCATE DESCRIPTORSETS GUY
+
+            std::vector<VkDescriptorSet> descriptor_sets;
+
+            descriptor_sets.resize(1);
+
+            std::vector<VkDescriptorSetLayout> layouts{descriptor_sets.size(), uniform_layout};
+
+            auto allocInfo = VkDescriptorSetAllocateInfo{
+                .sType              = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
+                .descriptorPool     = pool,
+                .descriptorSetCount = static_cast<uint32_t>(descriptor_sets.size()),
+                .pSetLayouts        = layouts.data()};
+
+            result = vkAllocateDescriptorSets(logical_device, &allocInfo, descriptor_sets.data());
+            if (result != VK_SUCCESS)
+            {
+                return result;
+            }
+
+            for (size_t i = 0; i < descriptor_sets.size(); ++i)
+            {
+                auto bufferInfo = VkDescriptorBufferInfo{
+                    .buffer = uniform_buffer.buffer,
+                    .offset = 0,
+                    .range
+                    = physical_device_info.properties.limits.minUniformBufferOffsetAlignment};
+
+                auto descriptorWrite = VkWriteDescriptorSet{
+                    .sType            = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+                    .dstSet           = descriptor_sets[i],
+                    .dstBinding       = 0,
+                    .dstArrayElement  = 0,
+                    .descriptorType   = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC,
+                    .descriptorCount  = 1,
+                    .pBufferInfo      = &bufferInfo,
+                    .pImageInfo       = nullptr,
+                    .pTexelBufferView = nullptr};
+
+                vkUpdateDescriptorSets(logical_device, 1, &descriptorWrite, 0, nullptr);
+
+                uniform_collection = DynamicBufferCollection{.descriptor_sets = descriptor_sets,
+                                                             .uniform_buffers = uniform_buffers};
+            }
         }
-
-        // create the uniforms
-        VkDeviceSize bufferSize = uniform_alignment; // sizeof(glm::mat4);
-
-        // create the descriptors
-        std::vector<VkDescriptorSetLayout> layouts{static_cast<size_t>(MAX_BUFFERED_RESOURCES),
-                                                   uniform_layout.vk_descriptorset_layout};
-
-        auto allocInfo = VkDescriptorSetAllocateInfo{
-            .sType              = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
-            .descriptorPool     = uniform_layout.vk_descriptor_pool,
-            .descriptorSetCount = 1,
-            .pSetLayouts        = layouts.data()};
-
-        auto & descriptorsets = uniform_layout.descriptor_sets;
-
-        descriptorsets.resize(1);
-
-        result = vkAllocateDescriptorSets(logical_device, &allocInfo, descriptorsets.data());
-        if (result != VK_SUCCESS)
+        else if (uniform_layout_info.descriptorType == VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER)
         {
-            return result;
-        }
+            std::vector<VkDescriptorSet> descriptor_sets;
 
-        for (size_t i = 0; i < 1; ++i)
-        {
-            auto bufferInfo = VkDescriptorBufferInfo{
-                .buffer = uniform_buffer_pool.uniform_buffers[0][i].buffer,
-                .offset = 0,
-                .range  = bufferSize};
+            descriptor_sets.resize(1);
 
-            auto descriptorWrite = VkWriteDescriptorSet{
-                .sType            = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-                .dstSet           = descriptorsets[i],
-                .dstBinding       = 0,
-                .dstArrayElement  = 0,
-                .descriptorType   = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC,
-                .descriptorCount  = 1,
-                .pBufferInfo      = &bufferInfo,
-                .pImageInfo       = nullptr,
-                .pTexelBufferView = nullptr};
+            std::vector<VkDescriptorSetLayout> layouts{descriptor_sets.size(), uniform_layout};
 
-            vkUpdateDescriptorSets(logical_device, 1, &descriptorWrite, 0, nullptr);
+            auto allocInfo = VkDescriptorSetAllocateInfo{
+                .sType              = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
+                .descriptorPool     = pool,
+                .descriptorSetCount = static_cast<uint32_t>(descriptor_sets.size()),
+                .pSetLayouts        = layouts.data()};
+
+            result = vkAllocateDescriptorSets(logical_device, &allocInfo, descriptor_sets.data());
+            if (result != VK_SUCCESS)
+            {
+                return result;
+            }
+
+            uniform_collection = SamplerCollection{.descriptor_sets = descriptor_sets};
         }
     }
 
     return VK_SUCCESS;
+}
+
+void RenderDevice::createDynamicBufferCollection(DynamicBufferCollection & collection,
+                                                 VkDescriptorSetLayout     layout,
+                                                 VkDescriptorPool          pool)
+{
+    // create the descriptors
+    std::vector<VkDescriptorSetLayout> layouts{1, layout};
+
+    collection.descriptor_sets.resize(1);
+    collection.uniform_buffers.resize(collection.descriptor_sets.size());
+
+    auto allocInfo = VkDescriptorSetAllocateInfo{
+        .sType              = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
+        .descriptorPool     = pool,
+        .descriptorSetCount = static_cast<uint32_t>(collection.descriptor_sets.size()),
+        .pSetLayouts        = layouts.data()};
+
+    vkAllocateDescriptorSets(logical_device, &allocInfo, collection.descriptor_sets.data());
+
+    for (size_t i = 0; i < collection.descriptor_sets.size(); ++i)
+    {
+        auto & uniform_buffer = collection.uniform_buffers[i];
+
+        VkDeviceSize bufferSize{256};
+
+        uniform_buffer.memory_size = bufferSize * 8;
+
+        createBuffer(uniform_buffer.memory_size,
+                     VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+                     VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                     uniform_buffer.buffer,
+                     uniform_buffer.memory);
+
+        vkMapMemory(logical_device,
+                    uniform_buffer.memory,
+                    0,
+                    uniform_buffer.memory_size,
+                    0,
+                    &uniform_buffer.data);
+
+        auto bufferInfo = VkDescriptorBufferInfo{
+            .buffer = uniform_buffer.buffer, .offset = 0, .range = bufferSize};
+
+        auto descriptorWrite = VkWriteDescriptorSet{
+            .sType            = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+            .dstSet           = collection.descriptor_sets[i],
+            .dstBinding       = 0,
+            .dstArrayElement  = 0,
+            .descriptorType   = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC,
+            .descriptorCount  = 1,
+            .pBufferInfo      = &bufferInfo,
+            .pImageInfo       = nullptr,
+            .pTexelBufferView = nullptr};
+
+        vkUpdateDescriptorSets(logical_device, 1, &descriptorWrite, 0, nullptr);
+    }
 }
 
 // SHADERS
@@ -3411,7 +3575,7 @@ VkResult RenderDevice::createGraphicsPipeline()
 
         for (auto & layout_handle: pipeline_config.uniform_layouts)
         {
-            layouts.push_back(uniform_layouts[layout_handle].vk_descriptorset_layout);
+            layouts.push_back(uniform_layouts[layout_handle]);
         }
 
         auto pipelineLayoutInfo = VkPipelineLayoutCreateInfo{
@@ -3871,8 +4035,7 @@ VkResult RenderDevice::createCommandbuffer(uint32_t        image_index,
     for (size_t i = 0; i < uniform_count; ++i)
     {
         auto uniform_handle = p_uniforms[i];
-        auto opt_uniform    = uniform_layouts[uniform_handle.uniform_layout_id].getUniform(
-            uniform_handle);
+        auto opt_uniform    = getUniform(uniform_handle);
 
         if (opt_uniform.has_value())
         {
@@ -3884,15 +4047,13 @@ VkResult RenderDevice::createCommandbuffer(uint32_t        image_index,
             continue;
         }
 
-        auto opt_offset = uniform_layouts[uniform_handle.uniform_layout_id].getUniformDynamicOffset(
-            uniform_handle);
+        auto opt_offset = getDynamicOffset(uniform_handle);
 
         if (opt_offset.has_value())
         {
             dynamic_offsets.push_back(opt_offset.value());
         }
     }
-    descriptorsets.push_back(sampler_descriptor);
 
     vkCmdBindDescriptorSets(commandbuffers[currentResource],
                             VK_PIPELINE_BIND_POINT_GRAPHICS,

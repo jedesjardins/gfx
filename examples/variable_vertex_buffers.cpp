@@ -333,8 +333,10 @@ int main()
     glm::mat4 view = glm::scale(glm::mat4(1.0), glm::vec3(1.f, -1.f, 1.f));
 
     auto opt_view_handle = render_device.newUniform(0, sizeof(glm::mat4), glm::value_ptr(view));
-
     gfx::UniformHandle view_handle = opt_view_handle.value();
+
+    auto opt_sampler_handle = render_device.newUniform(1);
+    gfx::UniformHandle sampler_handle = opt_sampler_handle.value();
 
     auto clock = RawClock{};
 
@@ -351,7 +353,7 @@ int main()
         {
             view *= glm::vec4(1.f, -1.f, 1.f, 1.f);
 
-            render_device.updateUniform(view_handle, sizeof(glm::mat4), glm::value_ptr(view));
+            render_device.updateUniform(view_handle, sizeof(glm::mat4), static_cast<void *>(glm::value_ptr(view)));
 
             obj1_vertices[0].pos.y -= .01f;
 
@@ -370,7 +372,9 @@ int main()
             objects[i].draw(render_device);
         }
 
-        render_device.drawFrame(1, &view_handle);
+        std::array<gfx::UniformHandle, 2> uniforms = {view_handle, sampler_handle};
+
+        render_device.drawFrame(2, uniforms.data());
 
         frame_times[++frameIndex % frame_times.size()] = clock.Restart();
 
