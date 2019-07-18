@@ -1,4 +1,11 @@
 
+#include <vulkan/vulkan.h>
+#include <GLFW/glfw3.h>
+
+#include <variant>
+#include <iostream>
+#include <numeric>
+
 #define JED_GFX_IMPLEMENTATION
 #include "gfx/render_device.hpp"
 #undef JED_GFX_IMPLEMENTATION
@@ -10,12 +17,6 @@
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
 #undef STB_IMAGE_IMPLEMENTATION
-
-#include <vulkan/vulkan.h>
-#include <GLFW/glfw3.h>
-
-#include <variant>
-#include <iostream>
 
 std::vector<Vertex> obj1_vertices{{{0.f, 1.f, 0.5f}, {1.f, 0.f, 0.f}},
                                   {{1.f, 1.f, 0.5f}, {1.f, 0.f, 0.f}},
@@ -328,15 +329,15 @@ int main()
                          obj_indices.size(),
                          obj_indices.data());
 
-    uint32_t i = 0;
+    uint32_t frame_number = 0;
 
     glm::mat4 view = glm::scale(glm::mat4(1.0), glm::vec3(1.f, -1.f, 1.f));
 
     auto opt_view_handle = render_device.newUniform(0, sizeof(glm::mat4), glm::value_ptr(view));
     gfx::UniformHandle view_handle = opt_view_handle.value();
 
-    auto opt_sampler_handle = render_device.newUniform(1);
-    gfx::UniformHandle sampler_handle = opt_sampler_handle.value();
+    auto               opt_sampler_handle = render_device.newUniform(1);
+    gfx::UniformHandle sampler_handle     = opt_sampler_handle.value();
 
     auto clock = RawClock{};
 
@@ -349,11 +350,12 @@ int main()
     {
         glfwPollEvents();
 
-        if (++i % 10 == 0)
+        if (++frame_number % 10 == 0)
         {
             view *= glm::vec4(1.f, -1.f, 1.f, 1.f);
 
-            render_device.updateUniform(view_handle, sizeof(glm::mat4), static_cast<void *>(glm::value_ptr(view)));
+            render_device.updateUniform(
+                view_handle, sizeof(glm::mat4), static_cast<void *>(glm::value_ptr(view)));
 
             obj1_vertices[0].pos.y -= .01f;
 
@@ -378,13 +380,9 @@ int main()
 
         frame_times[++frameIndex % frame_times.size()] = clock.Restart();
 
-        double avg_time = 0;
-        for (double frame_time: frame_times)
-        {
-            avg_time += frame_time;
-        }
+        double sum_time = std::accumulate(frame_times.cbegin(), frame_times.cend(), 0.0);
 
-        // std::cout << avg_time/frame_times.size() << "\n";
+        std::cout << sum_time/frame_times.size() << "\n";
     }
 
     render_device.waitForIdle();
