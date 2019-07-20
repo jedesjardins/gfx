@@ -37,8 +37,10 @@ std::vector<char> readFile(std::string const & filename);
 
 namespace gfx
 {
-class RenderDevice;
-class RenderConfig;
+
+//
+//  HANDLES
+//
 
 using CommandbufferHandle   = size_t;
 using RenderpassHandle      = size_t;
@@ -65,6 +67,10 @@ bool operator!=(VkAttachmentReference const & lhs, VkAttachmentReference const &
 
 bool operator==(VkSubpassDependency const & lhs, VkSubpassDependency const & rhs);
 bool operator!=(VkSubpassDependency const & lhs, VkSubpassDependency const & rhs);
+
+//
+//  CONFIGURATION STRUCTURES
+//
 
 enum class Format
 {
@@ -291,6 +297,10 @@ struct RenderConfig
     void init();
 };
 
+//
+//  COMMANDS
+//
+
 struct Draw
 {
     static cmd::BackendDispatchFunction const DISPATCH_FUNCTION;
@@ -356,6 +366,10 @@ struct SetImageLayout
 static_assert(std::is_pod<SetImageLayout>::value == true, "SetImageLayout must be a POD.");
 
 void setImageLayout(void const * data);
+
+//
+//  RENDERDEVICE
+//
 
 class RenderDevice
 {
