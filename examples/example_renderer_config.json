@@ -97,15 +97,13 @@
 			"binding": 0,
 			"descriptor_type": "UNIFORM_BUFFER_DYNAMIC",
 			"descriptor_count": 1,
-			"stage": "VERTEX",
-			"uniform_count": 1
+			"stage": "VERTEX"
 		},
 		{
 			"binding": 1,
 			"descriptor_type": "COMBINED_IMAGE_SAMPLER",
 			"descriptor_count": 1,
-			"stage": "FRAGMENT",
-			"uniform_count": 1
+			"stage": "FRAGMENT"
 		}
 	],
 	"push_constants":
