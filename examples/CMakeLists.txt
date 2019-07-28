@@ -9,7 +9,6 @@ message(STATUS "Examples included")
 set(SOURCES_SINGLE_FILE
 	# list test files here
 	variable_vertex_buffers.cpp
-	renderer_rewrite.cpp
 )
 
 # get base names of each file (strips off .cpp)
