@@ -174,6 +174,71 @@ private:
     }
 };
 
+class Image: protected Memory
+{
+public:
+    VkResult create(VkPhysicalDevice      physical_device,
+                    VkDevice              logical_device,
+                    uint32_t              width,
+                    uint32_t              height,
+                    uint32_t              mipLevels,
+                    VkSampleCountFlagBits numSamples,
+                    VkFormat              format,
+                    VkImageTiling         tiling,
+                    VkImageUsageFlags     usage,
+                    VkMemoryPropertyFlags properties,
+                    VkImageAspectFlags aspectFlags)
+    {
+        auto imageInfo = VkImageCreateInfo{.sType         = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
+                                           .imageType     = VK_IMAGE_TYPE_2D,
+                                           .extent.width  = width,
+                                           .extent.height = height,
+                                           .extent.depth  = 1,
+                                           .mipLevels     = mipLevels,
+                                           .arrayLayers   = 1,
+                                           .format        = format,
+                                           .tiling        = tiling,
+                                           .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+                                           .usage         = usage,
+                                           .sharingMode   = VK_SHARING_MODE_EXCLUSIVE,
+                                           .samples       = numSamples};
+
+        auto result = vkCreateImage(logical_device, &imageInfo, nullptr, &vk_image);
+        assert(result == VK_SUCCESS);
+
+        result = allocateAndBind(physical_device, logical_device, properties, vk_image);
+        assert(result == VK_SUCCESS);
+
+        auto viewInfo = VkImageViewCreateInfo{.sType    = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
+                                              .image    = vk_image,
+                                              .viewType = VK_IMAGE_VIEW_TYPE_2D,
+                                              .format   = format,
+                                              .subresourceRange.aspectMask     = aspectFlags,
+                                              .subresourceRange.baseMipLevel   = 0,
+                                              .subresourceRange.levelCount     = mipLevels,
+                                              .subresourceRange.baseArrayLayer = 0,
+                                              .subresourceRange.layerCount     = 1};
+
+        return vkCreateImageView(logical_device, &viewInfo, nullptr, &vk_image_view);
+    }
+
+    void destroy(VkDevice logical_device)
+    {
+        vkDestroyImageView(logical_device, vk_image_view, nullptr);
+        vkDestroyImage(logical_device, vk_image, nullptr);
+        static_cast<Memory&>(*this).destroy(logical_device);
+    }
+
+    VkImageView handle()
+    {
+        return vk_image_view;
+    }
+
+protected:
+    VkImage vk_image;
+    VkImageView vk_image_view;
+};
+
 struct Texture
 {
     Memory      image_memory;
@@ -614,7 +679,7 @@ public:
 
     bool init(RenderConfig & render_config)
     {
-// clang-format off
+        // clang-format off
         #ifndef NDEBUG
         checkValidationLayerSupport();
         #endif
@@ -769,7 +834,7 @@ private:
     // INSTANCE
     VkResult createInstance(char const * window_name)
     {
-// clang-format off
+        // clang-format off
         #ifdef NDEBUG
         use_validation = false;
         #else
@@ -1358,36 +1423,21 @@ struct ImageResources
 {
 public:
     std::vector<AttachmentConfig> attachment_configs;
-    std::vector<Memory>           memories;
-    std::vector<VkImage>          images;
-    std::vector<VkImageView>      views;
+    std::vector<Image>            images;
 
     bool init(RenderConfig & render_config, Device & device)
     {
         attachment_configs = std::move(render_config.attachment_configs);
-        memories.resize(attachment_configs.size());
         images.resize(attachment_configs.size());
-        views.resize(attachment_configs.size());
 
         return createAttachments(device) == VK_SUCCESS;
     }
 
     void quit(Device & device)
     {
-        for (auto & memory: memories)
-        {
-            // vkFreeMemory(device.logical_device, memory, nullptr);
-            memory.destroy(device.logical_device);
-        }
-
-        for (auto & view: views)
-        {
-            vkDestroyImageView(device.logical_device, view, nullptr);
-        }
-
         for (auto & image: images)
         {
-            vkDestroyImage(device.logical_device, image, nullptr);
+            image.destroy(device.logical_device);
         }
     }
 
@@ -1453,9 +1503,8 @@ private:
     {
         for (size_t i = 0; i < attachment_configs.size(); ++i)
         {
-            Memory &      memory            = memories[i];
-            VkImage &     image             = images[i];
-            VkImageView & view              = views[i];
+            Image & image = images[i];
+
             auto const &  attachment_config = attachment_configs[i];
 
             if (attachment_config.is_swapchain_image)
@@ -1494,34 +1543,18 @@ private:
                 samples = VK_SAMPLE_COUNT_1_BIT;
             }
 
-            auto result = createImage(device.physical_device,
-                                      device.logical_device,
-                                      device.swapchain_extent.width,
-                                      device.swapchain_extent.height,
-                                      1,
-                                      samples,
-                                      format,
-                                      VK_IMAGE_TILING_OPTIMAL,
-                                      VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT | usage,
-                                      VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-                                      image,
-                                      memory);
-            assert(result == VK_SUCCESS);
+            auto result = image.create(device.physical_device,
+                                       device.logical_device,
+                                       device.swapchain_extent.width,
+                                       device.swapchain_extent.height,
+                                       1,
+                                       samples,
+                                       format,
+                                       VK_IMAGE_TILING_OPTIMAL,
+                                       VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT | usage,
+                                       VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+                                       aspect);
 
-            // result = createImageView(image, view, format, aspect, 1);
-
-            auto viewInfo                            = VkImageViewCreateInfo{};
-            viewInfo.sType                           = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
-            viewInfo.image                           = image;
-            viewInfo.viewType                        = VK_IMAGE_VIEW_TYPE_2D;
-            viewInfo.format                          = format;
-            viewInfo.subresourceRange.aspectMask     = aspect;
-            viewInfo.subresourceRange.baseMipLevel   = 0;
-            viewInfo.subresourceRange.levelCount     = 1;
-            viewInfo.subresourceRange.baseArrayLayer = 0;
-            viewInfo.subresourceRange.layerCount     = 1;
-
-            result = vkCreateImageView(device.logical_device, &viewInfo, nullptr, &view);
             assert(result == VK_SUCCESS);
         }
 
@@ -1536,7 +1569,7 @@ public:
     std::vector<VkRenderPass>               render_passes;
     std::vector<std::vector<VkFramebuffer>> framebuffers;
 
-    bool init(RenderConfig & render_config, Device & device, ImageResources const & image_resources)
+    bool init(RenderConfig & render_config, Device & device, ImageResources & image_resources)
     {
         render_pass_configs = std::move(render_config.renderpass_configs);
         render_passes.resize(render_pass_configs.size());
@@ -1562,7 +1595,7 @@ public:
     }
 
 private:
-    VkResult createRenderPasses(Device & device, ImageResources const & image_resources)
+    VkResult createRenderPasses(Device & device, ImageResources & image_resources)
     {
         for (size_t rp_i = 0; rp_i < render_passes.size(); ++rp_i)
         {
@@ -1637,7 +1670,7 @@ private:
 
     // FRAMEBUFFER
     VkResult createFramebuffer(Device &                     device,
-                               ImageResources const &       image_resources,
+                               ImageResources &             image_resources,
                                RenderpassConfig const &     config,
                                VkRenderPass const &         render_pass,
                                std::vector<VkFramebuffer> & framebuffers)
@@ -1662,7 +1695,7 @@ private:
                 }
                 else
                 {
-                    fb_attachments.push_back(image_resources.views[attachment_handle]);
+                    fb_attachments.push_back(image_resources.images[attachment_handle].handle());
                 }
             }
 
