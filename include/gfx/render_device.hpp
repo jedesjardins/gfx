@@ -187,7 +187,7 @@ public:
                     VkImageTiling         tiling,
                     VkImageUsageFlags     usage,
                     VkMemoryPropertyFlags properties,
-                    VkImageAspectFlags aspectFlags)
+                    VkImageAspectFlags    aspectFlags)
     {
         auto imageInfo = VkImageCreateInfo{.sType         = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
                                            .imageType     = VK_IMAGE_TYPE_2D,
@@ -226,7 +226,7 @@ public:
     {
         vkDestroyImageView(logical_device, vk_image_view, nullptr);
         vkDestroyImage(logical_device, vk_image, nullptr);
-        static_cast<Memory&>(*this).destroy(logical_device);
+        static_cast<Memory &>(*this).destroy(logical_device);
     }
 
     VkImageView handle()
@@ -235,7 +235,7 @@ public:
     }
 
 protected:
-    VkImage vk_image;
+    VkImage     vk_image;
     VkImageView vk_image_view;
 };
 
@@ -285,7 +285,7 @@ public:
     void destroy(VkDevice logical_device)
     {
         vkDestroyBuffer(logical_device, vk_buffer, nullptr);
-        static_cast<Memory&>(*this).destroy(logical_device);
+        static_cast<Memory &>(*this).destroy(logical_device);
     }
 
     VkBuffer handle()
@@ -308,7 +308,8 @@ public:
     {
         memory_size = size;
 
-        auto result = static_cast<Buffer&>(*this).create(physical_device, logical_device, size, usage, properties);
+        auto result = static_cast<Buffer &>(*this).create(
+            physical_device, logical_device, size, usage, properties);
         if (result != VK_SUCCESS)
         {
             return result;
@@ -347,7 +348,7 @@ public:
 
 private:
     VkDeviceSize memory_size{0};
-    void * data{nullptr};
+    void *       data{nullptr};
 };
 
 struct FramebufferConfig
@@ -1505,7 +1506,7 @@ private:
         {
             Image & image = images[i];
 
-            auto const &  attachment_config = attachment_configs[i];
+            auto const & attachment_config = attachment_configs[i];
 
             if (attachment_config.is_swapchain_image)
             {
@@ -2337,21 +2338,23 @@ private:
         dynamic_mapped_indices.resize(frames.MAX_BUFFERED_RESOURCES);
 
         VkDeviceSize vertices_memory_size = sizeof(Vertex) * dynamic_vertices_count;
-        VkDeviceSize indices_memory_size = sizeof(uint32_t) * dynamic_indices_count;
+        VkDeviceSize indices_memory_size  = sizeof(uint32_t) * dynamic_indices_count;
 
         for (uint32_t i = 0; i < frames.MAX_BUFFERED_RESOURCES; ++i)
         {
-            dynamic_mapped_vertices[i].create(device.physical_device,
-                                              device.logical_device,
-                                              vertices_memory_size,
-                                              VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
-                                              VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+            dynamic_mapped_vertices[i].create(
+                device.physical_device,
+                device.logical_device,
+                vertices_memory_size,
+                VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+                VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
 
-            dynamic_mapped_indices[i].create(device.physical_device,
-                                             device.logical_device,
-                                             indices_memory_size,
-                                             VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
-                                             VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+            dynamic_mapped_indices[i].create(
+                device.physical_device,
+                device.logical_device,
+                indices_memory_size,
+                VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
+                VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
         }
 
         return VK_SUCCESS;
@@ -2365,11 +2368,12 @@ private:
 
         for (uint32_t i = 0; i < frames.MAX_BUFFERED_RESOURCES; ++i)
         {
-            staging_buffer[i].create(device.physical_device,
-                                     device.logical_device,
-                                     staging_buffer_size,
-                                     VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-                                     VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+            staging_buffer[i].create(
+                device.physical_device,
+                device.logical_device,
+                staging_buffer_size,
+                VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+                VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
         }
 
         return VK_SUCCESS;
