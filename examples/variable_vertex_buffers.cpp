@@ -48,14 +48,14 @@ struct Material
 
 struct StaticVertexData // can be edited with a
 {
-    VkBuffer       vertexbuffer;
-    VkDeviceMemory vertexbuffer_memory;
-    VkDeviceSize   vertexbuffer_offset;
+    VkBuffer     vertexbuffer;
+    gfx::Memory  vertexbuffer_memory;
+    VkDeviceSize vertexbuffer_offset;
 
-    VkBuffer       indexbuffer;
-    VkDeviceMemory indexbuffer_memory;
-    size_t         indexbuffer_offset;
-    size_t         indexbuffer_count;
+    VkBuffer    indexbuffer;
+    gfx::Memory indexbuffer_memory;
+    size_t      indexbuffer_offset;
+    size_t      indexbuffer_count;
 };
 
 struct StreamedVertexData
@@ -76,7 +76,7 @@ enum class ObjectType
 class Object
 {
 public:
-    Object(gfx::RenderDevice & render_device,
+    Object(gfx::Renderer & render_device,
            ObjectType          type,
            uint32_t            vertex_count,
            Vertex *            vertices,
@@ -93,17 +93,15 @@ public:
         }
     }
 
-    bool initStaticObject(gfx::RenderDevice & render_device,
+    bool initStaticObject(gfx::Renderer & render_device,
                           uint32_t            vertex_count,
                           Vertex *            vertices,
                           uint32_t            index_count,
                           uint32_t *          indices)
     {
         vertex_data = StaticVertexData{.vertexbuffer        = VK_NULL_HANDLE,
-                                       .vertexbuffer_memory = VK_NULL_HANDLE,
                                        .vertexbuffer_offset = 0,
                                        .indexbuffer         = VK_NULL_HANDLE,
-                                       .indexbuffer_memory  = VK_NULL_HANDLE,
                                        .indexbuffer_offset  = 0,
                                        .indexbuffer_count   = index_count};
 
@@ -124,7 +122,7 @@ public:
         return true;
     }
 
-    void initDynamicObject(gfx::RenderDevice & render_device,
+    void initDynamicObject(gfx::Renderer & render_device,
                            uint32_t            vertex_count,
                            Vertex *            vertices,
                            uint32_t            index_count,
@@ -136,7 +134,7 @@ public:
                                          .indices      = indices};
     }
 
-    void updateStaticObject(gfx::RenderDevice & render_device,
+    void updateStaticObject(gfx::Renderer & render_device,
                             uint32_t            vertex_count,
                             Vertex *            vertices,
                             uint32_t            index_count,
@@ -154,7 +152,7 @@ public:
                                                indices);
     }
 
-    void destroyStaticObject(gfx::RenderDevice & render_device)
+    void destroyStaticObject(gfx::Renderer & render_device)
     {
         assert(std::holds_alternative<StaticVertexData>(vertex_data));
 
@@ -166,7 +164,7 @@ public:
                                                 static_data.indexbuffer_memory);
     }
 
-    void draw(gfx::RenderDevice & render_device)
+    void draw(gfx::Renderer & render_device)
     {
         if (std::holds_alternative<StaticVertexData>(vertex_data))
         {
@@ -283,7 +281,7 @@ int main()
 
     auto window = glfwCreateWindow(600, 400, "Vulkan", nullptr, nullptr);
 
-    auto render_device = gfx::RenderDevice{window};
+    auto render_device = gfx::Renderer{window};
 
     auto render_config = gfx::RenderConfig{
         .config_filename = "../examples/example_renderer_config.json"};
@@ -297,7 +295,7 @@ int main()
 
     std::vector<Object> objects{};
 
-    render_device.createTexture("../sword.png");
+    auto texture = render_device.createTexture("../sword.png");
 
     objects.emplace_back(render_device,
                          ObjectType::STATIC,
@@ -336,7 +334,7 @@ int main()
     auto opt_view_handle = render_device.newUniform(0, sizeof(glm::mat4), glm::value_ptr(view));
     gfx::UniformHandle view_handle = opt_view_handle.value();
 
-    auto               opt_sampler_handle = render_device.newUniform(1);
+    auto               opt_sampler_handle = render_device.newUniform(1, texture.view_handle(), texture.sampler_handle());
     gfx::UniformHandle sampler_handle     = opt_sampler_handle.value();
 
     auto clock = RawClock{};
@@ -382,10 +380,12 @@ int main()
 
         double sum_time = std::accumulate(frame_times.cbegin(), frame_times.cend(), 0.0);
 
-        std::cout << sum_time/frame_times.size() << "\n";
+        // std::cout << sum_time/frame_times.size() << "\n";
     }
 
     render_device.waitForIdle();
+
+    render_device.destroyTexture(texture);
 
     objects[0].destroyStaticObject(render_device);
     objects[1].destroyStaticObject(render_device);
