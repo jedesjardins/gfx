@@ -959,86 +959,18 @@ public:
 
     std::vector<MappedBuffer> staging_buffer;
 
-    bool init(RenderConfig & render_config, Device & device, FrameResources & frames)
-    {
-        if (createDynamicObjectResources(device,
-                                         frames,
-                                         render_config.dynamic_vertices_count,
-                                         render_config.dynamic_indices_count)
-            != VK_SUCCESS)
-        {
-            return false;
-        }
-
-        if (createStagingObjectResources(device, frames, render_config.staging_buffer_size)
-            != VK_SUCCESS)
-        {
-            return false;
-        }
-
-        return true;
-    }
-
-    void quit(Device & device)
-    {
-        for (size_t i = 0; i < dynamic_mapped_vertices.size(); ++i)
-        {
-            dynamic_mapped_indices[i].destroy(device.logical_device);
-            dynamic_mapped_vertices[i].destroy(device.logical_device);
-            staging_buffer[i].destroy(device.logical_device);
-        }
-    }
+    bool init(RenderConfig & render_config, Device & device, FrameResources & frames);
+    void quit(Device & device);
 
 private:
     VkResult createDynamicObjectResources(Device &         device,
                                           FrameResources & frames,
                                           size_t           dynamic_vertices_count,
-                                          size_t           dynamic_indices_count)
-    {
-        dynamic_mapped_vertices.resize(frames.MAX_BUFFERED_RESOURCES);
-        dynamic_mapped_indices.resize(frames.MAX_BUFFERED_RESOURCES);
-
-        VkDeviceSize vertices_memory_size = sizeof(Vertex) * dynamic_vertices_count;
-        VkDeviceSize indices_memory_size  = sizeof(uint32_t) * dynamic_indices_count;
-
-        for (uint32_t i = 0; i < frames.MAX_BUFFERED_RESOURCES; ++i)
-        {
-            dynamic_mapped_vertices[i].create(
-                device.physical_device,
-                device.logical_device,
-                vertices_memory_size,
-                VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
-                VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
-
-            dynamic_mapped_indices[i].create(
-                device.physical_device,
-                device.logical_device,
-                indices_memory_size,
-                VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
-                VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
-        }
-
-        return VK_SUCCESS;
-    }
+                                          size_t           dynamic_indices_count);
 
     VkResult createStagingObjectResources(Device &         device,
                                           FrameResources & frames,
-                                          size_t           staging_buffer_size)
-    {
-        staging_buffer.resize(frames.MAX_BUFFERED_RESOURCES);
-
-        for (uint32_t i = 0; i < frames.MAX_BUFFERED_RESOURCES; ++i)
-        {
-            staging_buffer[i].create(
-                device.physical_device,
-                device.logical_device,
-                staging_buffer_size,
-                VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-                VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
-        }
-
-        return VK_SUCCESS;
-    }
+                                          size_t           staging_buffer_size);
 }; // struct VertexResources
 }; // namespace module
 
@@ -2822,7 +2754,7 @@ Device::Device(GLFWwindow * window_ptr): window{window_ptr}
 
 bool Device::init(RenderConfig & render_config)
 {
-    // clang-format off
+// clang-format off
     #ifndef NDEBUG
     checkValidationLayerSupport();
     #endif
@@ -2976,7 +2908,7 @@ void Device::getRequiredExtensions()
 // INSTANCE
 VkResult Device::createInstance(char const * window_name)
 {
-    // clang-format off
+// clang-format off
     #ifdef NDEBUG
     use_validation = false;
     #else
@@ -4285,6 +4217,86 @@ VkResult CommandResources::createCommandbuffers(Device & device)
 
     return vkAllocateCommandBuffers(
         device.logical_device, &allocInfo, transfer_commandbuffers.data());
+}
+
+bool VertexResources::init(RenderConfig & render_config, Device & device, FrameResources & frames)
+{
+    if (createDynamicObjectResources(device,
+                                     frames,
+                                     render_config.dynamic_vertices_count,
+                                     render_config.dynamic_indices_count)
+        != VK_SUCCESS)
+    {
+        return false;
+    }
+
+    if (createStagingObjectResources(device, frames, render_config.staging_buffer_size)
+        != VK_SUCCESS)
+    {
+        return false;
+    }
+
+    return true;
+}
+
+void VertexResources::quit(Device & device)
+{
+    for (size_t i = 0; i < dynamic_mapped_vertices.size(); ++i)
+    {
+        dynamic_mapped_indices[i].destroy(device.logical_device);
+        dynamic_mapped_vertices[i].destroy(device.logical_device);
+        staging_buffer[i].destroy(device.logical_device);
+    }
+}
+
+VkResult VertexResources::createDynamicObjectResources(Device &         device,
+                                                       FrameResources & frames,
+                                                       size_t           dynamic_vertices_count,
+                                                       size_t           dynamic_indices_count)
+{
+    dynamic_mapped_vertices.resize(frames.MAX_BUFFERED_RESOURCES);
+    dynamic_mapped_indices.resize(frames.MAX_BUFFERED_RESOURCES);
+
+    VkDeviceSize vertices_memory_size = sizeof(Vertex) * dynamic_vertices_count;
+    VkDeviceSize indices_memory_size  = sizeof(uint32_t) * dynamic_indices_count;
+
+    for (uint32_t i = 0; i < frames.MAX_BUFFERED_RESOURCES; ++i)
+    {
+        dynamic_mapped_vertices[i].create(
+            device.physical_device,
+            device.logical_device,
+            vertices_memory_size,
+            VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+            VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+
+        dynamic_mapped_indices[i].create(
+            device.physical_device,
+            device.logical_device,
+            indices_memory_size,
+            VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
+            VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+    }
+
+    return VK_SUCCESS;
+}
+
+VkResult VertexResources::createStagingObjectResources(Device &         device,
+                                                       FrameResources & frames,
+                                                       size_t           staging_buffer_size)
+{
+    staging_buffer.resize(frames.MAX_BUFFERED_RESOURCES);
+
+    for (uint32_t i = 0; i < frames.MAX_BUFFERED_RESOURCES; ++i)
+    {
+        staging_buffer[i].create(
+            device.physical_device,
+            device.logical_device,
+            staging_buffer_size,
+            VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+            VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+    }
+
+    return VK_SUCCESS;
 }
 
 }; // namespace module
