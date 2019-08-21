@@ -334,7 +334,7 @@ int main()
     auto opt_view_handle = render_device.newUniform(0, sizeof(glm::mat4), glm::value_ptr(view));
     gfx::UniformHandle view_handle = opt_view_handle.value();
 
-    auto               opt_sampler_handle = render_device.newUniform(1, texture.vk_image_view, texture.vk_sampler);
+    auto               opt_sampler_handle = render_device.newUniform(1, texture.view_handle(), texture.sampler_handle());
     gfx::UniformHandle sampler_handle     = opt_sampler_handle.value();
 
     auto clock = RawClock{};

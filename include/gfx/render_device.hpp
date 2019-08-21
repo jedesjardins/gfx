@@ -145,6 +145,11 @@ public:
         vkFreeMemory(logical_device, vk_memory, nullptr);
     }
 
+    VkDeviceMemory memory_handle()
+    {
+        return vk_memory;
+    }
+
 protected:
     VkDeviceMemory vk_memory{VK_NULL_HANDLE};
 
@@ -229,9 +234,14 @@ public:
         static_cast<Memory &>(*this).destroy(logical_device);
     }
 
-    VkImageView handle()
+    VkImageView view_handle()
     {
         return vk_image_view;
+    }
+
+    VkImage image_handle()
+    {
+        return vk_image;
     }
 
 protected:
@@ -239,15 +249,74 @@ protected:
     VkImageView vk_image_view;
 };
 
-struct Texture
+class Sampler: public Image
 {
-    Memory      image_memory;
-    VkImage     vk_image{VK_NULL_HANDLE};
-    VkImageView vk_image_view{VK_NULL_HANDLE};
-};
+public:
+    VkResult create(VkPhysicalDevice      physical_device,
+                    VkDevice              logical_device,
+                    uint32_t              width,
+                    uint32_t              height,
+                    uint32_t              mipLevels,
+                    VkSampleCountFlagBits numSamples,
+                    VkFormat              format,
+                    VkImageTiling         tiling,
+                    VkImageUsageFlags     usage,
+                    VkMemoryPropertyFlags properties,
+                    VkImageAspectFlags    aspectFlags)
+    {
+        auto result = static_cast<Image &>(*this).create(physical_device,
+                                                         logical_device,
+                                                         width,
+                                                         height,
+                                                         mipLevels,
+                                                         numSamples,
+                                                         format,
+                                                         tiling,
+                                                         usage,
+                                                         properties,
+                                                         aspectFlags);
+        if (result != VK_SUCCESS)
+        {
+            return result;
+        }
 
-struct SampledTexture: public Texture
-{
+        auto samplerInfo = VkSamplerCreateInfo{.sType     = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
+                                               .magFilter = VK_FILTER_NEAREST,
+                                               .minFilter = VK_FILTER_NEAREST,
+                                               .addressModeU     = VK_SAMPLER_ADDRESS_MODE_REPEAT,
+                                               .addressModeV     = VK_SAMPLER_ADDRESS_MODE_REPEAT,
+                                               .addressModeW     = VK_SAMPLER_ADDRESS_MODE_REPEAT,
+                                               .anisotropyEnable = VK_TRUE,
+                                               .maxAnisotropy    = 16,
+                                               .borderColor      = VK_BORDER_COLOR_INT_OPAQUE_BLACK,
+                                               .unnormalizedCoordinates = VK_FALSE,
+                                               .compareEnable           = VK_FALSE,
+                                               .compareOp               = VK_COMPARE_OP_ALWAYS,
+                                               .mipmapMode = VK_SAMPLER_MIPMAP_MODE_NEAREST,
+                                               .mipLodBias = 0.0f,
+                                               .minLod     = 0.0f,
+                                               .maxLod     = 1};
+
+        if (vkCreateSampler(logical_device, &samplerInfo, nullptr, &vk_sampler) != VK_SUCCESS)
+        {
+            throw std::runtime_error("failed to create texture sampler!");
+        }
+
+        return VK_SUCCESS;
+    }
+
+    void destroy(VkDevice logical_device)
+    {
+        vkDestroySampler(logical_device, vk_sampler, nullptr);
+        static_cast<Image &>(*this).destroy(logical_device);
+    }
+
+    VkSampler sampler_handle()
+    {
+        return vk_sampler;
+    }
+
+private:
     VkSampler vk_sampler;
 };
 
@@ -1442,63 +1511,6 @@ public:
         }
     }
 
-    VkResult createImage(VkPhysicalDevice      physical_device,
-                         VkDevice              logical_device,
-                         uint32_t              width,
-                         uint32_t              height,
-                         uint32_t              mipLevels,
-                         VkSampleCountFlagBits numSamples,
-                         VkFormat              format,
-                         VkImageTiling         tiling,
-                         VkImageUsageFlags     usage,
-                         VkMemoryPropertyFlags properties,
-                         VkImage &             image,
-                         Memory &              imageMemory)
-    {
-        auto imageInfo = VkImageCreateInfo{.sType         = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
-                                           .imageType     = VK_IMAGE_TYPE_2D,
-                                           .extent.width  = width,
-                                           .extent.height = height,
-                                           .extent.depth  = 1,
-                                           .mipLevels     = mipLevels,
-                                           .arrayLayers   = 1,
-                                           .format        = format,
-                                           .tiling        = tiling,
-                                           .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
-                                           .usage         = usage,
-                                           .sharingMode   = VK_SHARING_MODE_EXCLUSIVE,
-                                           .samples       = numSamples};
-
-        auto result = vkCreateImage(logical_device, &imageInfo, nullptr, &image);
-        assert(result == VK_SUCCESS);
-
-        result = imageMemory.allocateAndBind(physical_device, logical_device, properties, image);
-
-        assert(result == VK_SUCCESS);
-
-        return VK_SUCCESS;
-    }
-
-    VkResult createImageView(VkDevice           logical_device,
-                             VkImage            image,
-                             VkImageView &      image_view,
-                             VkFormat           format,
-                             VkImageAspectFlags aspectFlags,
-                             uint32_t           mipLevels)
-    {
-        auto viewInfo = VkImageViewCreateInfo{.sType    = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
-                                              .image    = image,
-                                              .viewType = VK_IMAGE_VIEW_TYPE_2D,
-                                              .format   = format,
-                                              .subresourceRange.aspectMask     = aspectFlags,
-                                              .subresourceRange.baseMipLevel   = 0,
-                                              .subresourceRange.levelCount     = mipLevels,
-                                              .subresourceRange.baseArrayLayer = 0,
-                                              .subresourceRange.layerCount     = 1};
-
-        return vkCreateImageView(logical_device, &viewInfo, nullptr, &image_view);
-    }
-
 private:
     VkResult createAttachments(Device & device)
     {
@@ -1696,7 +1708,8 @@ private:
                 }
                 else
                 {
-                    fb_attachments.push_back(image_resources.images[attachment_handle].handle());
+                    fb_attachments.push_back(
+                        image_resources.images[attachment_handle].view_handle());
                 }
             }
 
@@ -2835,7 +2848,7 @@ public:
         vertex_memory.destroy(render_device.logical_device);
     }
 
-    SampledTexture createTexture(char const * texture_path)
+    Sampler createTexture(char const * texture_path)
     {
         int       texWidth, texHeight, texChannels;
         stbi_uc * pixels = stbi_load(
@@ -2856,27 +2869,22 @@ public:
 
         stbi_image_free(pixels);
 
-        SampledTexture texture;
+        Sampler texture;
 
-        images.createImage(render_device.physical_device,
-                           render_device.logical_device,
-                           texWidth,
-                           texHeight,
-                           1,
-                           VK_SAMPLE_COUNT_1_BIT,
-                           VK_FORMAT_R8G8B8A8_UNORM,
-                           VK_IMAGE_TILING_OPTIMAL,
-                           VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
-                           VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-                           texture.vk_image,
-                           texture.image_memory);
-
-        images.createImageView(render_device.logical_device,
-                               texture.vk_image,
-                               texture.vk_image_view,
-                               VK_FORMAT_R8G8B8A8_UNORM,
-                               VK_IMAGE_ASPECT_COLOR_BIT,
-                               1);
+        if (texture.create(render_device.physical_device,
+                       render_device.logical_device,
+                       texWidth,
+                       texHeight,
+                       1,
+                       VK_SAMPLE_COUNT_1_BIT,
+                       VK_FORMAT_R8G8B8A8_UNORM,
+                       VK_IMAGE_TILING_OPTIMAL,
+                       VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
+                       VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+                       VK_IMAGE_ASPECT_COLOR_BIT) != VK_SUCCESS)
+        {
+            throw std::runtime_error("failed to create texture sampler!");
+        }
 
         auto & bucket = commands.transfer_buckets[frames.currentResource];
 
@@ -2887,7 +2895,7 @@ public:
         dst_optimal_command->dstAccessMask    = VK_ACCESS_TRANSFER_WRITE_BIT;
         dst_optimal_command->oldLayout        = VK_IMAGE_LAYOUT_UNDEFINED;
         dst_optimal_command->newLayout        = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-        dst_optimal_command->image            = texture.vk_image;
+        dst_optimal_command->image            = texture.image_handle();
         dst_optimal_command->mipLevels        = 1;
         dst_optimal_command->aspectMask       = VK_IMAGE_ASPECT_COLOR_BIT;
         dst_optimal_command->sourceStage      = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
@@ -2897,7 +2905,7 @@ public:
         copy_command->commandbuffer = commands.transfer_commandbuffers[frames.currentResource];
         copy_command->srcBuffer     = vertices.staging_buffer[frames.currentResource].handle();
         copy_command->srcOffset     = pixel_data_offset;
-        copy_command->dstImage      = texture.vk_image;
+        copy_command->dstImage      = texture.image_handle();
         copy_command->width         = static_cast<uint32_t>(texWidth);
         copy_command->height        = static_cast<uint32_t>(texHeight);
 
@@ -2908,46 +2916,18 @@ public:
         shader_optimal_command->dstAccessMask    = VK_ACCESS_SHADER_READ_BIT;
         shader_optimal_command->oldLayout        = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
         shader_optimal_command->newLayout        = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-        shader_optimal_command->image            = texture.vk_image;
+        shader_optimal_command->image            = texture.image_handle();
         shader_optimal_command->mipLevels        = 1;
         shader_optimal_command->aspectMask       = VK_IMAGE_ASPECT_COLOR_BIT;
         shader_optimal_command->sourceStage      = VK_PIPELINE_STAGE_TRANSFER_BIT;
         shader_optimal_command->destinationStage = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
 
-        auto samplerInfo = VkSamplerCreateInfo{.sType     = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
-                                               .magFilter = VK_FILTER_NEAREST,
-                                               .minFilter = VK_FILTER_NEAREST,
-                                               .addressModeU     = VK_SAMPLER_ADDRESS_MODE_REPEAT,
-                                               .addressModeV     = VK_SAMPLER_ADDRESS_MODE_REPEAT,
-                                               .addressModeW     = VK_SAMPLER_ADDRESS_MODE_REPEAT,
-                                               .anisotropyEnable = VK_TRUE,
-                                               .maxAnisotropy    = 16,
-                                               .borderColor      = VK_BORDER_COLOR_INT_OPAQUE_BLACK,
-                                               .unnormalizedCoordinates = VK_FALSE,
-                                               .compareEnable           = VK_FALSE,
-                                               .compareOp               = VK_COMPARE_OP_ALWAYS,
-                                               .mipmapMode = VK_SAMPLER_MIPMAP_MODE_NEAREST,
-                                               .mipLodBias = 0.0f,
-                                               .minLod     = 0.0f,
-                                               .maxLod     = 1};
-
-        if (vkCreateSampler(
-                render_device.logical_device, &samplerInfo, nullptr, &texture.vk_sampler)
-            != VK_SUCCESS)
-        {
-            throw std::runtime_error("failed to create texture sampler!");
-        }
-
         return texture;
     }
 
-    void destroyTexture(SampledTexture & texture)
+    void destroyTexture(Sampler & texture)
     {
-        vkDestroySampler(render_device.logical_device, texture.vk_sampler, nullptr);
-        vkDestroyImageView(render_device.logical_device, texture.vk_image_view, nullptr);
-        vkDestroyImage(render_device.logical_device, texture.vk_image, nullptr);
-
-        texture.image_memory.destroy(render_device.logical_device);
+        texture.destroy(render_device.logical_device);
     }
 
 private:
