@@ -984,206 +984,15 @@ private:
 class Renderer
 {
 public:
-    explicit Renderer(GLFWwindow * window_ptr): render_device{window_ptr}
-    {}
+    explicit Renderer(GLFWwindow * window_ptr);
 
-    bool init(RenderConfig & render_config)
-    {
-        if (!render_device.init(render_config))
-        {
-            std::cout << "Init Device failed\n";
-            return false;
-        }
+    bool init(RenderConfig & render_config);
 
-        if (!frames.init(render_config, render_device.logical_device))
-        {
-            std::cout << "Init Frames failed\n";
-            return false;
-        }
+    void quit();
 
-        if (!images.init(render_config, render_device))
-        {
-            std::cout << "Init Images failed\n";
-            return false;
-        }
+    void waitForIdle();
 
-        if (!render_passes.init(render_config, render_device, images))
-        {
-            std::cout << "Init Render Passes failed\n";
-            return false;
-        }
-
-        if (!uniforms.init(render_config, render_device))
-        {
-            std::cout << "Init Uniforms failed\n";
-            return false;
-        }
-
-        if (!pipelines.init(render_config, render_device, render_passes, uniforms))
-        {
-            std::cout << "Init Pipelines failed\n";
-            return false;
-        }
-
-        if (!commands.init(render_config, render_device))
-        {
-            std::cout << "Init Commands failed\n";
-            return false;
-        }
-
-        if (!vertices.init(render_config, render_device, frames))
-        {
-            std::cout << "Init Commands failed\n";
-            return false;
-        }
-
-        return true;
-    }
-
-    void quit()
-    {
-        vertices.quit(render_device);
-        commands.quit(render_device);
-        pipelines.quit(render_device);
-        uniforms.quit(render_device);
-        render_passes.quit(render_device);
-        images.quit(render_device);
-        frames.quit(render_device.logical_device);
-        render_device.quit();
-    }
-
-    void waitForIdle()
-    {
-        vkDeviceWaitIdle(render_device.logical_device);
-    }
-
-    void drawFrame(uint32_t uniform_count, UniformHandle * p_uniforms)
-    {
-        vkWaitForFences(render_device.logical_device,
-                        1,
-                        &frames.in_flight_fences[frames.currentFrame],
-                        VK_TRUE,
-                        std::numeric_limits<uint64_t>::max());
-
-        // DRAW OPERATIONS
-        auto result = vkAcquireNextImageKHR(render_device.logical_device,
-                                            render_device.swapchain,
-                                            std::numeric_limits<uint64_t>::max(),
-                                            frames.image_available_semaphores[frames.currentFrame],
-                                            VK_NULL_HANDLE,
-                                            &frames.currentImage);
-
-        if (result == VK_ERROR_OUT_OF_DATE_KHR)
-        {
-            // recreateSwapChain();
-            return;
-        }
-        else if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR)
-        {
-            throw std::runtime_error("failed to acquire swap chain image!");
-        }
-
-        // TRANSFER OPERATIONS
-        // submit copy operations to the graphics queue
-
-        auto beginInfo = VkCommandBufferBeginInfo{
-            .sType            = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
-            .flags            = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,
-            .pInheritanceInfo = nullptr};
-
-        result = vkBeginCommandBuffer(commands.transfer_commandbuffers[frames.currentResource],
-                                      &beginInfo);
-        if (result != VK_SUCCESS)
-        {
-            return;
-        }
-
-        commands.transfer_buckets[frames.currentResource].Submit();
-
-        result = vkEndCommandBuffer(commands.transfer_commandbuffers[frames.currentResource]);
-        if (result != VK_SUCCESS)
-        {
-            return;
-        }
-
-        auto submitTransferInfo = VkSubmitInfo{
-            .sType              = VK_STRUCTURE_TYPE_SUBMIT_INFO,
-            .commandBufferCount = 1,
-            .pCommandBuffers    = &commands.transfer_commandbuffers[frames.currentResource]};
-
-        vkQueueSubmit(commands.graphics_queue, 1, &submitTransferInfo, VK_NULL_HANDLE);
-
-        // the graphics queue will wait to do anything in the color_attachment_output stage
-        // until the waitSemaphore is signalled by vkAcquireNextImageKHR
-        VkSemaphore waitSemaphores[] = {frames.image_available_semaphores[frames.currentFrame]};
-        VkPipelineStageFlags waitStages[] = {VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT};
-
-        VkSemaphore signalSemaphores[] = {frames.render_finished_semaphores[frames.currentFrame]};
-
-        createCommandbuffer(frames.currentImage, uniform_count, p_uniforms);
-
-        auto submitInfo = VkSubmitInfo{
-            .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
-
-            .waitSemaphoreCount = 1,
-            .pWaitSemaphores    = waitSemaphores,
-            .pWaitDstStageMask  = waitStages,
-
-            .commandBufferCount = 1,
-            .pCommandBuffers    = &commands.draw_commandbuffers[frames.currentResource],
-
-            .signalSemaphoreCount = 1,
-            .pSignalSemaphores    = signalSemaphores};
-
-        vkResetFences(
-            render_device.logical_device, 1, &frames.in_flight_fences[frames.currentFrame]);
-
-        if (vkQueueSubmit(commands.graphics_queue,
-                          1,
-                          &submitInfo,
-                          frames.in_flight_fences[frames.currentFrame])
-            != VK_SUCCESS)
-        {
-            throw std::runtime_error("failed to submit draw command buffer!");
-        }
-
-        VkSwapchainKHR swapChains[] = {render_device.swapchain};
-
-        auto presentInfo = VkPresentInfoKHR{.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR,
-                                            .waitSemaphoreCount = 1,
-                                            .pWaitSemaphores    = signalSemaphores,
-
-                                            .swapchainCount = 1,
-                                            .pSwapchains    = swapChains,
-                                            .pImageIndices  = &frames.currentImage,
-
-                                            .pResults = nullptr};
-
-        result = vkQueuePresentKHR(commands.present_queue, &presentInfo);
-
-        bool framebuffer_resized = false;
-        if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR
-            || framebuffer_resized)
-        {
-            framebuffer_resized = false;
-            // recreateSwapChain();
-        }
-        else if (result != VK_SUCCESS)
-        {
-            throw std::runtime_error("failed to present swap chain image!");
-        }
-
-        frames.currentFrame    = (frames.currentFrame + 1) % frames.MAX_FRAMES_IN_FLIGHT;
-        frames.currentResource = (frames.currentResource + 1) % frames.MAX_BUFFERED_RESOURCES;
-
-        // reset buffer offsets for copies
-        vertices.dynamic_mapped_vertices[frames.currentResource].reset();
-        vertices.dynamic_mapped_indices[frames.currentResource].reset();
-        vertices.staging_buffer[frames.currentResource].reset();
-
-        commands.draw_buckets[frames.currentResource].Clear();
-        commands.transfer_buckets[frames.currentResource].Clear();
-    }
+    void drawFrame(uint32_t uniform_count, UniformHandle * p_uniforms);
 
     /*
     template <typename... Args>
@@ -1212,40 +1021,11 @@ public:
 
     std::optional<UniformHandle> newUniform(UniformLayoutHandle layout_handle,
                                             VkDeviceSize        size,
-                                            void *              data_ptr)
-    {
-        auto & uniform_collection = uniforms.uniform_collections[layout_handle];
-
-        auto & dynamic_buffer_collection = std::get<DynamicBufferCollection>(uniform_collection);
-
-        auto opt_uniform_handle = dynamic_buffer_collection.createUniform(size, data_ptr);
-
-        if (opt_uniform_handle)
-        {
-            opt_uniform_handle.value().uniform_layout_id = layout_handle;
-        }
-
-        return opt_uniform_handle;
-    }
+                                            void *              data_ptr);
 
     std::optional<UniformHandle> newUniform(UniformLayoutHandle layout_handle,
                                             VkImageView         view,
-                                            VkSampler           sampler)
-    {
-        auto & uniform_collection = uniforms.uniform_collections[layout_handle];
-
-        auto & sampler_collection = std::get<SamplerCollection>(uniform_collection);
-
-        auto opt_uniform_handle = sampler_collection.createUniform(
-            render_device.logical_device, view, sampler);
-
-        if (opt_uniform_handle)
-        {
-            opt_uniform_handle.value().uniform_layout_id = layout_handle;
-        }
-
-        return opt_uniform_handle;
-    }
+                                            VkSampler           sampler);
 
     template <typename... Args>
     void updateUniform(UniformHandle handle, Args &&... args)
@@ -1263,49 +1043,16 @@ public:
             uniform_collection);
     }
 
-    std::optional<VkDescriptorSet> getUniform(UniformHandle handle)
-    {
-        auto & uniform_collection = uniforms.uniform_collections[handle.uniform_layout_id];
+    std::optional<VkDescriptorSet> getUniform(UniformHandle handle);
 
-        return std::visit(
-            [handle](auto && collection) -> std::optional<VkDescriptorSet> {
-                return collection.getUniform(handle);
-            },
-            uniform_collection);
-    }
-
-    std::optional<VkDeviceSize> getDynamicOffset(UniformHandle handle)
-    {
-        auto & uniform_collection = uniforms.uniform_collections[handle.uniform_layout_id];
-
-        return std::visit(
-            [handle](auto && collection) -> std::optional<VkDeviceSize> {
-                return collection.getDynamicOffset(handle);
-            },
-            uniform_collection);
-    }
+    std::optional<VkDeviceSize> getDynamicOffset(UniformHandle handle);
 
     void dynamicDraw(PipelineHandle    pipeline,
                      glm::mat4 const & transform,
                      uint32_t          vertex_count,
                      Vertex *          vertices,
                      uint32_t          index_count,
-                     uint32_t *        indices)
-    {
-        auto & mapped_vertices = this->vertices.dynamic_mapped_vertices[frames.currentResource];
-        auto & mapped_indices  = this->vertices.dynamic_mapped_indices[frames.currentResource];
-
-        VkDeviceSize vertex_offset = mapped_vertices.copy(sizeof(Vertex) * vertex_count, vertices);
-        VkDeviceSize index_offset  = mapped_indices.copy(sizeof(uint32_t) * index_count, indices);
-
-        draw(pipeline,
-             transform,
-             mapped_vertices.buffer_handle(),
-             vertex_offset,
-             mapped_indices.buffer_handle(),
-             index_offset,
-             index_count);
-    }
+                     uint32_t *        indices);
 
     void draw(PipelineHandle    pipeline,
               glm::mat4 const & transform,
@@ -1313,329 +1060,44 @@ public:
               VkDeviceSize      vertexbuffer_offset,
               VkBuffer          indexbuffer,
               VkDeviceSize      indexbuffer_offset,
-              VkDeviceSize      indexbuffer_count)
-    {
-        auto & bucket = commands.draw_buckets[frames.currentResource];
-
-        Draw * command               = bucket.AddCommand<Draw>(0, sizeof(glm::mat4));
-        command->commandbuffer       = commands.draw_commandbuffers[frames.currentResource];
-        command->pipeline_layout     = pipelines.pipelines[pipeline].vk_pipeline_layout;
-        command->transform           = transform;
-        command->vertexbuffer        = vertexbuffer;
-        command->vertexbuffer_offset = vertexbuffer_offset;
-        command->indexbuffer         = indexbuffer;
-        command->indexbuffer_offset  = indexbuffer_offset;
-        command->indexbuffer_count   = indexbuffer_count;
-    }
+              VkDeviceSize      indexbuffer_count);
 
     bool createVertexbuffer(VkBuffer & vertexbuffer,
                             Memory &   vertexbuffer_memory,
                             uint32_t   vertex_count,
-                            Vertex *   vertices)
-    {
-        VkDeviceSize bufferSize = sizeof(Vertex) * vertex_count;
-
-        // copy to staging vertex buffer
-        auto &       mapped_vertices       = this->vertices.staging_buffer[frames.currentResource];
-        size_t       vertex_data_size      = sizeof(Vertex) * vertex_count;
-        VkDeviceSize staging_vertex_offset = mapped_vertices.copy(vertex_data_size, vertices);
-
-        // create
-        render_device.createBuffer(
-            bufferSize,
-            VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
-            VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-            vertexbuffer,
-            vertexbuffer_memory);
-
-        copyBuffer(
-            mapped_vertices.buffer_handle(), staging_vertex_offset, vertexbuffer, 0, bufferSize);
-
-        return true;
-    }
+                            Vertex *   vertices);
 
     bool createIndexbuffer(VkBuffer & indexbuffer,
                            Memory &   indexbuffer_memory,
                            uint32_t   index_count,
-                           uint32_t * indices)
-    {
-        VkDeviceSize bufferSize = sizeof(uint32_t) * index_count;
-
-        auto & mapped_indices = vertices.staging_buffer[frames.currentResource];
-
-        size_t index_data_size = sizeof(uint32_t) * index_count;
-
-        VkDeviceSize staging_index_offset = mapped_indices.copy(index_data_size, indices);
-
-        render_device.createBuffer(
-            bufferSize,
-            VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
-            VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-            indexbuffer,
-            indexbuffer_memory);
-
-        copyBuffer(
-            mapped_indices.buffer_handle(), staging_index_offset, indexbuffer, 0, bufferSize);
-
-        return true;
-    }
+                           uint32_t * indices);
 
     void updateDeviceLocalBuffers(VkBuffer   vertexbuffer,
                                   VkBuffer   indexbuffer,
                                   uint32_t   vertex_count,
                                   Vertex *   vertices,
                                   uint32_t   index_count,
-                                  uint32_t * indices)
-    {
-        // TODO:
-        auto & mapped_vertices = this->vertices.staging_buffer[frames.currentResource];
-        auto & mapped_indices  = this->vertices.staging_buffer[frames.currentResource];
-
-        size_t vertex_data_size = sizeof(Vertex) * vertex_count;
-        size_t index_data_size  = sizeof(uint32_t) * index_count;
-
-        VkDeviceSize vertex_offset = mapped_vertices.copy(vertex_data_size, vertices);
-        VkDeviceSize index_offset  = mapped_indices.copy(index_data_size, indices);
-
-        auto & bucket = commands.transfer_buckets[frames.currentResource];
-
-        Copy * vertex_command         = bucket.AddCommand<Copy>(0, 0);
-        vertex_command->commandbuffer = commands.transfer_commandbuffers[frames.currentResource];
-        vertex_command->srcBuffer     = mapped_vertices.buffer_handle();
-        vertex_command->dstBuffer     = vertexbuffer;
-        vertex_command->srcOffset     = vertex_offset;
-        vertex_command->dstOffset     = 0;
-        vertex_command->size          = vertex_data_size;
-
-        Copy * index_command         = bucket.AddCommand<Copy>(0, 0);
-        index_command->commandbuffer = commands.transfer_commandbuffers[frames.currentResource];
-        index_command->srcBuffer     = mapped_indices.buffer_handle();
-        index_command->dstBuffer     = indexbuffer;
-        index_command->srcOffset     = index_offset;
-        index_command->dstOffset     = 0;
-        index_command->size          = index_data_size;
-    }
+                                  uint32_t * indices);
 
     void destroyDeviceLocalBuffers(VkBuffer vertexbuffer,
                                    Memory   vertex_memory,
                                    VkBuffer indexbuffer,
-                                   Memory   index_memory)
-    {
-        // INDEXBUFFER
-        vkDestroyBuffer(render_device.logical_device, indexbuffer, nullptr);
-        index_memory.destroy(render_device.logical_device);
+                                   Memory   index_memory);
 
-        // VERTEXBUFFER
-        vkDestroyBuffer(render_device.logical_device, vertexbuffer, nullptr);
-        vertex_memory.destroy(render_device.logical_device);
-    }
+    Sampler createTexture(char const * texture_path);
 
-    Sampler createTexture(char const * texture_path)
-    {
-        int       texWidth, texHeight, texChannels;
-        stbi_uc * pixels = stbi_load(
-            texture_path, &texWidth, &texHeight, &texChannels, STBI_rgb_alpha);
-
-        VkDeviceSize imageSize = texWidth * texHeight * 4;
-
-        // mipLevels = static_cast<uint32_t>(std::floor(std::log2(std::max(texWidth, texHeight)))) +
-        // 1;
-
-        if (!pixels)
-        {
-            throw std::runtime_error("failed to load texture image!");
-        }
-
-        VkDeviceSize pixel_data_offset = vertices.staging_buffer[frames.currentResource].copy(
-            static_cast<size_t>(imageSize), pixels);
-
-        stbi_image_free(pixels);
-
-        Sampler texture;
-
-        if (texture.create(render_device.physical_device,
-                           render_device.logical_device,
-                           texWidth,
-                           texHeight,
-                           1,
-                           VK_SAMPLE_COUNT_1_BIT,
-                           VK_FORMAT_R8G8B8A8_UNORM,
-                           VK_IMAGE_TILING_OPTIMAL,
-                           VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
-                           VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-                           VK_IMAGE_ASPECT_COLOR_BIT)
-            != VK_SUCCESS)
-        {
-            throw std::runtime_error("failed to create texture sampler!");
-        }
-
-        auto & bucket = commands.transfer_buckets[frames.currentResource];
-
-        SetImageLayout * dst_optimal_command = bucket.AddCommand<SetImageLayout>(0, 0);
-        dst_optimal_command->commandbuffer
-            = commands.transfer_commandbuffers[frames.currentResource];
-        dst_optimal_command->srcAccessMask    = 0;
-        dst_optimal_command->dstAccessMask    = VK_ACCESS_TRANSFER_WRITE_BIT;
-        dst_optimal_command->oldLayout        = VK_IMAGE_LAYOUT_UNDEFINED;
-        dst_optimal_command->newLayout        = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-        dst_optimal_command->image            = texture.image_handle();
-        dst_optimal_command->mipLevels        = 1;
-        dst_optimal_command->aspectMask       = VK_IMAGE_ASPECT_COLOR_BIT;
-        dst_optimal_command->sourceStage      = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
-        dst_optimal_command->destinationStage = VK_PIPELINE_STAGE_TRANSFER_BIT;
-
-        CopyToImage * copy_command  = bucket.AddCommand<CopyToImage>(0, 0);
-        copy_command->commandbuffer = commands.transfer_commandbuffers[frames.currentResource];
-        copy_command->srcBuffer = vertices.staging_buffer[frames.currentResource].buffer_handle();
-        copy_command->srcOffset = pixel_data_offset;
-        copy_command->dstImage  = texture.image_handle();
-        copy_command->width     = static_cast<uint32_t>(texWidth);
-        copy_command->height    = static_cast<uint32_t>(texHeight);
-
-        SetImageLayout * shader_optimal_command = bucket.AddCommand<SetImageLayout>(0, 0);
-        shader_optimal_command->commandbuffer
-            = commands.transfer_commandbuffers[frames.currentResource];
-        shader_optimal_command->srcAccessMask    = VK_ACCESS_TRANSFER_WRITE_BIT;
-        shader_optimal_command->dstAccessMask    = VK_ACCESS_SHADER_READ_BIT;
-        shader_optimal_command->oldLayout        = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-        shader_optimal_command->newLayout        = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-        shader_optimal_command->image            = texture.image_handle();
-        shader_optimal_command->mipLevels        = 1;
-        shader_optimal_command->aspectMask       = VK_IMAGE_ASPECT_COLOR_BIT;
-        shader_optimal_command->sourceStage      = VK_PIPELINE_STAGE_TRANSFER_BIT;
-        shader_optimal_command->destinationStage = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
-
-        return texture;
-    }
-
-    void destroyTexture(Sampler & texture)
-    {
-        texture.destroy(render_device.logical_device);
-    }
+    void destroyTexture(Sampler & texture);
 
 private:
     VkResult createCommandbuffer(uint32_t        image_index,
                                  uint32_t        uniform_count,
-                                 UniformHandle * p_uniforms)
-    {
-        auto & mapped_vertices = vertices.dynamic_mapped_vertices[frames.currentResource];
-        auto & mapped_indices  = vertices.dynamic_mapped_indices[frames.currentResource];
-
-        auto   commandbuffer = commands.draw_commandbuffers[frames.currentResource];
-        auto & draw_bucket   = commands.draw_buckets[frames.currentResource];
-
-        auto beginInfo = VkCommandBufferBeginInfo{
-            .sType            = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
-            .flags            = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,
-            .pInheritanceInfo = nullptr};
-
-        auto result = vkBeginCommandBuffer(commands.draw_commandbuffers[frames.currentResource],
-                                           &beginInfo);
-        if (result != VK_SUCCESS)
-        {
-            return result;
-        }
-
-        // memory barrier for copy commands
-        auto barrier = VkMemoryBarrier{.sType         = VK_STRUCTURE_TYPE_MEMORY_BARRIER,
-                                       .srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT,
-                                       .dstAccessMask = VK_ACCESS_VERTEX_ATTRIBUTE_READ_BIT};
-
-        vkCmdPipelineBarrier(commandbuffer,
-                             VK_PIPELINE_STAGE_TRANSFER_BIT,
-                             VK_PIPELINE_STAGE_VERTEX_INPUT_BIT,
-                             0,
-                             1,
-                             &barrier,
-                             0,
-                             nullptr,
-                             0,
-                             nullptr);
-
-        auto clearValues = std::array<VkClearValue, 2>{
-            VkClearValue{.color = {0.0f, 0.0f, 0.0f, 1.0f}},
-            VkClearValue{.depthStencil = {1.0f, 0}}};
-
-        auto renderPassInfo = VkRenderPassBeginInfo{
-            .sType      = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
-            .renderPass = render_passes.render_passes[0],
-            .framebuffer
-            = render_passes
-                  .framebuffers[0][image_index], // framebuffers[resource_index][0].vk_framebuffer,
-            .renderArea.offset = {0, 0},
-            .renderArea.extent = render_device.swapchain_extent,
-            .clearValueCount   = static_cast<uint32_t>(clearValues.size()),
-            .pClearValues      = clearValues.data()};
-
-        vkCmdBeginRenderPass(commandbuffer, &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
-
-        vkCmdBindPipeline(
-            commandbuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelines.pipelines[0].vk_pipeline);
-
-        std::vector<VkDescriptorSet> descriptorsets;
-        std::vector<uint32_t>        dynamic_offsets;
-
-        for (size_t i = 0; i < uniform_count; ++i)
-        {
-            auto uniform_handle = p_uniforms[i];
-            auto opt_uniform    = getUniform(uniform_handle);
-
-            if (opt_uniform.has_value())
-            {
-                descriptorsets.push_back(opt_uniform.value());
-            }
-            else
-            {
-                std::cout << "No descriptorset\n";
-                continue;
-            }
-
-            auto opt_offset = getDynamicOffset(uniform_handle);
-
-            if (opt_offset.has_value())
-            {
-                dynamic_offsets.push_back(opt_offset.value());
-            }
-        }
-
-        vkCmdBindDescriptorSets(commandbuffer,
-                                VK_PIPELINE_BIND_POINT_GRAPHICS,
-                                pipelines.pipelines[0].vk_pipeline_layout,
-                                0,
-                                static_cast<uint32_t>(descriptorsets.size()),
-                                descriptorsets.data(),
-                                static_cast<uint32_t>(dynamic_offsets.size()),
-                                dynamic_offsets.data());
-
-        draw_bucket.Submit();
-
-        vkCmdEndRenderPass(commandbuffer);
-
-        result = vkEndCommandBuffer(commandbuffer);
-        if (result != VK_SUCCESS)
-        {
-            return result;
-        }
-
-        return VK_SUCCESS;
-    }
+                                 UniformHandle * p_uniforms);
 
     void copyBuffer(VkBuffer     srcBuffer,
                     VkDeviceSize srcOffset,
                     VkBuffer     dstBuffer,
                     VkDeviceSize dstOffset,
-                    VkDeviceSize size)
-    {
-        auto & bucket = commands.transfer_buckets[frames.currentResource];
-
-        Copy * vertex_command         = bucket.AddCommand<Copy>(0, 0);
-        vertex_command->commandbuffer = commands.transfer_commandbuffers[frames.currentResource];
-        vertex_command->srcBuffer     = srcBuffer;
-        vertex_command->dstBuffer     = dstBuffer;
-        vertex_command->srcOffset     = srcOffset;
-        vertex_command->dstOffset     = dstOffset;
-        vertex_command->size          = size;
-    };
+                    VkDeviceSize size);
 
     module::Device              render_device;
     module::FrameResources      frames;
@@ -2754,7 +2216,7 @@ Device::Device(GLFWwindow * window_ptr): window{window_ptr}
 
 bool Device::init(RenderConfig & render_config)
 {
-// clang-format off
+    // clang-format off
     #ifndef NDEBUG
     checkValidationLayerSupport();
     #endif
@@ -2908,7 +2370,7 @@ void Device::getRequiredExtensions()
 // INSTANCE
 VkResult Device::createInstance(char const * window_name)
 {
-// clang-format off
+    // clang-format off
     #ifdef NDEBUG
     use_validation = false;
     #else
@@ -4300,6 +3762,604 @@ VkResult VertexResources::createStagingObjectResources(Device &         device,
 }
 
 }; // namespace module
+
+Renderer::Renderer(GLFWwindow * window_ptr): render_device{window_ptr}
+{}
+
+bool Renderer::init(RenderConfig & render_config)
+{
+    if (!render_device.init(render_config))
+    {
+        std::cout << "Init Device failed\n";
+        return false;
+    }
+
+    if (!frames.init(render_config, render_device.logical_device))
+    {
+        std::cout << "Init Frames failed\n";
+        return false;
+    }
+
+    if (!images.init(render_config, render_device))
+    {
+        std::cout << "Init Images failed\n";
+        return false;
+    }
+
+    if (!render_passes.init(render_config, render_device, images))
+    {
+        std::cout << "Init Render Passes failed\n";
+        return false;
+    }
+
+    if (!uniforms.init(render_config, render_device))
+    {
+        std::cout << "Init Uniforms failed\n";
+        return false;
+    }
+
+    if (!pipelines.init(render_config, render_device, render_passes, uniforms))
+    {
+        std::cout << "Init Pipelines failed\n";
+        return false;
+    }
+
+    if (!commands.init(render_config, render_device))
+    {
+        std::cout << "Init Commands failed\n";
+        return false;
+    }
+
+    if (!vertices.init(render_config, render_device, frames))
+    {
+        std::cout << "Init Commands failed\n";
+        return false;
+    }
+
+    return true;
+}
+
+void Renderer::quit()
+{
+    vertices.quit(render_device);
+    commands.quit(render_device);
+    pipelines.quit(render_device);
+    uniforms.quit(render_device);
+    render_passes.quit(render_device);
+    images.quit(render_device);
+    frames.quit(render_device.logical_device);
+    render_device.quit();
+}
+
+void Renderer::waitForIdle()
+{
+    vkDeviceWaitIdle(render_device.logical_device);
+}
+
+void Renderer::drawFrame(uint32_t uniform_count, UniformHandle * p_uniforms)
+{
+    vkWaitForFences(render_device.logical_device,
+                    1,
+                    &frames.in_flight_fences[frames.currentFrame],
+                    VK_TRUE,
+                    std::numeric_limits<uint64_t>::max());
+
+    // DRAW OPERATIONS
+    auto result = vkAcquireNextImageKHR(render_device.logical_device,
+                                        render_device.swapchain,
+                                        std::numeric_limits<uint64_t>::max(),
+                                        frames.image_available_semaphores[frames.currentFrame],
+                                        VK_NULL_HANDLE,
+                                        &frames.currentImage);
+
+    if (result == VK_ERROR_OUT_OF_DATE_KHR)
+    {
+        // recreateSwapChain();
+        return;
+    }
+    else if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR)
+    {
+        throw std::runtime_error("failed to acquire swap chain image!");
+    }
+
+    // TRANSFER OPERATIONS
+    // submit copy operations to the graphics queue
+
+    auto beginInfo = VkCommandBufferBeginInfo{.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
+                                              .flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,
+                                              .pInheritanceInfo = nullptr};
+
+    result = vkBeginCommandBuffer(commands.transfer_commandbuffers[frames.currentResource],
+                                  &beginInfo);
+    if (result != VK_SUCCESS)
+    {
+        return;
+    }
+
+    commands.transfer_buckets[frames.currentResource].Submit();
+
+    result = vkEndCommandBuffer(commands.transfer_commandbuffers[frames.currentResource]);
+    if (result != VK_SUCCESS)
+    {
+        return;
+    }
+
+    auto submitTransferInfo = VkSubmitInfo{
+        .sType              = VK_STRUCTURE_TYPE_SUBMIT_INFO,
+        .commandBufferCount = 1,
+        .pCommandBuffers    = &commands.transfer_commandbuffers[frames.currentResource]};
+
+    vkQueueSubmit(commands.graphics_queue, 1, &submitTransferInfo, VK_NULL_HANDLE);
+
+    // the graphics queue will wait to do anything in the color_attachment_output stage
+    // until the waitSemaphore is signalled by vkAcquireNextImageKHR
+    VkSemaphore waitSemaphores[]      = {frames.image_available_semaphores[frames.currentFrame]};
+    VkPipelineStageFlags waitStages[] = {VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT};
+
+    VkSemaphore signalSemaphores[] = {frames.render_finished_semaphores[frames.currentFrame]};
+
+    createCommandbuffer(frames.currentImage, uniform_count, p_uniforms);
+
+    auto submitInfo = VkSubmitInfo{
+        .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
+
+        .waitSemaphoreCount = 1,
+        .pWaitSemaphores    = waitSemaphores,
+        .pWaitDstStageMask  = waitStages,
+
+        .commandBufferCount = 1,
+        .pCommandBuffers    = &commands.draw_commandbuffers[frames.currentResource],
+
+        .signalSemaphoreCount = 1,
+        .pSignalSemaphores    = signalSemaphores};
+
+    vkResetFences(render_device.logical_device, 1, &frames.in_flight_fences[frames.currentFrame]);
+
+    if (vkQueueSubmit(
+            commands.graphics_queue, 1, &submitInfo, frames.in_flight_fences[frames.currentFrame])
+        != VK_SUCCESS)
+    {
+        throw std::runtime_error("failed to submit draw command buffer!");
+    }
+
+    VkSwapchainKHR swapChains[] = {render_device.swapchain};
+
+    auto presentInfo = VkPresentInfoKHR{.sType              = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR,
+                                        .waitSemaphoreCount = 1,
+                                        .pWaitSemaphores    = signalSemaphores,
+
+                                        .swapchainCount = 1,
+                                        .pSwapchains    = swapChains,
+                                        .pImageIndices  = &frames.currentImage,
+
+                                        .pResults = nullptr};
+
+    result = vkQueuePresentKHR(commands.present_queue, &presentInfo);
+
+    bool framebuffer_resized = false;
+    if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR || framebuffer_resized)
+    {
+        framebuffer_resized = false;
+        // recreateSwapChain();
+    }
+    else if (result != VK_SUCCESS)
+    {
+        throw std::runtime_error("failed to present swap chain image!");
+    }
+
+    frames.currentFrame    = (frames.currentFrame + 1) % frames.MAX_FRAMES_IN_FLIGHT;
+    frames.currentResource = (frames.currentResource + 1) % frames.MAX_BUFFERED_RESOURCES;
+
+    // reset buffer offsets for copies
+    vertices.dynamic_mapped_vertices[frames.currentResource].reset();
+    vertices.dynamic_mapped_indices[frames.currentResource].reset();
+    vertices.staging_buffer[frames.currentResource].reset();
+
+    commands.draw_buckets[frames.currentResource].Clear();
+    commands.transfer_buckets[frames.currentResource].Clear();
+}
+
+std::optional<UniformHandle> Renderer::newUniform(UniformLayoutHandle layout_handle,
+                                                  VkDeviceSize        size,
+                                                  void *              data_ptr)
+{
+    auto & uniform_collection = uniforms.uniform_collections[layout_handle];
+
+    auto & dynamic_buffer_collection = std::get<DynamicBufferCollection>(uniform_collection);
+
+    auto opt_uniform_handle = dynamic_buffer_collection.createUniform(size, data_ptr);
+
+    if (opt_uniform_handle)
+    {
+        opt_uniform_handle.value().uniform_layout_id = layout_handle;
+    }
+
+    return opt_uniform_handle;
+}
+
+std::optional<UniformHandle> Renderer::newUniform(UniformLayoutHandle layout_handle,
+                                                  VkImageView         view,
+                                                  VkSampler           sampler)
+{
+    auto & uniform_collection = uniforms.uniform_collections[layout_handle];
+
+    auto & sampler_collection = std::get<SamplerCollection>(uniform_collection);
+
+    auto opt_uniform_handle = sampler_collection.createUniform(
+        render_device.logical_device, view, sampler);
+
+    if (opt_uniform_handle)
+    {
+        opt_uniform_handle.value().uniform_layout_id = layout_handle;
+    }
+
+    return opt_uniform_handle;
+}
+
+std::optional<VkDescriptorSet> Renderer::getUniform(UniformHandle handle)
+{
+    auto & uniform_collection = uniforms.uniform_collections[handle.uniform_layout_id];
+
+    return std::visit(
+        [handle](auto && collection) -> std::optional<VkDescriptorSet> {
+            return collection.getUniform(handle);
+        },
+        uniform_collection);
+}
+
+std::optional<VkDeviceSize> Renderer::getDynamicOffset(UniformHandle handle)
+{
+    auto & uniform_collection = uniforms.uniform_collections[handle.uniform_layout_id];
+
+    return std::visit(
+        [handle](auto && collection) -> std::optional<VkDeviceSize> {
+            return collection.getDynamicOffset(handle);
+        },
+        uniform_collection);
+}
+
+void Renderer::dynamicDraw(PipelineHandle    pipeline,
+                           glm::mat4 const & transform,
+                           uint32_t          vertex_count,
+                           Vertex *          vertices,
+                           uint32_t          index_count,
+                           uint32_t *        indices)
+{
+    auto & mapped_vertices = this->vertices.dynamic_mapped_vertices[frames.currentResource];
+    auto & mapped_indices  = this->vertices.dynamic_mapped_indices[frames.currentResource];
+
+    VkDeviceSize vertex_offset = mapped_vertices.copy(sizeof(Vertex) * vertex_count, vertices);
+    VkDeviceSize index_offset  = mapped_indices.copy(sizeof(uint32_t) * index_count, indices);
+
+    draw(pipeline,
+         transform,
+         mapped_vertices.buffer_handle(),
+         vertex_offset,
+         mapped_indices.buffer_handle(),
+         index_offset,
+         index_count);
+}
+
+void Renderer::draw(PipelineHandle    pipeline,
+                    glm::mat4 const & transform,
+                    VkBuffer          vertexbuffer,
+                    VkDeviceSize      vertexbuffer_offset,
+                    VkBuffer          indexbuffer,
+                    VkDeviceSize      indexbuffer_offset,
+                    VkDeviceSize      indexbuffer_count)
+{
+    auto & bucket = commands.draw_buckets[frames.currentResource];
+
+    Draw * command               = bucket.AddCommand<Draw>(0, sizeof(glm::mat4));
+    command->commandbuffer       = commands.draw_commandbuffers[frames.currentResource];
+    command->pipeline_layout     = pipelines.pipelines[pipeline].vk_pipeline_layout;
+    command->transform           = transform;
+    command->vertexbuffer        = vertexbuffer;
+    command->vertexbuffer_offset = vertexbuffer_offset;
+    command->indexbuffer         = indexbuffer;
+    command->indexbuffer_offset  = indexbuffer_offset;
+    command->indexbuffer_count   = indexbuffer_count;
+}
+
+bool Renderer::createVertexbuffer(VkBuffer & vertexbuffer,
+                                  Memory &   vertexbuffer_memory,
+                                  uint32_t   vertex_count,
+                                  Vertex *   vertices)
+{
+    VkDeviceSize bufferSize = sizeof(Vertex) * vertex_count;
+
+    // copy to staging vertex buffer
+    auto &       mapped_vertices       = this->vertices.staging_buffer[frames.currentResource];
+    size_t       vertex_data_size      = sizeof(Vertex) * vertex_count;
+    VkDeviceSize staging_vertex_offset = mapped_vertices.copy(vertex_data_size, vertices);
+
+    // create
+    render_device.createBuffer(bufferSize,
+                               VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+                               VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+                               vertexbuffer,
+                               vertexbuffer_memory);
+
+    copyBuffer(mapped_vertices.buffer_handle(), staging_vertex_offset, vertexbuffer, 0, bufferSize);
+
+    return true;
+}
+
+bool Renderer::createIndexbuffer(VkBuffer & indexbuffer,
+                                 Memory &   indexbuffer_memory,
+                                 uint32_t   index_count,
+                                 uint32_t * indices)
+{
+    VkDeviceSize bufferSize = sizeof(uint32_t) * index_count;
+
+    auto & mapped_indices = vertices.staging_buffer[frames.currentResource];
+
+    size_t index_data_size = sizeof(uint32_t) * index_count;
+
+    VkDeviceSize staging_index_offset = mapped_indices.copy(index_data_size, indices);
+
+    render_device.createBuffer(bufferSize,
+                               VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
+                               VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+                               indexbuffer,
+                               indexbuffer_memory);
+
+    copyBuffer(mapped_indices.buffer_handle(), staging_index_offset, indexbuffer, 0, bufferSize);
+
+    return true;
+}
+
+void Renderer::updateDeviceLocalBuffers(VkBuffer   vertexbuffer,
+                                        VkBuffer   indexbuffer,
+                                        uint32_t   vertex_count,
+                                        Vertex *   vertices,
+                                        uint32_t   index_count,
+                                        uint32_t * indices)
+{
+    // TODO:
+    auto & mapped_vertices = this->vertices.staging_buffer[frames.currentResource];
+    auto & mapped_indices  = this->vertices.staging_buffer[frames.currentResource];
+
+    size_t vertex_data_size = sizeof(Vertex) * vertex_count;
+    size_t index_data_size  = sizeof(uint32_t) * index_count;
+
+    VkDeviceSize vertex_offset = mapped_vertices.copy(vertex_data_size, vertices);
+    VkDeviceSize index_offset  = mapped_indices.copy(index_data_size, indices);
+
+    auto & bucket = commands.transfer_buckets[frames.currentResource];
+
+    Copy * vertex_command         = bucket.AddCommand<Copy>(0, 0);
+    vertex_command->commandbuffer = commands.transfer_commandbuffers[frames.currentResource];
+    vertex_command->srcBuffer     = mapped_vertices.buffer_handle();
+    vertex_command->dstBuffer     = vertexbuffer;
+    vertex_command->srcOffset     = vertex_offset;
+    vertex_command->dstOffset     = 0;
+    vertex_command->size          = vertex_data_size;
+
+    Copy * index_command         = bucket.AddCommand<Copy>(0, 0);
+    index_command->commandbuffer = commands.transfer_commandbuffers[frames.currentResource];
+    index_command->srcBuffer     = mapped_indices.buffer_handle();
+    index_command->dstBuffer     = indexbuffer;
+    index_command->srcOffset     = index_offset;
+    index_command->dstOffset     = 0;
+    index_command->size          = index_data_size;
+}
+
+void Renderer::destroyDeviceLocalBuffers(VkBuffer vertexbuffer,
+                                         Memory   vertex_memory,
+                                         VkBuffer indexbuffer,
+                                         Memory   index_memory)
+{
+    // INDEXBUFFER
+    vkDestroyBuffer(render_device.logical_device, indexbuffer, nullptr);
+    index_memory.destroy(render_device.logical_device);
+
+    // VERTEXBUFFER
+    vkDestroyBuffer(render_device.logical_device, vertexbuffer, nullptr);
+    vertex_memory.destroy(render_device.logical_device);
+}
+
+Sampler Renderer::createTexture(char const * texture_path)
+{
+    int       texWidth, texHeight, texChannels;
+    stbi_uc * pixels = stbi_load(texture_path, &texWidth, &texHeight, &texChannels, STBI_rgb_alpha);
+
+    VkDeviceSize imageSize = texWidth * texHeight * 4;
+
+    // mipLevels = static_cast<uint32_t>(std::floor(std::log2(std::max(texWidth, texHeight)))) +
+    // 1;
+
+    if (!pixels)
+    {
+        throw std::runtime_error("failed to load texture image!");
+    }
+
+    VkDeviceSize pixel_data_offset = vertices.staging_buffer[frames.currentResource].copy(
+        static_cast<size_t>(imageSize), pixels);
+
+    stbi_image_free(pixels);
+
+    Sampler texture;
+
+    if (texture.create(render_device.physical_device,
+                       render_device.logical_device,
+                       texWidth,
+                       texHeight,
+                       1,
+                       VK_SAMPLE_COUNT_1_BIT,
+                       VK_FORMAT_R8G8B8A8_UNORM,
+                       VK_IMAGE_TILING_OPTIMAL,
+                       VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
+                       VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+                       VK_IMAGE_ASPECT_COLOR_BIT)
+        != VK_SUCCESS)
+    {
+        throw std::runtime_error("failed to create texture sampler!");
+    }
+
+    auto & bucket = commands.transfer_buckets[frames.currentResource];
+
+    SetImageLayout * dst_optimal_command = bucket.AddCommand<SetImageLayout>(0, 0);
+    dst_optimal_command->commandbuffer   = commands.transfer_commandbuffers[frames.currentResource];
+    dst_optimal_command->srcAccessMask   = 0;
+    dst_optimal_command->dstAccessMask   = VK_ACCESS_TRANSFER_WRITE_BIT;
+    dst_optimal_command->oldLayout       = VK_IMAGE_LAYOUT_UNDEFINED;
+    dst_optimal_command->newLayout       = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+    dst_optimal_command->image           = texture.image_handle();
+    dst_optimal_command->mipLevels       = 1;
+    dst_optimal_command->aspectMask      = VK_IMAGE_ASPECT_COLOR_BIT;
+    dst_optimal_command->sourceStage     = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
+    dst_optimal_command->destinationStage = VK_PIPELINE_STAGE_TRANSFER_BIT;
+
+    CopyToImage * copy_command  = bucket.AddCommand<CopyToImage>(0, 0);
+    copy_command->commandbuffer = commands.transfer_commandbuffers[frames.currentResource];
+    copy_command->srcBuffer     = vertices.staging_buffer[frames.currentResource].buffer_handle();
+    copy_command->srcOffset     = pixel_data_offset;
+    copy_command->dstImage      = texture.image_handle();
+    copy_command->width         = static_cast<uint32_t>(texWidth);
+    copy_command->height        = static_cast<uint32_t>(texHeight);
+
+    SetImageLayout * shader_optimal_command = bucket.AddCommand<SetImageLayout>(0, 0);
+    shader_optimal_command->commandbuffer
+        = commands.transfer_commandbuffers[frames.currentResource];
+    shader_optimal_command->srcAccessMask    = VK_ACCESS_TRANSFER_WRITE_BIT;
+    shader_optimal_command->dstAccessMask    = VK_ACCESS_SHADER_READ_BIT;
+    shader_optimal_command->oldLayout        = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+    shader_optimal_command->newLayout        = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    shader_optimal_command->image            = texture.image_handle();
+    shader_optimal_command->mipLevels        = 1;
+    shader_optimal_command->aspectMask       = VK_IMAGE_ASPECT_COLOR_BIT;
+    shader_optimal_command->sourceStage      = VK_PIPELINE_STAGE_TRANSFER_BIT;
+    shader_optimal_command->destinationStage = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
+
+    return texture;
+}
+
+void Renderer::destroyTexture(Sampler & texture)
+{
+    texture.destroy(render_device.logical_device);
+}
+
+VkResult Renderer::createCommandbuffer(uint32_t        image_index,
+                                       uint32_t        uniform_count,
+                                       UniformHandle * p_uniforms)
+{
+    auto & mapped_vertices = vertices.dynamic_mapped_vertices[frames.currentResource];
+    auto & mapped_indices  = vertices.dynamic_mapped_indices[frames.currentResource];
+
+    auto   commandbuffer = commands.draw_commandbuffers[frames.currentResource];
+    auto & draw_bucket   = commands.draw_buckets[frames.currentResource];
+
+    auto beginInfo = VkCommandBufferBeginInfo{.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
+                                              .flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,
+                                              .pInheritanceInfo = nullptr};
+
+    auto result = vkBeginCommandBuffer(commands.draw_commandbuffers[frames.currentResource],
+                                       &beginInfo);
+    if (result != VK_SUCCESS)
+    {
+        return result;
+    }
+
+    // memory barrier for copy commands
+    auto barrier = VkMemoryBarrier{.sType         = VK_STRUCTURE_TYPE_MEMORY_BARRIER,
+                                   .srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT,
+                                   .dstAccessMask = VK_ACCESS_VERTEX_ATTRIBUTE_READ_BIT};
+
+    vkCmdPipelineBarrier(commandbuffer,
+                         VK_PIPELINE_STAGE_TRANSFER_BIT,
+                         VK_PIPELINE_STAGE_VERTEX_INPUT_BIT,
+                         0,
+                         1,
+                         &barrier,
+                         0,
+                         nullptr,
+                         0,
+                         nullptr);
+
+    auto clearValues = std::array<VkClearValue, 2>{VkClearValue{.color = {0.0f, 0.0f, 0.0f, 1.0f}},
+                                                   VkClearValue{.depthStencil = {1.0f, 0}}};
+
+    auto renderPassInfo = VkRenderPassBeginInfo{
+        .sType      = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
+        .renderPass = render_passes.render_passes[0],
+        .framebuffer
+        = render_passes
+              .framebuffers[0][image_index], // framebuffers[resource_index][0].vk_framebuffer,
+        .renderArea.offset = {0, 0},
+        .renderArea.extent = render_device.swapchain_extent,
+        .clearValueCount   = static_cast<uint32_t>(clearValues.size()),
+        .pClearValues      = clearValues.data()};
+
+    vkCmdBeginRenderPass(commandbuffer, &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
+
+    vkCmdBindPipeline(
+        commandbuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelines.pipelines[0].vk_pipeline);
+
+    std::vector<VkDescriptorSet> descriptorsets;
+    std::vector<uint32_t>        dynamic_offsets;
+
+    for (size_t i = 0; i < uniform_count; ++i)
+    {
+        auto uniform_handle = p_uniforms[i];
+        auto opt_uniform    = getUniform(uniform_handle);
+
+        if (opt_uniform.has_value())
+        {
+            descriptorsets.push_back(opt_uniform.value());
+        }
+        else
+        {
+            std::cout << "No descriptorset\n";
+            continue;
+        }
+
+        auto opt_offset = getDynamicOffset(uniform_handle);
+
+        if (opt_offset.has_value())
+        {
+            dynamic_offsets.push_back(opt_offset.value());
+        }
+    }
+
+    vkCmdBindDescriptorSets(commandbuffer,
+                            VK_PIPELINE_BIND_POINT_GRAPHICS,
+                            pipelines.pipelines[0].vk_pipeline_layout,
+                            0,
+                            static_cast<uint32_t>(descriptorsets.size()),
+                            descriptorsets.data(),
+                            static_cast<uint32_t>(dynamic_offsets.size()),
+                            dynamic_offsets.data());
+
+    draw_bucket.Submit();
+
+    vkCmdEndRenderPass(commandbuffer);
+
+    result = vkEndCommandBuffer(commandbuffer);
+    if (result != VK_SUCCESS)
+    {
+        return result;
+    }
+
+    return VK_SUCCESS;
+}
+
+void Renderer::copyBuffer(VkBuffer     srcBuffer,
+                          VkDeviceSize srcOffset,
+                          VkBuffer     dstBuffer,
+                          VkDeviceSize dstOffset,
+                          VkDeviceSize size)
+{
+    auto & bucket = commands.transfer_buckets[frames.currentResource];
+
+    Copy * vertex_command         = bucket.AddCommand<Copy>(0, 0);
+    vertex_command->commandbuffer = commands.transfer_commandbuffers[frames.currentResource];
+    vertex_command->srcBuffer     = srcBuffer;
+    vertex_command->dstBuffer     = dstBuffer;
+    vertex_command->srcOffset     = srcOffset;
+    vertex_command->dstOffset     = dstOffset;
+    vertex_command->size          = size;
+};
 
 }; // namespace gfx
 
