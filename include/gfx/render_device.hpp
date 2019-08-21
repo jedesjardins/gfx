@@ -844,84 +844,12 @@ public:
     std::vector<AttachmentConfig> attachment_configs;
     std::vector<Image>            images;
 
-    bool init(RenderConfig & render_config, Device & device)
-    {
-        attachment_configs = std::move(render_config.attachment_configs);
-        images.resize(attachment_configs.size());
-
-        return createAttachments(device) == VK_SUCCESS;
-    }
-
-    void quit(Device & device)
-    {
-        for (auto & image: images)
-        {
-            image.destroy(device.logical_device);
-        }
-    }
+    bool init(RenderConfig & render_config, Device & device);
+    void quit(Device & device);
 
 private:
-    VkResult createAttachments(Device & device)
-    {
-        for (size_t i = 0; i < attachment_configs.size(); ++i)
-        {
-            Image & image = images[i];
+    VkResult createAttachments(Device & device);
 
-            auto const & attachment_config = attachment_configs[i];
-
-            if (attachment_config.is_swapchain_image)
-            {
-                continue;
-            }
-
-            VkFormat           format;
-            VkImageUsageFlags  usage;
-            VkImageAspectFlags aspect;
-            VkImageLayout      final_layout;
-
-            if (attachment_config.format == Format::USE_COLOR)
-            {
-                format       = device.swapchain_image_format;
-                usage        = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
-                aspect       = VK_IMAGE_ASPECT_COLOR_BIT;
-                final_layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-            }
-            else if (attachment_config.format == Format::USE_DEPTH)
-            {
-                format       = device.depth_format;
-                usage        = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
-                aspect       = VK_IMAGE_ASPECT_DEPTH_BIT;
-                final_layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
-            }
-
-            VkSampleCountFlagBits samples;
-
-            if (attachment_config.multisampled)
-            {
-                samples = device.physical_device_info.msaa_samples;
-            }
-            else
-            {
-                samples = VK_SAMPLE_COUNT_1_BIT;
-            }
-
-            auto result = image.create(device.physical_device,
-                                       device.logical_device,
-                                       device.swapchain_extent.width,
-                                       device.swapchain_extent.height,
-                                       1,
-                                       samples,
-                                       format,
-                                       VK_IMAGE_TILING_OPTIMAL,
-                                       VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT | usage,
-                                       VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-                                       aspect);
-
-            assert(result == VK_SUCCESS);
-        }
-
-        return VK_SUCCESS;
-    }
 }; // struct ImageResources
 
 struct RenderPassResources
@@ -4241,6 +4169,84 @@ void FrameResources::quit(VkDevice device)
         vkDestroySemaphore(device, image_available_semaphores[i], nullptr);
         vkDestroyFence(device, in_flight_fences[i], nullptr);
     }
+}
+
+bool ImageResources::init(RenderConfig & render_config, Device & device)
+{
+    attachment_configs = std::move(render_config.attachment_configs);
+    images.resize(attachment_configs.size());
+
+    return createAttachments(device) == VK_SUCCESS;
+}
+
+void ImageResources::quit(Device & device)
+{
+    for (auto & image: images)
+    {
+        image.destroy(device.logical_device);
+    }
+}
+
+VkResult ImageResources::createAttachments(Device & device)
+{
+    for (size_t i = 0; i < attachment_configs.size(); ++i)
+    {
+        Image & image = images[i];
+
+        auto const & attachment_config = attachment_configs[i];
+
+        if (attachment_config.is_swapchain_image)
+        {
+            continue;
+        }
+
+        VkFormat           format;
+        VkImageUsageFlags  usage;
+        VkImageAspectFlags aspect;
+        VkImageLayout      final_layout;
+
+        if (attachment_config.format == Format::USE_COLOR)
+        {
+            format       = device.swapchain_image_format;
+            usage        = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+            aspect       = VK_IMAGE_ASPECT_COLOR_BIT;
+            final_layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+        }
+        else if (attachment_config.format == Format::USE_DEPTH)
+        {
+            format       = device.depth_format;
+            usage        = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
+            aspect       = VK_IMAGE_ASPECT_DEPTH_BIT;
+            final_layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+        }
+
+        VkSampleCountFlagBits samples;
+
+        if (attachment_config.multisampled)
+        {
+            samples = device.physical_device_info.msaa_samples;
+        }
+        else
+        {
+            samples = VK_SAMPLE_COUNT_1_BIT;
+        }
+
+        auto result = image.create(device.physical_device,
+                                   device.logical_device,
+                                   device.swapchain_extent.width,
+                                   device.swapchain_extent.height,
+                                   1,
+                                   samples,
+                                   format,
+                                   VK_IMAGE_TILING_OPTIMAL,
+                                   VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT | usage,
+                                   VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+                                   aspect);
+
+        assert(result == VK_SUCCESS);
+    }
+
+    return VK_SUCCESS;
 }
 
 }; // namespace module
