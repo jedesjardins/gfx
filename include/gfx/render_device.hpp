@@ -357,7 +357,7 @@ public:
         static_cast<Memory &>(*this).destroy(logical_device);
     }
 
-    VkBuffer handle()
+    VkBuffer buffer_handle()
     {
         return vk_buffer;
     }
@@ -1858,7 +1858,7 @@ private:
                     auto & uniform_buffer = uniform_buffers[ds_i];
 
                     auto bufferInfo = VkDescriptorBufferInfo{
-                        .buffer = uniform_buffer.handle(),
+                        .buffer = uniform_buffer.buffer_handle(),
                         .offset = 0,
                         .range  = device.physical_device_info.properties.limits
                                      .minUniformBufferOffsetAlignment};
@@ -2720,9 +2720,9 @@ public:
 
         draw(pipeline,
              transform,
-             mapped_vertices.handle(),
+             mapped_vertices.buffer_handle(),
              vertex_offset,
-             mapped_indices.handle(),
+             mapped_indices.buffer_handle(),
              index_offset,
              index_count);
     }
@@ -2768,7 +2768,7 @@ public:
             vertexbuffer,
             vertexbuffer_memory);
 
-        copyBuffer(mapped_vertices.handle(), staging_vertex_offset, vertexbuffer, 0, bufferSize);
+        copyBuffer(mapped_vertices.buffer_handle(), staging_vertex_offset, vertexbuffer, 0, bufferSize);
 
         return true;
     }
@@ -2793,7 +2793,7 @@ public:
             indexbuffer,
             indexbuffer_memory);
 
-        copyBuffer(mapped_indices.handle(), staging_index_offset, indexbuffer, 0, bufferSize);
+        copyBuffer(mapped_indices.buffer_handle(), staging_index_offset, indexbuffer, 0, bufferSize);
 
         return true;
     }
@@ -2819,7 +2819,7 @@ public:
 
         Copy * vertex_command         = bucket.AddCommand<Copy>(0, 0);
         vertex_command->commandbuffer = commands.transfer_commandbuffers[frames.currentResource];
-        vertex_command->srcBuffer     = mapped_vertices.handle();
+        vertex_command->srcBuffer     = mapped_vertices.buffer_handle();
         vertex_command->dstBuffer     = vertexbuffer;
         vertex_command->srcOffset     = vertex_offset;
         vertex_command->dstOffset     = 0;
@@ -2827,7 +2827,7 @@ public:
 
         Copy * index_command         = bucket.AddCommand<Copy>(0, 0);
         index_command->commandbuffer = commands.transfer_commandbuffers[frames.currentResource];
-        index_command->srcBuffer     = mapped_indices.handle();
+        index_command->srcBuffer     = mapped_indices.buffer_handle();
         index_command->dstBuffer     = indexbuffer;
         index_command->srcOffset     = index_offset;
         index_command->dstOffset     = 0;
@@ -2903,7 +2903,7 @@ public:
 
         CopyToImage * copy_command  = bucket.AddCommand<CopyToImage>(0, 0);
         copy_command->commandbuffer = commands.transfer_commandbuffers[frames.currentResource];
-        copy_command->srcBuffer     = vertices.staging_buffer[frames.currentResource].handle();
+        copy_command->srcBuffer     = vertices.staging_buffer[frames.currentResource].buffer_handle();
         copy_command->srcOffset     = pixel_data_offset;
         copy_command->dstImage      = texture.image_handle();
         copy_command->width         = static_cast<uint32_t>(texWidth);
