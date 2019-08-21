@@ -834,43 +834,8 @@ struct FrameResources
     size_t        currentFrame{0};
     uint32_t      currentResource{0};
 
-    bool init(RenderConfig & render_config, VkDevice device)
-    {
-        image_available_semaphores.resize(MAX_FRAMES_IN_FLIGHT);
-        render_finished_semaphores.resize(MAX_FRAMES_IN_FLIGHT);
-        in_flight_fences.resize(MAX_FRAMES_IN_FLIGHT);
-
-        auto semaphoreInfo = VkSemaphoreCreateInfo{
-            .sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO};
-
-        auto fenceInfo = VkFenceCreateInfo{.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO,
-                                           .flags = VK_FENCE_CREATE_SIGNALED_BIT};
-
-        for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++)
-        {
-            if (vkCreateSemaphore(device, &semaphoreInfo, nullptr, &image_available_semaphores[i])
-                    != VK_SUCCESS
-                || vkCreateSemaphore(
-                       device, &semaphoreInfo, nullptr, &render_finished_semaphores[i])
-                       != VK_SUCCESS
-                || vkCreateFence(device, &fenceInfo, nullptr, &in_flight_fences[i]) != VK_SUCCESS)
-            {
-                return false;
-            }
-        }
-
-        return true;
-    }
-
-    void quit(VkDevice device)
-    {
-        for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++)
-        {
-            vkDestroySemaphore(device, render_finished_semaphores[i], nullptr);
-            vkDestroySemaphore(device, image_available_semaphores[i], nullptr);
-            vkDestroyFence(device, in_flight_fences[i], nullptr);
-        }
-    }
+    bool init(RenderConfig & render_config, VkDevice device);
+    void quit(VkDevice device);
 }; // struct FrameResources
 
 struct ImageResources
@@ -4240,6 +4205,42 @@ VkFormat Device::findSupportedFormat(const std::vector<VkFormat> & candidates,
     }
 
     throw std::runtime_error("failed to find supported format!");
+}
+
+bool FrameResources::init(RenderConfig & render_config, VkDevice device)
+{
+    image_available_semaphores.resize(MAX_FRAMES_IN_FLIGHT);
+    render_finished_semaphores.resize(MAX_FRAMES_IN_FLIGHT);
+    in_flight_fences.resize(MAX_FRAMES_IN_FLIGHT);
+
+    auto semaphoreInfo = VkSemaphoreCreateInfo{.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO};
+
+    auto fenceInfo = VkFenceCreateInfo{.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO,
+                                       .flags = VK_FENCE_CREATE_SIGNALED_BIT};
+
+    for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++)
+    {
+        if (vkCreateSemaphore(device, &semaphoreInfo, nullptr, &image_available_semaphores[i])
+                != VK_SUCCESS
+            || vkCreateSemaphore(device, &semaphoreInfo, nullptr, &render_finished_semaphores[i])
+                   != VK_SUCCESS
+            || vkCreateFence(device, &fenceInfo, nullptr, &in_flight_fences[i]) != VK_SUCCESS)
+        {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+void FrameResources::quit(VkDevice device)
+{
+    for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++)
+    {
+        vkDestroySemaphore(device, render_finished_semaphores[i], nullptr);
+        vkDestroySemaphore(device, image_available_semaphores[i], nullptr);
+        vkDestroyFence(device, in_flight_fences[i], nullptr);
+    }
 }
 
 }; // namespace module
