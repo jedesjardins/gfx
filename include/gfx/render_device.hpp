@@ -849,7 +849,6 @@ public:
 
 private:
     VkResult createAttachments(Device & device);
-
 }; // struct ImageResources
 
 struct RenderPassResources
@@ -859,156 +858,18 @@ public:
     std::vector<VkRenderPass>               render_passes;
     std::vector<std::vector<VkFramebuffer>> framebuffers;
 
-    bool init(RenderConfig & render_config, Device & device, ImageResources & image_resources)
-    {
-        render_pass_configs = std::move(render_config.renderpass_configs);
-        render_passes.resize(render_pass_configs.size());
-        framebuffers.resize(render_pass_configs.size());
-
-        return createRenderPasses(device, image_resources) == VK_SUCCESS;
-    }
-
-    void quit(Device & device)
-    {
-        for (auto & buffered_framebuffers: framebuffers)
-        {
-            for (auto & framebuffer: buffered_framebuffers)
-            {
-                vkDestroyFramebuffer(device.logical_device, framebuffer, nullptr);
-            }
-        }
-
-        for (auto & render_pass: render_passes)
-        {
-            vkDestroyRenderPass(device.logical_device, render_pass, nullptr);
-        }
-    }
+    bool init(RenderConfig & render_config, Device & device, ImageResources & image_resources);
+    void quit(Device & device);
 
 private:
-    VkResult createRenderPasses(Device & device, ImageResources & image_resources)
-    {
-        for (size_t rp_i = 0; rp_i < render_passes.size(); ++rp_i)
-        {
-            auto & render_pass_config = render_pass_configs[rp_i];
-            auto & render_pass        = render_passes[rp_i];
-
-            for (size_t ad_i = 0; ad_i < render_pass_config.descriptions.size(); ++ad_i)
-            {
-                auto & description       = render_pass_config.descriptions[ad_i];
-                auto   attachment_handle = render_pass_config.framebuffer_config.attachments[ad_i];
-                auto const & attachment_config
-                    = image_resources.attachment_configs[attachment_handle];
-
-                if (attachment_config.format == Format::USE_COLOR)
-                {
-                    description.format = device.swapchain_image_format;
-                }
-                else if (attachment_config.format == Format::USE_DEPTH)
-                {
-                    description.format = device.depth_format;
-                }
-
-                if (attachment_config.multisampled)
-                {
-                    description.samples = device.physical_device_info.msaa_samples;
-                }
-                else
-                {
-                    description.samples = VK_SAMPLE_COUNT_1_BIT;
-                }
-            }
-
-            std::vector<VkSubpassDescription> subpasses;
-            subpasses.reserve(render_pass_config.subpasses.size());
-
-            for (auto & subpass_info: render_pass_config.subpasses)
-            {
-                subpasses.push_back(VkSubpassDescription{
-                    .pipelineBindPoint    = VK_PIPELINE_BIND_POINT_GRAPHICS,
-                    .colorAttachmentCount = static_cast<uint32_t>(
-                        subpass_info.color_attachments.size()),
-                    .pColorAttachments       = subpass_info.color_attachments.data(),
-                    .pDepthStencilAttachment = &subpass_info.depth_stencil_attachment,
-                    .pResolveAttachments     = &subpass_info.color_resolve_attachment});
-            }
-
-            auto renderPassInfo = VkRenderPassCreateInfo{
-                .sType           = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO,
-                .attachmentCount = static_cast<uint32_t>(render_pass_config.descriptions.size()),
-                .pAttachments    = render_pass_config.descriptions.data(),
-
-                .subpassCount = static_cast<uint32_t>(subpasses.size()),
-                .pSubpasses   = subpasses.data(),
-
-                .dependencyCount = static_cast<uint32_t>(
-                    render_pass_config.subpass_dependencies.size()),
-                .pDependencies = render_pass_config.subpass_dependencies.data()};
-
-            auto result = vkCreateRenderPass(
-                device.logical_device, &renderPassInfo, nullptr, &render_pass);
-            if (result != VK_SUCCESS)
-            {
-                return result;
-            }
-
-            createFramebuffer(
-                device, image_resources, render_pass_config, render_pass, framebuffers[rp_i]);
-        }
-
-        return VK_SUCCESS;
-    }
+    VkResult createRenderPasses(Device & device, ImageResources & image_resources);
 
     // FRAMEBUFFER
     VkResult createFramebuffer(Device &                     device,
                                ImageResources &             image_resources,
                                RenderpassConfig const &     config,
                                VkRenderPass const &         render_pass,
-                               std::vector<VkFramebuffer> & framebuffers)
-    {
-        auto const & framebuffer_config = config.framebuffer_config;
-        framebuffers.resize(device.swapchain_image_count);
-
-        for (size_t i = 0; i < device.swapchain_image_count; ++i)
-        {
-            auto & framebuffer = framebuffers[i];
-
-            auto fb_attachments = std::vector<VkImageView>{};
-
-            for (auto attachment_handle: framebuffer_config.attachments)
-            {
-                auto const & attachment_config
-                    = image_resources.attachment_configs[attachment_handle];
-
-                if (attachment_config.is_swapchain_image)
-                {
-                    fb_attachments.push_back(device.swapchain_image_views[i]);
-                }
-                else
-                {
-                    fb_attachments.push_back(
-                        image_resources.images[attachment_handle].view_handle());
-                }
-            }
-
-            auto framebufferInfo = VkFramebufferCreateInfo{
-                .sType           = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO,
-                .renderPass      = render_pass,
-                .attachmentCount = static_cast<uint32_t>(fb_attachments.size()),
-                .pAttachments    = fb_attachments.data(),
-                .width           = device.swapchain_extent.width,
-                .height          = device.swapchain_extent.height,
-                .layers          = 1};
-
-            auto result = vkCreateFramebuffer(
-                device.logical_device, &framebufferInfo, nullptr, &framebuffer);
-            if (result != VK_SUCCESS)
-            {
-                return result;
-            }
-        }
-
-        return VK_SUCCESS;
-    }
+                               std::vector<VkFramebuffer> & framebuffers);
 }; // struct RenderPassResources
 
 /*
@@ -1022,180 +883,11 @@ public:
     std::vector<VkDescriptorPool>             pools;
     std::vector<UniformVariant>               uniform_collections;
 
-    bool init(RenderConfig & render_config, Device & device)
-    {
-        uniform_layout_infos = std::move(render_config.uniform_layout_infos);
-        uniform_layouts.resize(uniform_layout_infos.size());
-        pools.resize(uniform_layout_infos.size());
-        uniform_collections.resize(uniform_layout_infos.size());
-
-        return createUniformLayouts(device) == VK_SUCCESS;
-    }
-
-    void quit(Device & device)
-    {
-        for (auto & uniform_layout: uniform_layouts)
-        {
-            vkDestroyDescriptorSetLayout(device.logical_device, uniform_layout, nullptr);
-        }
-
-        for (auto & pool: pools)
-        {
-            vkDestroyDescriptorPool(device.logical_device, pool, nullptr);
-        }
-
-        for (auto & collection: uniform_collections)
-        {
-            std::visit([&](auto && collection) { collection.destroy(device.logical_device); },
-                       collection);
-        }
-    }
+    bool init(RenderConfig & render_config, Device & device);
+    void quit(Device & device);
 
 private:
-    VkResult createUniformLayouts(Device & device)
-    {
-        for (size_t ul_i = 0; ul_i < uniform_layout_infos.size(); ++ul_i)
-        {
-            auto const & uniform_layout_info = uniform_layout_infos[ul_i];
-            auto &       uniform_layout      = uniform_layouts[ul_i];
-            auto &       pool                = pools[ul_i];
-            auto &       uniform_collection  = uniform_collections[ul_i];
-
-            auto layoutInfo = VkDescriptorSetLayoutCreateInfo{
-                .sType        = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
-                .bindingCount = 1,
-                .pBindings    = &uniform_layout_info};
-
-            auto result = vkCreateDescriptorSetLayout(
-                device.logical_device, &layoutInfo, nullptr, &uniform_layout);
-            if (result != VK_SUCCESS)
-            {
-                return result;
-            }
-
-            auto poolsize = VkDescriptorPoolSize{.type = uniform_layout_info.descriptorType,
-                                                 .descriptorCount = 1};
-
-            auto poolInfo = VkDescriptorPoolCreateInfo{
-                .sType         = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
-                .poolSizeCount = 1,
-                .pPoolSizes    = &poolsize,
-                .maxSets       = 1};
-
-            result = vkCreateDescriptorPool(device.logical_device, &poolInfo, nullptr, &pool);
-            if (result != VK_SUCCESS)
-            {
-                return result;
-            }
-
-            if (uniform_layout_info.descriptorType == VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC
-                || uniform_layout_info.descriptorType == VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC)
-            {
-                const size_t descriptor_count      = 1;
-                const size_t uniform_buffer_blocks = 8;
-                const size_t uniform_block_size    = 256;
-
-                std::vector<MappedBuffer> uniform_buffers{descriptor_count};
-
-                VkDeviceSize memory_size = uniform_buffer_blocks * uniform_block_size;
-
-                for (auto & uniform_buffer: uniform_buffers)
-                {
-                    uniform_buffer.create(
-                        device.physical_device,
-                        device.logical_device,
-                        memory_size,
-                        VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
-                        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
-                }
-
-                // ALLOCATE DESCRIPTORSETS GUY
-
-                std::vector<VkDescriptorSet> descriptor_sets;
-
-                descriptor_sets.resize(descriptor_count);
-
-                std::vector<VkDescriptorSetLayout> layouts{descriptor_sets.size(), uniform_layout};
-
-                auto allocInfo = VkDescriptorSetAllocateInfo{
-                    .sType              = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
-                    .descriptorPool     = pool,
-                    .descriptorSetCount = static_cast<uint32_t>(descriptor_sets.size()),
-                    .pSetLayouts        = layouts.data()};
-
-                result = vkAllocateDescriptorSets(
-                    device.logical_device, &allocInfo, descriptor_sets.data());
-                if (result != VK_SUCCESS)
-                {
-                    return result;
-                }
-
-                for (size_t ds_i = 0; ds_i < descriptor_sets.size(); ++ds_i)
-                {
-                    auto & uniform_buffer = uniform_buffers[ds_i];
-
-                    auto bufferInfo = VkDescriptorBufferInfo{
-                        .buffer = uniform_buffer.buffer_handle(),
-                        .offset = 0,
-                        .range  = device.physical_device_info.properties.limits
-                                     .minUniformBufferOffsetAlignment};
-
-                    auto descriptorWrite = VkWriteDescriptorSet{
-                        .sType            = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-                        .dstSet           = descriptor_sets[ds_i],
-                        .dstBinding       = 0,
-                        .dstArrayElement  = 0,
-                        .descriptorType   = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC,
-                        .descriptorCount  = 1,
-                        .pBufferInfo      = &bufferInfo,
-                        .pImageInfo       = nullptr,
-                        .pTexelBufferView = nullptr};
-
-                    vkUpdateDescriptorSets(device.logical_device, 1, &descriptorWrite, 0, nullptr);
-                }
-
-                uniform_collection = DynamicBufferCollection{
-                    .descriptor_sets           = std::move(descriptor_sets),
-                    .uniform_buffers           = std::move(uniform_buffers),
-                    .uniforms                  = std::vector<DynamicBufferUniform>{descriptor_count
-                                                                  * uniform_buffer_blocks},
-                    .free_uniform_buffer_slots = IndexAllocator(),
-                    .free_uniform_slots        = IndexAllocator()};
-
-                std::get<DynamicBufferCollection>(uniform_collection)
-                    .free_uniform_buffer_slots.init(descriptor_count * uniform_buffer_blocks);
-
-                std::get<DynamicBufferCollection>(uniform_collection)
-                    .free_uniform_slots.init(descriptor_count * uniform_buffer_blocks);
-            }
-            else if (uniform_layout_info.descriptorType
-                     == VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER)
-            {
-                std::vector<VkDescriptorSet> descriptor_sets;
-
-                descriptor_sets.resize(1);
-
-                std::vector<VkDescriptorSetLayout> layouts{descriptor_sets.size(), uniform_layout};
-
-                auto allocInfo = VkDescriptorSetAllocateInfo{
-                    .sType              = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
-                    .descriptorPool     = pool,
-                    .descriptorSetCount = static_cast<uint32_t>(descriptor_sets.size()),
-                    .pSetLayouts        = layouts.data()};
-
-                result = vkAllocateDescriptorSets(
-                    device.logical_device, &allocInfo, descriptor_sets.data());
-                if (result != VK_SUCCESS)
-                {
-                    return result;
-                }
-
-                uniform_collection = SamplerCollection{.descriptor_sets = descriptor_sets};
-            }
-        }
-
-        return VK_SUCCESS;
-    }
+    VkResult createUniformLayouts(Device & device);
 }; // struct UniformResources
 
 struct PipelineResources
@@ -4244,6 +3936,328 @@ VkResult ImageResources::createAttachments(Device & device)
                                    aspect);
 
         assert(result == VK_SUCCESS);
+    }
+
+    return VK_SUCCESS;
+}
+
+bool RenderPassResources::init(RenderConfig &   render_config,
+                               Device &         device,
+                               ImageResources & image_resources)
+{
+    render_pass_configs = std::move(render_config.renderpass_configs);
+    render_passes.resize(render_pass_configs.size());
+    framebuffers.resize(render_pass_configs.size());
+
+    return createRenderPasses(device, image_resources) == VK_SUCCESS;
+}
+
+void RenderPassResources::quit(Device & device)
+{
+    for (auto & buffered_framebuffers: framebuffers)
+    {
+        for (auto & framebuffer: buffered_framebuffers)
+        {
+            vkDestroyFramebuffer(device.logical_device, framebuffer, nullptr);
+        }
+    }
+
+    for (auto & render_pass: render_passes)
+    {
+        vkDestroyRenderPass(device.logical_device, render_pass, nullptr);
+    }
+}
+
+VkResult RenderPassResources::createRenderPasses(Device & device, ImageResources & image_resources)
+{
+    for (size_t rp_i = 0; rp_i < render_passes.size(); ++rp_i)
+    {
+        auto & render_pass_config = render_pass_configs[rp_i];
+        auto & render_pass        = render_passes[rp_i];
+
+        for (size_t ad_i = 0; ad_i < render_pass_config.descriptions.size(); ++ad_i)
+        {
+            auto & description       = render_pass_config.descriptions[ad_i];
+            auto   attachment_handle = render_pass_config.framebuffer_config.attachments[ad_i];
+            auto const & attachment_config = image_resources.attachment_configs[attachment_handle];
+
+            if (attachment_config.format == Format::USE_COLOR)
+            {
+                description.format = device.swapchain_image_format;
+            }
+            else if (attachment_config.format == Format::USE_DEPTH)
+            {
+                description.format = device.depth_format;
+            }
+
+            if (attachment_config.multisampled)
+            {
+                description.samples = device.physical_device_info.msaa_samples;
+            }
+            else
+            {
+                description.samples = VK_SAMPLE_COUNT_1_BIT;
+            }
+        }
+
+        std::vector<VkSubpassDescription> subpasses;
+        subpasses.reserve(render_pass_config.subpasses.size());
+
+        for (auto & subpass_info: render_pass_config.subpasses)
+        {
+            subpasses.push_back(VkSubpassDescription{
+                .pipelineBindPoint    = VK_PIPELINE_BIND_POINT_GRAPHICS,
+                .colorAttachmentCount = static_cast<uint32_t>(
+                    subpass_info.color_attachments.size()),
+                .pColorAttachments       = subpass_info.color_attachments.data(),
+                .pDepthStencilAttachment = &subpass_info.depth_stencil_attachment,
+                .pResolveAttachments     = &subpass_info.color_resolve_attachment});
+        }
+
+        auto renderPassInfo = VkRenderPassCreateInfo{
+            .sType           = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO,
+            .attachmentCount = static_cast<uint32_t>(render_pass_config.descriptions.size()),
+            .pAttachments    = render_pass_config.descriptions.data(),
+
+            .subpassCount = static_cast<uint32_t>(subpasses.size()),
+            .pSubpasses   = subpasses.data(),
+
+            .dependencyCount = static_cast<uint32_t>(
+                render_pass_config.subpass_dependencies.size()),
+            .pDependencies = render_pass_config.subpass_dependencies.data()};
+
+        auto result = vkCreateRenderPass(
+            device.logical_device, &renderPassInfo, nullptr, &render_pass);
+        if (result != VK_SUCCESS)
+        {
+            return result;
+        }
+
+        createFramebuffer(
+            device, image_resources, render_pass_config, render_pass, framebuffers[rp_i]);
+    }
+
+    return VK_SUCCESS;
+}
+
+// FRAMEBUFFER
+VkResult RenderPassResources::createFramebuffer(Device &                     device,
+                                                ImageResources &             image_resources,
+                                                RenderpassConfig const &     config,
+                                                VkRenderPass const &         render_pass,
+                                                std::vector<VkFramebuffer> & framebuffers)
+{
+    auto const & framebuffer_config = config.framebuffer_config;
+    framebuffers.resize(device.swapchain_image_count);
+
+    for (size_t i = 0; i < device.swapchain_image_count; ++i)
+    {
+        auto & framebuffer = framebuffers[i];
+
+        auto fb_attachments = std::vector<VkImageView>{};
+
+        for (auto attachment_handle: framebuffer_config.attachments)
+        {
+            auto const & attachment_config = image_resources.attachment_configs[attachment_handle];
+
+            if (attachment_config.is_swapchain_image)
+            {
+                fb_attachments.push_back(device.swapchain_image_views[i]);
+            }
+            else
+            {
+                fb_attachments.push_back(image_resources.images[attachment_handle].view_handle());
+            }
+        }
+
+        auto framebufferInfo = VkFramebufferCreateInfo{
+            .sType           = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO,
+            .renderPass      = render_pass,
+            .attachmentCount = static_cast<uint32_t>(fb_attachments.size()),
+            .pAttachments    = fb_attachments.data(),
+            .width           = device.swapchain_extent.width,
+            .height          = device.swapchain_extent.height,
+            .layers          = 1};
+
+        auto result = vkCreateFramebuffer(
+            device.logical_device, &framebufferInfo, nullptr, &framebuffer);
+        if (result != VK_SUCCESS)
+        {
+            return result;
+        }
+    }
+
+    return VK_SUCCESS;
+}
+
+bool UniformResources::init(RenderConfig & render_config, Device & device)
+{
+    uniform_layout_infos = std::move(render_config.uniform_layout_infos);
+    uniform_layouts.resize(uniform_layout_infos.size());
+    pools.resize(uniform_layout_infos.size());
+    uniform_collections.resize(uniform_layout_infos.size());
+
+    return createUniformLayouts(device) == VK_SUCCESS;
+}
+
+void UniformResources::quit(Device & device)
+{
+    for (auto & uniform_layout: uniform_layouts)
+    {
+        vkDestroyDescriptorSetLayout(device.logical_device, uniform_layout, nullptr);
+    }
+
+    for (auto & pool: pools)
+    {
+        vkDestroyDescriptorPool(device.logical_device, pool, nullptr);
+    }
+
+    for (auto & collection: uniform_collections)
+    {
+        std::visit([&](auto && collection) { collection.destroy(device.logical_device); },
+                   collection);
+    }
+}
+
+VkResult UniformResources::createUniformLayouts(Device & device)
+{
+    for (size_t ul_i = 0; ul_i < uniform_layout_infos.size(); ++ul_i)
+    {
+        auto const & uniform_layout_info = uniform_layout_infos[ul_i];
+        auto &       uniform_layout      = uniform_layouts[ul_i];
+        auto &       pool                = pools[ul_i];
+        auto &       uniform_collection  = uniform_collections[ul_i];
+
+        auto layoutInfo = VkDescriptorSetLayoutCreateInfo{
+            .sType        = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
+            .bindingCount = 1,
+            .pBindings    = &uniform_layout_info};
+
+        auto result = vkCreateDescriptorSetLayout(
+            device.logical_device, &layoutInfo, nullptr, &uniform_layout);
+        if (result != VK_SUCCESS)
+        {
+            return result;
+        }
+
+        auto poolsize = VkDescriptorPoolSize{.type            = uniform_layout_info.descriptorType,
+                                             .descriptorCount = 1};
+
+        auto poolInfo = VkDescriptorPoolCreateInfo{
+            .sType         = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
+            .poolSizeCount = 1,
+            .pPoolSizes    = &poolsize,
+            .maxSets       = 1};
+
+        result = vkCreateDescriptorPool(device.logical_device, &poolInfo, nullptr, &pool);
+        if (result != VK_SUCCESS)
+        {
+            return result;
+        }
+
+        if (uniform_layout_info.descriptorType == VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC
+            || uniform_layout_info.descriptorType == VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC)
+        {
+            const size_t descriptor_count      = 1;
+            const size_t uniform_buffer_blocks = 8;
+            const size_t uniform_block_size    = 256;
+
+            std::vector<MappedBuffer> uniform_buffers{descriptor_count};
+
+            VkDeviceSize memory_size = uniform_buffer_blocks * uniform_block_size;
+
+            for (auto & uniform_buffer: uniform_buffers)
+            {
+                uniform_buffer.create(
+                    device.physical_device,
+                    device.logical_device,
+                    memory_size,
+                    VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+                    VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+            }
+
+            // ALLOCATE DESCRIPTORSETS GUY
+
+            std::vector<VkDescriptorSet> descriptor_sets;
+
+            descriptor_sets.resize(descriptor_count);
+
+            std::vector<VkDescriptorSetLayout> layouts{descriptor_sets.size(), uniform_layout};
+
+            auto allocInfo = VkDescriptorSetAllocateInfo{
+                .sType              = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
+                .descriptorPool     = pool,
+                .descriptorSetCount = static_cast<uint32_t>(descriptor_sets.size()),
+                .pSetLayouts        = layouts.data()};
+
+            result = vkAllocateDescriptorSets(
+                device.logical_device, &allocInfo, descriptor_sets.data());
+            if (result != VK_SUCCESS)
+            {
+                return result;
+            }
+
+            for (size_t ds_i = 0; ds_i < descriptor_sets.size(); ++ds_i)
+            {
+                auto & uniform_buffer = uniform_buffers[ds_i];
+
+                auto bufferInfo = VkDescriptorBufferInfo{
+                    .buffer = uniform_buffer.buffer_handle(),
+                    .offset = 0,
+                    .range  = device.physical_device_info.properties.limits
+                                 .minUniformBufferOffsetAlignment};
+
+                auto descriptorWrite = VkWriteDescriptorSet{
+                    .sType            = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+                    .dstSet           = descriptor_sets[ds_i],
+                    .dstBinding       = 0,
+                    .dstArrayElement  = 0,
+                    .descriptorType   = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC,
+                    .descriptorCount  = 1,
+                    .pBufferInfo      = &bufferInfo,
+                    .pImageInfo       = nullptr,
+                    .pTexelBufferView = nullptr};
+
+                vkUpdateDescriptorSets(device.logical_device, 1, &descriptorWrite, 0, nullptr);
+            }
+
+            uniform_collection = DynamicBufferCollection{
+                .descriptor_sets           = std::move(descriptor_sets),
+                .uniform_buffers           = std::move(uniform_buffers),
+                .uniforms                  = std::vector<DynamicBufferUniform>{descriptor_count
+                                                              * uniform_buffer_blocks},
+                .free_uniform_buffer_slots = IndexAllocator(),
+                .free_uniform_slots        = IndexAllocator()};
+
+            std::get<DynamicBufferCollection>(uniform_collection)
+                .free_uniform_buffer_slots.init(descriptor_count * uniform_buffer_blocks);
+
+            std::get<DynamicBufferCollection>(uniform_collection)
+                .free_uniform_slots.init(descriptor_count * uniform_buffer_blocks);
+        }
+        else if (uniform_layout_info.descriptorType == VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER)
+        {
+            std::vector<VkDescriptorSet> descriptor_sets;
+
+            descriptor_sets.resize(1);
+
+            std::vector<VkDescriptorSetLayout> layouts{descriptor_sets.size(), uniform_layout};
+
+            auto allocInfo = VkDescriptorSetAllocateInfo{
+                .sType              = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
+                .descriptorPool     = pool,
+                .descriptorSetCount = static_cast<uint32_t>(descriptor_sets.size()),
+                .pSetLayouts        = layouts.data()};
+
+            result = vkAllocateDescriptorSets(
+                device.logical_device, &allocInfo, descriptor_sets.data());
+            if (result != VK_SUCCESS)
+            {
+                return result;
+            }
+
+            uniform_collection = SamplerCollection{.descriptor_sets = descriptor_sets};
+        }
     }
 
     return VK_SUCCESS;
