@@ -940,88 +940,15 @@ public:
     // queue) eventually have one pool per thread per
     VkCommandPool command_pool{VK_NULL_HANDLE};
 
-    bool init(RenderConfig & render_config, Device & device)
-    {
-        int32_t const MAX_BUFFERED_RESOURCES = 3;
-
-        for (uint32_t i = 0; i < MAX_BUFFERED_RESOURCES; ++i)
-        {
-            draw_buckets.emplace_back(4);
-            transfer_buckets.emplace_back(9);
-        }
-
-        getQueues(device);
-
-        if (createCommandPool(device) != VK_SUCCESS)
-        {
-            return false;
-        }
-
-        return createCommandbuffers(device) == VK_SUCCESS;
-    }
-
-    void quit(Device & device)
-    {
-        for (uint32_t i = 0; i < draw_buckets.size(); ++i)
-        {
-            draw_buckets[i].Clear();
-            transfer_buckets[i].Clear();
-        }
-
-        vkDestroyCommandPool(device.logical_device, command_pool, nullptr);
-    }
+    bool init(RenderConfig & render_config, Device & device);
+    void quit(Device & device);
 
 private:
-    void getQueues(Device & device)
-    {
-        vkGetDeviceQueue(
-            device.logical_device, device.physical_device_info.present_queue, 0, &present_queue);
-        vkGetDeviceQueue(
-            device.logical_device, device.physical_device_info.graphics_queue, 0, &graphics_queue);
-        vkGetDeviceQueue(
-            device.logical_device, device.physical_device_info.transfer_queue, 0, &transfer_queue);
-    }
+    void getQueues(Device & device);
 
-    VkResult createCommandPool(Device & device)
-    {
-        auto poolInfo = VkCommandPoolCreateInfo{
-            .sType            = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
-            .queueFamilyIndex = static_cast<uint32_t>(device.physical_device_info.graphics_queue),
-            .flags            = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT};
+    VkResult createCommandPool(Device & device);
 
-        return vkCreateCommandPool(device.logical_device, &poolInfo, nullptr, &command_pool);
-    }
-
-    VkResult createCommandbuffers(Device & device)
-    {
-        int32_t const MAX_BUFFERED_RESOURCES = 3;
-
-        draw_commandbuffers.resize(MAX_BUFFERED_RESOURCES);
-
-        auto allocInfo = VkCommandBufferAllocateInfo{
-            .sType              = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
-            .commandPool        = command_pool,
-            .level              = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
-            .commandBufferCount = (uint32_t)draw_commandbuffers.size()};
-
-        auto result = vkAllocateCommandBuffers(
-            device.logical_device, &allocInfo, draw_commandbuffers.data());
-        if (result != VK_SUCCESS)
-        {
-            return result;
-        }
-
-        transfer_commandbuffers.resize(MAX_BUFFERED_RESOURCES);
-
-        allocInfo = VkCommandBufferAllocateInfo{
-            .sType              = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
-            .commandPool        = command_pool,
-            .level              = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
-            .commandBufferCount = (uint32_t)transfer_commandbuffers.size()};
-
-        return vkAllocateCommandBuffers(
-            device.logical_device, &allocInfo, transfer_commandbuffers.data());
-    }
+    VkResult createCommandbuffers(Device & device);
 }; // struct CommandResources
 
 struct VertexResources
@@ -2895,7 +2822,7 @@ Device::Device(GLFWwindow * window_ptr): window{window_ptr}
 
 bool Device::init(RenderConfig & render_config)
 {
-// clang-format off
+    // clang-format off
     #ifndef NDEBUG
     checkValidationLayerSupport();
     #endif
@@ -3049,7 +2976,7 @@ void Device::getRequiredExtensions()
 // INSTANCE
 VkResult Device::createInstance(char const * window_name)
 {
-// clang-format off
+    // clang-format off
     #ifdef NDEBUG
     use_validation = false;
     #else
@@ -4276,6 +4203,88 @@ VkResult PipelineResources::createGraphicsPipeline(Device &                    d
     }
 
     return VK_SUCCESS;
+}
+
+bool CommandResources::init(RenderConfig & render_config, Device & device)
+{
+    int32_t const MAX_BUFFERED_RESOURCES = 3;
+
+    for (uint32_t i = 0; i < MAX_BUFFERED_RESOURCES; ++i)
+    {
+        draw_buckets.emplace_back(4);
+        transfer_buckets.emplace_back(9);
+    }
+
+    getQueues(device);
+
+    if (createCommandPool(device) != VK_SUCCESS)
+    {
+        return false;
+    }
+
+    return createCommandbuffers(device) == VK_SUCCESS;
+}
+
+void CommandResources::quit(Device & device)
+{
+    for (uint32_t i = 0; i < draw_buckets.size(); ++i)
+    {
+        draw_buckets[i].Clear();
+        transfer_buckets[i].Clear();
+    }
+
+    vkDestroyCommandPool(device.logical_device, command_pool, nullptr);
+}
+
+void CommandResources::getQueues(Device & device)
+{
+    vkGetDeviceQueue(
+        device.logical_device, device.physical_device_info.present_queue, 0, &present_queue);
+    vkGetDeviceQueue(
+        device.logical_device, device.physical_device_info.graphics_queue, 0, &graphics_queue);
+    vkGetDeviceQueue(
+        device.logical_device, device.physical_device_info.transfer_queue, 0, &transfer_queue);
+}
+
+VkResult CommandResources::createCommandPool(Device & device)
+{
+    auto poolInfo = VkCommandPoolCreateInfo{
+        .sType            = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
+        .queueFamilyIndex = static_cast<uint32_t>(device.physical_device_info.graphics_queue),
+        .flags            = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT};
+
+    return vkCreateCommandPool(device.logical_device, &poolInfo, nullptr, &command_pool);
+}
+
+VkResult CommandResources::createCommandbuffers(Device & device)
+{
+    int32_t const MAX_BUFFERED_RESOURCES = 3;
+
+    draw_commandbuffers.resize(MAX_BUFFERED_RESOURCES);
+
+    auto allocInfo = VkCommandBufferAllocateInfo{
+        .sType              = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
+        .commandPool        = command_pool,
+        .level              = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
+        .commandBufferCount = (uint32_t)draw_commandbuffers.size()};
+
+    auto result = vkAllocateCommandBuffers(
+        device.logical_device, &allocInfo, draw_commandbuffers.data());
+    if (result != VK_SUCCESS)
+    {
+        return result;
+    }
+
+    transfer_commandbuffers.resize(MAX_BUFFERED_RESOURCES);
+
+    allocInfo = VkCommandBufferAllocateInfo{
+        .sType              = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
+        .commandPool        = command_pool,
+        .level              = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
+        .commandBufferCount = (uint32_t)transfer_commandbuffers.size()};
+
+    return vkAllocateCommandBuffers(
+        device.logical_device, &allocInfo, transfer_commandbuffers.data());
 }
 
 }; // namespace module
