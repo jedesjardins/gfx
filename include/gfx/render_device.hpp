@@ -1020,12 +1020,12 @@ public:
     */
 
     std::optional<UniformHandle> new_uniform(UniformLayoutHandle layout_handle,
-                                            VkDeviceSize        size,
-                                            void *              data_ptr);
+                                             VkDeviceSize        size,
+                                             void *              data_ptr);
 
     std::optional<UniformHandle> new_uniform(UniformLayoutHandle layout_handle,
-                                            VkImageView         view,
-                                            VkSampler           sampler);
+                                             VkImageView         view,
+                                             VkSampler           sampler);
 
     template <typename... Args>
     void update_uniform(UniformHandle handle, Args &&... args)
@@ -1048,11 +1048,11 @@ public:
     std::optional<VkDeviceSize> getDynamicOffset(UniformHandle handle);
 
     void draw(PipelineHandle    pipeline,
-                     glm::mat4 const & transform,
-                     uint32_t          vertex_count,
-                     Vertex *          vertices,
-                     uint32_t          index_count,
-                     uint32_t *        indices);
+              glm::mat4 const & transform,
+              uint32_t          vertex_count,
+              Vertex *          vertices,
+              uint32_t          index_count,
+              uint32_t *        indices);
 
     void draw(PipelineHandle    pipeline,
               glm::mat4 const & transform,
@@ -1062,27 +1062,13 @@ public:
               VkDeviceSize      indexbuffer_offset,
               VkDeviceSize      indexbuffer_count);
 
-    bool createVertexbuffer(VkBuffer & vertexbuffer,
-                            Memory &   vertexbuffer_memory,
-                            uint32_t   vertex_count,
-                            Vertex *   vertices);
+    std::optional<Buffer> create_buffer(VkDeviceSize          size,
+                                        VkBufferUsageFlags    usage,
+                                        VkMemoryPropertyFlags properties);
 
-    bool createIndexbuffer(VkBuffer & indexbuffer,
-                           Memory &   indexbuffer_memory,
-                           uint32_t   index_count,
-                           uint32_t * indices);
+    void update_buffer(Buffer buffer, VkDeviceSize size, void * data);
 
-    void updateDeviceLocalBuffers(VkBuffer   vertexbuffer,
-                                  VkBuffer   indexbuffer,
-                                  uint32_t   vertex_count,
-                                  Vertex *   vertices,
-                                  uint32_t   index_count,
-                                  uint32_t * indices);
-
-    void destroyDeviceLocalBuffers(VkBuffer vertexbuffer,
-                                   Memory   vertex_memory,
-                                   VkBuffer indexbuffer,
-                                   Memory   index_memory);
+    void delete_buffer(Buffer & buffer);
 
     Sampler create_texture(char const * texture_path);
 
@@ -3960,8 +3946,8 @@ void Renderer::draw_frame(uint32_t uniform_count, UniformHandle * p_uniforms)
 }
 
 std::optional<UniformHandle> Renderer::new_uniform(UniformLayoutHandle layout_handle,
-                                                  VkDeviceSize        size,
-                                                  void *              data_ptr)
+                                                   VkDeviceSize        size,
+                                                   void *              data_ptr)
 {
     auto & uniform_collection = uniforms.uniform_collections[layout_handle];
 
@@ -3978,8 +3964,8 @@ std::optional<UniformHandle> Renderer::new_uniform(UniformLayoutHandle layout_ha
 }
 
 std::optional<UniformHandle> Renderer::new_uniform(UniformLayoutHandle layout_handle,
-                                                  VkImageView         view,
-                                                  VkSampler           sampler)
+                                                   VkImageView         view,
+                                                   VkSampler           sampler)
 {
     auto & uniform_collection = uniforms.uniform_collections[layout_handle];
 
@@ -4019,11 +4005,11 @@ std::optional<VkDeviceSize> Renderer::getDynamicOffset(UniformHandle handle)
 }
 
 void Renderer::draw(PipelineHandle    pipeline,
-                           glm::mat4 const & transform,
-                           uint32_t          vertex_count,
-                           Vertex *          vertices,
-                           uint32_t          index_count,
-                           uint32_t *        indices)
+                    glm::mat4 const & transform,
+                    uint32_t          vertex_count,
+                    Vertex *          vertices,
+                    uint32_t          index_count,
+                    uint32_t *        indices)
 {
     auto & mapped_vertices = this->vertices.dynamic_mapped_vertices[frames.currentResource];
     auto & mapped_indices  = this->vertices.dynamic_mapped_indices[frames.currentResource];
@@ -4061,102 +4047,41 @@ void Renderer::draw(PipelineHandle    pipeline,
     command->indexbuffer_count   = indexbuffer_count;
 }
 
-bool Renderer::createVertexbuffer(VkBuffer & vertexbuffer,
-                                  Memory &   vertexbuffer_memory,
-                                  uint32_t   vertex_count,
-                                  Vertex *   vertices)
+std::optional<Buffer> Renderer::create_buffer(VkDeviceSize          size,
+                                              VkBufferUsageFlags    usage,
+                                              VkMemoryPropertyFlags properties)
 {
-    VkDeviceSize bufferSize = sizeof(Vertex) * vertex_count;
-
-    // copy to staging vertex buffer
-    auto &       mapped_vertices       = this->vertices.staging_buffer[frames.currentResource];
-    size_t       vertex_data_size      = sizeof(Vertex) * vertex_count;
-    VkDeviceSize staging_vertex_offset = mapped_vertices.copy(vertex_data_size, vertices);
-
-    // create
-    render_device.createBuffer(bufferSize,
-                               VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
-                               VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-                               vertexbuffer,
-                               vertexbuffer_memory);
-
-    copyBuffer(mapped_vertices.buffer_handle(), staging_vertex_offset, vertexbuffer, 0, bufferSize);
-
-    return true;
+    Buffer buffer;
+    if (buffer.create(
+            render_device.physical_device, render_device.logical_device, size, usage, properties)
+        != VK_SUCCESS)
+    {
+        return std::nullopt;
+    }
+    return buffer;
 }
 
-bool Renderer::createIndexbuffer(VkBuffer & indexbuffer,
-                                 Memory &   indexbuffer_memory,
-                                 uint32_t   index_count,
-                                 uint32_t * indices)
-{
-    VkDeviceSize bufferSize = sizeof(uint32_t) * index_count;
-
-    auto & mapped_indices = vertices.staging_buffer[frames.currentResource];
-
-    size_t index_data_size = sizeof(uint32_t) * index_count;
-
-    VkDeviceSize staging_index_offset = mapped_indices.copy(index_data_size, indices);
-
-    render_device.createBuffer(bufferSize,
-                               VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
-                               VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-                               indexbuffer,
-                               indexbuffer_memory);
-
-    copyBuffer(mapped_indices.buffer_handle(), staging_index_offset, indexbuffer, 0, bufferSize);
-
-    return true;
-}
-
-void Renderer::updateDeviceLocalBuffers(VkBuffer   vertexbuffer,
-                                        VkBuffer   indexbuffer,
-                                        uint32_t   vertex_count,
-                                        Vertex *   vertices,
-                                        uint32_t   index_count,
-                                        uint32_t * indices)
+void Renderer::update_buffer(Buffer buffer, VkDeviceSize size, void * data)
 {
     // TODO:
-    auto & mapped_vertices = this->vertices.staging_buffer[frames.currentResource];
-    auto & mapped_indices  = this->vertices.staging_buffer[frames.currentResource];
+    auto & mapped_buffer = this->vertices.staging_buffer[frames.currentResource];
 
-    size_t vertex_data_size = sizeof(Vertex) * vertex_count;
-    size_t index_data_size  = sizeof(uint32_t) * index_count;
-
-    VkDeviceSize vertex_offset = mapped_vertices.copy(vertex_data_size, vertices);
-    VkDeviceSize index_offset  = mapped_indices.copy(index_data_size, indices);
+    VkDeviceSize data_offset = mapped_buffer.copy(size, data);
 
     auto & bucket = commands.transfer_buckets[frames.currentResource];
 
     Copy * vertex_command         = bucket.AddCommand<Copy>(0, 0);
     vertex_command->commandbuffer = commands.transfer_commandbuffers[frames.currentResource];
-    vertex_command->srcBuffer     = mapped_vertices.buffer_handle();
-    vertex_command->dstBuffer     = vertexbuffer;
-    vertex_command->srcOffset     = vertex_offset;
+    vertex_command->srcBuffer     = mapped_buffer.buffer_handle();
+    vertex_command->dstBuffer     = buffer.buffer_handle();
+    vertex_command->srcOffset     = data_offset;
     vertex_command->dstOffset     = 0;
-    vertex_command->size          = vertex_data_size;
-
-    Copy * index_command         = bucket.AddCommand<Copy>(0, 0);
-    index_command->commandbuffer = commands.transfer_commandbuffers[frames.currentResource];
-    index_command->srcBuffer     = mapped_indices.buffer_handle();
-    index_command->dstBuffer     = indexbuffer;
-    index_command->srcOffset     = index_offset;
-    index_command->dstOffset     = 0;
-    index_command->size          = index_data_size;
+    vertex_command->size          = size;
 }
 
-void Renderer::destroyDeviceLocalBuffers(VkBuffer vertexbuffer,
-                                         Memory   vertex_memory,
-                                         VkBuffer indexbuffer,
-                                         Memory   index_memory)
+void Renderer::delete_buffer(Buffer & buffer)
 {
-    // INDEXBUFFER
-    vkDestroyBuffer(render_device.logical_device, indexbuffer, nullptr);
-    index_memory.destroy(render_device.logical_device);
-
-    // VERTEXBUFFER
-    vkDestroyBuffer(render_device.logical_device, vertexbuffer, nullptr);
-    vertex_memory.destroy(render_device.logical_device);
+    buffer.destroy(render_device.logical_device);
 }
 
 Sampler Renderer::create_texture(char const * texture_path)

@@ -48,14 +48,9 @@ struct Material
 
 struct StaticVertexData // can be edited with a
 {
-    VkBuffer     vertexbuffer;
-    gfx::Memory  vertexbuffer_memory;
-    VkDeviceSize vertexbuffer_offset;
-
-    VkBuffer    indexbuffer;
-    gfx::Memory indexbuffer_memory;
-    size_t      indexbuffer_offset;
-    size_t      indexbuffer_count;
+    gfx::Buffer vertexbuffer;
+    gfx::Buffer indexbuffer;
+    size_t      index_count;
 };
 
 struct StreamedVertexData
@@ -77,11 +72,11 @@ class Object
 {
 public:
     Object(gfx::Renderer & render_device,
-           ObjectType          type,
-           uint32_t            vertex_count,
-           Vertex *            vertices,
-           uint32_t            index_count,
-           uint32_t *          indices)
+           ObjectType      type,
+           uint32_t        vertex_count,
+           Vertex *        vertices,
+           uint32_t        index_count,
+           uint32_t *      indices)
     {
         if (type == ObjectType::STATIC)
         {
@@ -94,39 +89,44 @@ public:
     }
 
     bool initStaticObject(gfx::Renderer & render_device,
-                          uint32_t            vertex_count,
-                          Vertex *            vertices,
-                          uint32_t            index_count,
-                          uint32_t *          indices)
+                          uint32_t        vertex_count,
+                          Vertex *        vertices,
+                          uint32_t        index_count,
+                          uint32_t *      indices)
     {
-        vertex_data = StaticVertexData{.vertexbuffer        = VK_NULL_HANDLE,
-                                       .vertexbuffer_offset = 0,
-                                       .indexbuffer         = VK_NULL_HANDLE,
-                                       .indexbuffer_offset  = 0,
-                                       .indexbuffer_count   = index_count};
+        auto static_vertex_data        = StaticVertexData{};
+        static_vertex_data.index_count = index_count;
+
+        vertex_data = static_vertex_data;
 
         auto & static_data = std::get<StaticVertexData>(vertex_data);
 
-        if (!render_device.createVertexbuffer(
-                static_data.vertexbuffer, static_data.vertexbuffer_memory, vertex_count, vertices))
-        {
-            return false;
-        }
+        auto opt_vertexbuffer = render_device.create_buffer(
+            vertex_count * sizeof(Vertex),
+            VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+            VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
 
-        if (!render_device.createIndexbuffer(
-                static_data.indexbuffer, static_data.indexbuffer_memory, index_count, indices))
-        {
-            return false;
-        }
+        static_data.vertexbuffer = opt_vertexbuffer.value();
+        render_device.update_buffer(
+            static_data.vertexbuffer, vertex_count * sizeof(Vertex), vertices);
+
+        auto opt_indexbuffer = render_device.create_buffer(
+            index_count * sizeof(uint32_t),
+            VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
+            VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+
+        static_data.indexbuffer = opt_indexbuffer.value();
+        render_device.update_buffer(
+            static_data.indexbuffer, index_count * sizeof(uint32_t), indices);
 
         return true;
     }
 
     void initDynamicObject(gfx::Renderer & render_device,
-                           uint32_t            vertex_count,
-                           Vertex *            vertices,
-                           uint32_t            index_count,
-                           uint32_t *          indices)
+                           uint32_t        vertex_count,
+                           Vertex *        vertices,
+                           uint32_t        index_count,
+                           uint32_t *      indices)
     {
         vertex_data = StreamedVertexData{.vertex_count = vertex_count,
                                          .vertices     = vertices,
@@ -135,21 +135,19 @@ public:
     }
 
     void updateStaticObject(gfx::Renderer & render_device,
-                            uint32_t            vertex_count,
-                            Vertex *            vertices,
-                            uint32_t            index_count,
-                            uint32_t *          indices)
+                            uint32_t        vertex_count,
+                            Vertex *        vertices,
+                            uint32_t        index_count,
+                            uint32_t *      indices)
     {
         assert(std::holds_alternative<StaticVertexData>(vertex_data));
 
         auto & static_data = std::get<StaticVertexData>(vertex_data);
 
-        render_device.updateDeviceLocalBuffers(static_data.vertexbuffer,
-                                               static_data.indexbuffer,
-                                               vertex_count,
-                                               vertices,
-                                               index_count,
-                                               indices);
+        render_device.update_buffer(
+            static_data.vertexbuffer, vertex_count * sizeof(Vertex), vertices);
+        render_device.update_buffer(
+            static_data.indexbuffer, index_count * sizeof(uint32_t), indices);
     }
 
     void destroyStaticObject(gfx::Renderer & render_device)
@@ -158,10 +156,8 @@ public:
 
         auto & static_data = std::get<StaticVertexData>(vertex_data);
 
-        render_device.destroyDeviceLocalBuffers(static_data.vertexbuffer,
-                                                static_data.vertexbuffer_memory,
-                                                static_data.indexbuffer,
-                                                static_data.indexbuffer_memory);
+        render_device.delete_buffer(static_data.vertexbuffer);
+        render_device.delete_buffer(static_data.indexbuffer);
     }
 
     void draw(gfx::Renderer & render_device)
@@ -172,22 +168,22 @@ public:
 
             render_device.draw(material.pipeline,
                                material.transform,
-                               static_data.vertexbuffer,
-                               static_data.vertexbuffer_offset,
-                               static_data.indexbuffer,
-                               static_data.indexbuffer_offset,
-                               static_data.indexbuffer_count);
+                               static_data.vertexbuffer.buffer_handle(),
+                               0,
+                               static_data.indexbuffer.buffer_handle(),
+                               0,
+                               static_data.index_count);
         }
         else if (std::holds_alternative<StreamedVertexData>(vertex_data))
         {
             auto & streamed_data = std::get<StreamedVertexData>(vertex_data);
 
             render_device.draw(material.pipeline,
-                                      material.transform,
-                                      streamed_data.vertex_count,
-                                      streamed_data.vertices,
-                                      streamed_data.index_count,
-                                      streamed_data.indices);
+                               material.transform,
+                               streamed_data.vertex_count,
+                               streamed_data.vertices,
+                               streamed_data.index_count,
+                               streamed_data.indices);
         }
     }
 
@@ -334,8 +330,9 @@ int main()
     auto opt_view_handle = render_device.new_uniform(0, sizeof(glm::mat4), glm::value_ptr(view));
     gfx::UniformHandle view_handle = opt_view_handle.value();
 
-    auto               opt_sampler_handle = render_device.new_uniform(1, texture.view_handle(), texture.sampler_handle());
-    gfx::UniformHandle sampler_handle     = opt_sampler_handle.value();
+    auto opt_sampler_handle = render_device.new_uniform(
+        1, texture.view_handle(), texture.sampler_handle());
+    gfx::UniformHandle sampler_handle = opt_sampler_handle.value();
 
     auto clock = RawClock{};
 
