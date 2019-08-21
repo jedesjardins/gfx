@@ -990,9 +990,9 @@ public:
 
     void quit();
 
-    void waitForIdle();
+    void wait_for_idle();
 
-    void drawFrame(uint32_t uniform_count, UniformHandle * p_uniforms);
+    void draw_frame(uint32_t uniform_count, UniformHandle * p_uniforms);
 
     /*
     template <typename... Args>
@@ -1019,16 +1019,16 @@ public:
     }
     */
 
-    std::optional<UniformHandle> newUniform(UniformLayoutHandle layout_handle,
+    std::optional<UniformHandle> new_uniform(UniformLayoutHandle layout_handle,
                                             VkDeviceSize        size,
                                             void *              data_ptr);
 
-    std::optional<UniformHandle> newUniform(UniformLayoutHandle layout_handle,
+    std::optional<UniformHandle> new_uniform(UniformLayoutHandle layout_handle,
                                             VkImageView         view,
                                             VkSampler           sampler);
 
     template <typename... Args>
-    void updateUniform(UniformHandle handle, Args &&... args)
+    void update_uniform(UniformHandle handle, Args &&... args)
     {
         auto & uniform_collection = uniforms.uniform_collections[handle.uniform_layout_id];
 
@@ -1047,7 +1047,7 @@ public:
 
     std::optional<VkDeviceSize> getDynamicOffset(UniformHandle handle);
 
-    void dynamicDraw(PipelineHandle    pipeline,
+    void draw(PipelineHandle    pipeline,
                      glm::mat4 const & transform,
                      uint32_t          vertex_count,
                      Vertex *          vertices,
@@ -1084,9 +1084,9 @@ public:
                                    VkBuffer indexbuffer,
                                    Memory   index_memory);
 
-    Sampler createTexture(char const * texture_path);
+    Sampler create_texture(char const * texture_path);
 
-    void destroyTexture(Sampler & texture);
+    void destroy_texture(Sampler & texture);
 
 private:
     VkResult createCommandbuffer(uint32_t        image_index,
@@ -3831,12 +3831,12 @@ void Renderer::quit()
     render_device.quit();
 }
 
-void Renderer::waitForIdle()
+void Renderer::wait_for_idle()
 {
     vkDeviceWaitIdle(render_device.logical_device);
 }
 
-void Renderer::drawFrame(uint32_t uniform_count, UniformHandle * p_uniforms)
+void Renderer::draw_frame(uint32_t uniform_count, UniformHandle * p_uniforms)
 {
     vkWaitForFences(render_device.logical_device,
                     1,
@@ -3959,7 +3959,7 @@ void Renderer::drawFrame(uint32_t uniform_count, UniformHandle * p_uniforms)
     commands.transfer_buckets[frames.currentResource].Clear();
 }
 
-std::optional<UniformHandle> Renderer::newUniform(UniformLayoutHandle layout_handle,
+std::optional<UniformHandle> Renderer::new_uniform(UniformLayoutHandle layout_handle,
                                                   VkDeviceSize        size,
                                                   void *              data_ptr)
 {
@@ -3977,7 +3977,7 @@ std::optional<UniformHandle> Renderer::newUniform(UniformLayoutHandle layout_han
     return opt_uniform_handle;
 }
 
-std::optional<UniformHandle> Renderer::newUniform(UniformLayoutHandle layout_handle,
+std::optional<UniformHandle> Renderer::new_uniform(UniformLayoutHandle layout_handle,
                                                   VkImageView         view,
                                                   VkSampler           sampler)
 {
@@ -4018,7 +4018,7 @@ std::optional<VkDeviceSize> Renderer::getDynamicOffset(UniformHandle handle)
         uniform_collection);
 }
 
-void Renderer::dynamicDraw(PipelineHandle    pipeline,
+void Renderer::draw(PipelineHandle    pipeline,
                            glm::mat4 const & transform,
                            uint32_t          vertex_count,
                            Vertex *          vertices,
@@ -4159,7 +4159,7 @@ void Renderer::destroyDeviceLocalBuffers(VkBuffer vertexbuffer,
     vertex_memory.destroy(render_device.logical_device);
 }
 
-Sampler Renderer::createTexture(char const * texture_path)
+Sampler Renderer::create_texture(char const * texture_path)
 {
     int       texWidth, texHeight, texChannels;
     stbi_uc * pixels = stbi_load(texture_path, &texWidth, &texHeight, &texChannels, STBI_rgb_alpha);
@@ -4235,7 +4235,7 @@ Sampler Renderer::createTexture(char const * texture_path)
     return texture;
 }
 
-void Renderer::destroyTexture(Sampler & texture)
+void Renderer::destroy_texture(Sampler & texture)
 {
     texture.destroy(render_device.logical_device);
 }

@@ -182,7 +182,7 @@ public:
         {
             auto & streamed_data = std::get<StreamedVertexData>(vertex_data);
 
-            render_device.dynamicDraw(material.pipeline,
+            render_device.draw(material.pipeline,
                                       material.transform,
                                       streamed_data.vertex_count,
                                       streamed_data.vertices,
@@ -295,7 +295,7 @@ int main()
 
     std::vector<Object> objects{};
 
-    auto texture = render_device.createTexture("../sword.png");
+    auto texture = render_device.create_texture("../sword.png");
 
     objects.emplace_back(render_device,
                          ObjectType::STATIC,
@@ -331,10 +331,10 @@ int main()
 
     glm::mat4 view = glm::scale(glm::mat4(1.0), glm::vec3(1.f, -1.f, 1.f));
 
-    auto opt_view_handle = render_device.newUniform(0, sizeof(glm::mat4), glm::value_ptr(view));
+    auto opt_view_handle = render_device.new_uniform(0, sizeof(glm::mat4), glm::value_ptr(view));
     gfx::UniformHandle view_handle = opt_view_handle.value();
 
-    auto               opt_sampler_handle = render_device.newUniform(1, texture.view_handle(), texture.sampler_handle());
+    auto               opt_sampler_handle = render_device.new_uniform(1, texture.view_handle(), texture.sampler_handle());
     gfx::UniformHandle sampler_handle     = opt_sampler_handle.value();
 
     auto clock = RawClock{};
@@ -352,7 +352,7 @@ int main()
         {
             view *= glm::vec4(1.f, -1.f, 1.f, 1.f);
 
-            render_device.updateUniform(
+            render_device.update_uniform(
                 view_handle, sizeof(glm::mat4), static_cast<void *>(glm::value_ptr(view)));
 
             obj1_vertices[0].pos.y -= .01f;
@@ -374,7 +374,7 @@ int main()
 
         std::array<gfx::UniformHandle, 2> uniforms = {view_handle, sampler_handle};
 
-        render_device.drawFrame(2, uniforms.data());
+        render_device.draw_frame(2, uniforms.data());
 
         frame_times[++frameIndex % frame_times.size()] = clock.Restart();
 
@@ -383,9 +383,9 @@ int main()
         // std::cout << sum_time/frame_times.size() << "\n";
     }
 
-    render_device.waitForIdle();
+    render_device.wait_for_idle();
 
-    render_device.destroyTexture(texture);
+    render_device.destroy_texture(texture);
 
     objects[0].destroyStaticObject(render_device);
     objects[1].destroyStaticObject(render_device);
