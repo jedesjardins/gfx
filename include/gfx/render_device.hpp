@@ -143,6 +143,7 @@ public:
     void destroy(VkDevice logical_device)
     {
         vkFreeMemory(logical_device, vk_memory, nullptr);
+        vk_memory = VK_NULL_HANDLE;
     }
 
     VkDeviceMemory memory_handle()
@@ -230,7 +231,9 @@ public:
     void destroy(VkDevice logical_device)
     {
         vkDestroyImageView(logical_device, vk_image_view, nullptr);
+        vk_image_view = VK_NULL_HANDLE;
         vkDestroyImage(logical_device, vk_image, nullptr);
+        vk_image = VK_NULL_HANDLE;
         static_cast<Memory &>(*this).destroy(logical_device);
     }
 
@@ -245,8 +248,8 @@ public:
     }
 
 protected:
-    VkImage     vk_image;
-    VkImageView vk_image_view;
+    VkImage     vk_image{VK_NULL_HANDLE};
+    VkImageView vk_image_view{VK_NULL_HANDLE};
 };
 
 class Sampler: public Image
@@ -308,6 +311,7 @@ public:
     void destroy(VkDevice logical_device)
     {
         vkDestroySampler(logical_device, vk_sampler, nullptr);
+        vk_sampler = VK_NULL_HANDLE;
         static_cast<Image &>(*this).destroy(logical_device);
     }
 
@@ -317,7 +321,7 @@ public:
     }
 
 private:
-    VkSampler vk_sampler;
+    VkSampler vk_sampler{VK_NULL_HANDLE};
 };
 
 class Buffer: public Memory
@@ -354,6 +358,7 @@ public:
     void destroy(VkDevice logical_device)
     {
         vkDestroyBuffer(logical_device, vk_buffer, nullptr);
+        vk_buffer = VK_NULL_HANDLE;
         static_cast<Memory &>(*this).destroy(logical_device);
     }
 
