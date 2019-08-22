@@ -156,8 +156,9 @@ public:
 
         auto & static_data = std::get<StaticVertexData>(vertex_data);
 
-        render_device.delete_buffer(static_data.vertexbuffer);
-        render_device.delete_buffer(static_data.indexbuffer);
+        gfx::Buffer buffers[2] = {static_data.vertexbuffer, static_data.indexbuffer};
+
+        render_device.delete_objects(2, buffers, 0, nullptr);
     }
 
     void draw(gfx::Renderer & render_device)
@@ -382,7 +383,7 @@ int main()
 
     render_device.wait_for_idle();
 
-    render_device.destroy_texture(texture);
+    render_device.delete_objects(0, nullptr, 1, &texture);
 
     objects[0].destroyStaticObject(render_device);
     objects[1].destroyStaticObject(render_device);

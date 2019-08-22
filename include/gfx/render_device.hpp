@@ -179,7 +179,7 @@ private:
     }
 };
 
-class Image: protected Memory
+class Image: public Memory
 {
 public:
     VkResult create(VkPhysicalDevice      physical_device,
@@ -320,7 +320,7 @@ private:
     VkSampler vk_sampler;
 };
 
-class Buffer: protected Memory
+class Buffer: public Memory
 {
 public:
     VkResult create(VkPhysicalDevice      physical_device,
@@ -671,6 +671,24 @@ static_assert(std::is_pod<SetImageLayout>::value == true, "SetImageLayout must b
 
 void setImageLayout(void const * data);
 
+struct DeleteObjects
+{
+    static cmd::BackendDispatchFunction const DISPATCH_FUNCTION;
+
+    VkDevice         logical_device;
+    size_t           buffer_count;
+    VkBuffer *       buffers;
+    size_t           image_count;
+    VkSampler *      samplers;
+    VkImageView *    views;
+    VkImage *        images;
+    VkDeviceMemory * memories;
+};
+
+static_assert(std::is_pod<DeleteObjects>::value == true, "DeleteObjects must be a POD.");
+
+void deleteObjects(void const * data);
+
 //
 // PHYSICAL DEVICE
 //
@@ -935,6 +953,7 @@ public:
 
     std::vector<cmd::CommandBucket<int>> draw_buckets;
     std::vector<cmd::CommandBucket<int>> transfer_buckets;
+    std::vector<cmd::CommandBucket<int>> delete_buckets;
 
     // pools belong to queue types, need one per queue (for when we use the transfer and graphics
     // queue) eventually have one pool per thread per
@@ -1068,11 +1087,12 @@ public:
 
     void update_buffer(Buffer buffer, VkDeviceSize size, void * data);
 
-    void delete_buffer(Buffer & buffer);
-
     Sampler create_texture(char const * texture_path);
 
-    void destroy_texture(Sampler & texture);
+    void delete_objects(size_t    buffer_count,
+                        Buffer *  buffers,
+                        size_t    sampler_count,
+                        Sampler * samplers);
 
 private:
     VkResult createCommandbuffer(uint32_t        image_index,
@@ -2181,6 +2201,32 @@ void setImageLayout(void const * data)
 
 cmd::BackendDispatchFunction const SetImageLayout::DISPATCH_FUNCTION = &setImageLayout;
 
+void deleteObjects(void const * data)
+{
+    auto const * delete_data = reinterpret_cast<DeleteObjects const *>(data);
+
+    // vkDestroyBuffer(deletedata->logical_device, deletedata->buffer, nullptr);
+    // vkFreeMemory(deletedata->logical_device, deletedata->memory, nullptr);
+
+    for (size_t i = 0; i < delete_data->buffer_count; ++i)
+    {
+        vkDestroyBuffer(delete_data->logical_device, delete_data->buffers[i], nullptr);
+        vkFreeMemory(delete_data->logical_device, delete_data->memories[i], nullptr);
+    }
+
+    for (size_t i = 0; i < delete_data->image_count; ++i)
+    {
+        vkDestroySampler(delete_data->logical_device, delete_data->samplers[i], nullptr);
+        vkDestroyImageView(delete_data->logical_device, delete_data->views[i], nullptr);
+        vkDestroyImage(delete_data->logical_device, delete_data->images[i], nullptr);
+        vkFreeMemory(delete_data->logical_device,
+                     delete_data->memories[delete_data->buffer_count + i],
+                     nullptr);
+    }
+}
+
+cmd::BackendDispatchFunction const DeleteObjects::DISPATCH_FUNCTION = &deleteObjects;
+
 //
 // PHYSICALDEVICEINFO
 //
@@ -2202,7 +2248,7 @@ Device::Device(GLFWwindow * window_ptr): window{window_ptr}
 
 bool Device::init(RenderConfig & render_config)
 {
-    // clang-format off
+// clang-format off
     #ifndef NDEBUG
     checkValidationLayerSupport();
     #endif
@@ -2356,7 +2402,7 @@ void Device::getRequiredExtensions()
 // INSTANCE
 VkResult Device::createInstance(char const * window_name)
 {
-    // clang-format off
+// clang-format off
     #ifdef NDEBUG
     use_validation = false;
     #else
@@ -3593,6 +3639,7 @@ bool CommandResources::init(RenderConfig & render_config, Device & device)
     {
         draw_buckets.emplace_back(4);
         transfer_buckets.emplace_back(9);
+        delete_buckets.emplace_back(5);
     }
 
     getQueues(device);
@@ -3609,6 +3656,8 @@ void CommandResources::quit(Device & device)
 {
     for (uint32_t i = 0; i < draw_buckets.size(); ++i)
     {
+        delete_buckets[i].Submit();
+        delete_buckets[i].Clear();
         draw_buckets[i].Clear();
         transfer_buckets[i].Clear();
     }
@@ -3943,6 +3992,7 @@ void Renderer::draw_frame(uint32_t uniform_count, UniformHandle * p_uniforms)
 
     commands.draw_buckets[frames.currentResource].Clear();
     commands.transfer_buckets[frames.currentResource].Clear();
+    commands.delete_buckets[frames.currentResource].Submit();
 }
 
 std::optional<UniformHandle> Renderer::new_uniform(UniformLayoutHandle layout_handle,
@@ -4079,10 +4129,18 @@ void Renderer::update_buffer(Buffer buffer, VkDeviceSize size, void * data)
     vertex_command->size          = size;
 }
 
+/*
 void Renderer::delete_buffer(Buffer & buffer)
 {
-    buffer.destroy(render_device.logical_device);
+    auto & bucket = commands.delete_buckets[frames.currentResource];
+
+    DeleteBuffer * delete_command = bucket.AddCommand<DeleteBuffer>(0, 0);
+
+    delete_command->logical_device = render_device.logical_device;
+    delete_command->buffer         = buffer.buffer_handle();
+    delete_command->memory         = buffer.memory_handle();
 }
+*/
 
 Sampler Renderer::create_texture(char const * texture_path)
 {
@@ -4160,9 +4218,77 @@ Sampler Renderer::create_texture(char const * texture_path)
     return texture;
 }
 
-void Renderer::destroy_texture(Sampler & texture)
+/*
+void Renderer::delete_texture(Sampler & texture)
 {
-    texture.destroy(render_device.logical_device);
+    //texture.destroy(render_device.logical_device);
+
+    auto & bucket = commands.delete_buckets[frames.currentResource];
+
+    DeleteBuffer * delete_command = bucket.AddCommand<DeleteTexture>(0, 0);
+
+    delete_command->logical_device = render_device.logical_device;
+    delete_command->buffer         = buffer.buffer_handle();
+    delete_command->memory         = buffer.memory_handle();
+}
+*/
+
+void Renderer::delete_objects(size_t    buffer_count,
+                              Buffer *  buffers,
+                              size_t    sampler_count,
+                              Sampler * samplers)
+{
+    auto & bucket = commands.delete_buckets[frames.currentResource];
+
+    size_t buffer_offset = 0;
+    size_t buffer_size   = buffer_count * (sizeof(VkDeviceMemory) + sizeof(VkBuffer));
+
+    size_t sampler_offset = buffer_offset + buffer_size;
+    size_t sampler_size   = sampler_count * sizeof(VkSampler);
+
+    size_t view_offset = sampler_offset + sampler_size;
+    size_t view_size   = sampler_count * sizeof(VkImageView);
+
+    size_t image_offset = view_offset + view_size;
+    size_t image_size   = sampler_count * sizeof(VkImage);
+
+    size_t memory_offset = image_offset + image_size;
+    size_t memory_size   = (buffer_count + sampler_count) * sizeof(VkDeviceMemory);
+
+    size_t extra_size = memory_offset + memory_size;
+
+    DeleteObjects * delete_command = bucket.AddCommand<DeleteObjects>(0, extra_size);
+    delete_command->logical_device = render_device.logical_device;
+
+    char * command_memory = cmd::commandPacket::GetAuxiliaryMemory(delete_command);
+
+    VkBuffer *       buffer_iter  = reinterpret_cast<VkBuffer *>(command_memory + buffer_offset);
+    VkSampler *      sampler_iter = reinterpret_cast<VkSampler *>(command_memory + sampler_offset);
+    VkImageView *    view_iter    = reinterpret_cast<VkImageView *>(command_memory + view_offset);
+    VkImage *        image_iter   = reinterpret_cast<VkImage *>(command_memory + image_offset);
+    VkDeviceMemory * memory_iter  = reinterpret_cast<VkDeviceMemory *>(command_memory
+                                                                      + memory_offset);
+
+    delete_command->buffer_count = buffer_count;
+    delete_command->buffers      = buffer_iter;
+    delete_command->memories     = memory_iter;
+    for (size_t i = 0; i < buffer_count; ++i)
+    {
+        *(buffer_iter++) = buffers[i].buffer_handle();
+        *(memory_iter++) = buffers[i].memory_handle();
+    }
+
+    delete_command->image_count = sampler_count;
+    delete_command->samplers    = sampler_iter;
+    delete_command->views       = view_iter;
+    delete_command->images      = image_iter;
+    for (size_t i = 0; i < sampler_count; ++i)
+    {
+        *(sampler_iter++) = samplers[i].sampler_handle();
+        *(view_iter++)    = samplers[i].view_handle();
+        *(image_iter++)   = samplers[i].image_handle();
+        *(memory_iter++)  = samplers[i].memory_handle();
+    }
 }
 
 VkResult Renderer::createCommandbuffer(uint32_t        image_index,
