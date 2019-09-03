@@ -4217,6 +4217,18 @@ void Renderer::draw(PipelineHandle    pipeline,
          index_offset,
          index_count);
     */
+
+    auto & bucket = commands.draw_buckets[frames.currentResource];
+
+    Draw * command               = bucket.AddCommand<Draw>(0, sizeof(glm::mat4));
+    command->commandbuffer       = commands.draw_commandbuffers[frames.currentResource];
+    command->pipeline_layout     = pipelines.pipelines[pipeline].vk_pipeline_layout;
+    command->transform           = transform;
+    command->vertexbuffer        = mapped_vertices.buffer_handle();
+    command->vertexbuffer_offset = vertex_offset;
+    command->indexbuffer         = mapped_indices.buffer_handle();
+    command->indexbuffer_offset  = index_offset;
+    command->indexbuffer_count   = index_count;
 }
 
 void Renderer::draw(PipelineHandle    pipeline,
