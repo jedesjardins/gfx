@@ -48,9 +48,9 @@ struct Material
 
 struct StaticVertexData // can be edited with a
 {
-    gfx::Buffer vertexbuffer;
-    gfx::Buffer indexbuffer;
-    size_t      index_count;
+    gfx::BufferHandle vertexbuffer;
+    gfx::BufferHandle indexbuffer;
+    size_t            index_count;
 };
 
 struct StreamedVertexData
@@ -156,7 +156,7 @@ public:
 
         auto & static_data = std::get<StaticVertexData>(vertex_data);
 
-        gfx::Buffer buffers[2] = {static_data.vertexbuffer, static_data.indexbuffer};
+        gfx::BufferHandle buffers[2] = {static_data.vertexbuffer, static_data.indexbuffer};
 
         render_device.delete_objects(2, buffers, 0, nullptr);
     }
@@ -169,9 +169,9 @@ public:
 
             render_device.draw(material.pipeline,
                                material.transform,
-                               static_data.vertexbuffer.buffer_handle(),
+                               static_data.vertexbuffer,
                                0,
-                               static_data.indexbuffer.buffer_handle(),
+                               static_data.indexbuffer,
                                0,
                                static_data.index_count);
         }
@@ -285,6 +285,7 @@ int main()
 
     render_config.init();
 
+    std::cout << "Render Device Init\n";
     if (!render_device.init(render_config))
     {
         throw std::runtime_error("Couldn't initialize Vulkan!");
@@ -292,8 +293,10 @@ int main()
 
     std::vector<Object> objects{};
 
+    std::cout << "Create texture\n";
     auto texture = render_device.create_texture("../sword.png");
 
+ 	std::cout << "Create first object\n";
     objects.emplace_back(render_device,
                          ObjectType::STATIC,
                          obj1_vertices.size(),
@@ -303,6 +306,7 @@ int main()
 
     objects[0].getMaterial().transform = glm::scale(glm::mat4{1.f}, glm::vec3{.5f, .5f, .5f});
 
+    std::cout << "Create second object\n";
     objects.emplace_back(render_device,
                          ObjectType::STATIC,
                          obj2_vertices.size(),
@@ -310,6 +314,7 @@ int main()
                          obj_indices.size(),
                          obj_indices.data());
 
+    std::cout << "Create third object\n";
     objects.emplace_back(render_device,
                          ObjectType::STREAMED,
                          obj3_vertices.size(),
@@ -317,6 +322,7 @@ int main()
                          obj_indices.size(),
                          obj_indices.data());
 
+    std::cout << "Create fourth object\n";
     objects.emplace_back(render_device,
                          ObjectType::STREAMED,
                          obj4_vertices.size(),
@@ -383,11 +389,15 @@ int main()
 
     render_device.wait_for_idle();
 
+    std::cout << "delete texture\n";
     render_device.delete_objects(0, nullptr, 1, &texture);
 
+    std::cout << "delete first object\n";
     objects[0].destroyStaticObject(render_device);
+    std::cout << "delete second object\n";
     objects[1].destroyStaticObject(render_device);
 
+    std::cout << "pump\n";
     render_device.quit();
 
     glfwDestroyWindow(window);

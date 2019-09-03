@@ -52,6 +52,9 @@ using VertexAttributeHandle = size_t;
 using ShaderHandle          = size_t;
 using PipelineHandle        = size_t;
 
+// this should be replaced with a struct with a generation field
+using BufferHandle = size_t;
+
 struct UniformHandle
 {
     uint64_t uniform_layout_id : 32;
@@ -371,9 +374,16 @@ protected:
     VkBuffer vk_buffer{VK_NULL_HANDLE};
 };
 
-class MappedBuffer: public Buffer
+class MappedBuffer
 {
 public:
+    MappedBuffer(VkDevice logical_device, Buffer buffer, VkDeviceSize size)
+    : offset{0}, memory_size{size}, vk_buffer{buffer.buffer_handle()}
+    {
+        buffer.map(logical_device, 0, size, &data);
+    }
+
+    /*
     VkResult create(VkPhysicalDevice      physical_device,
                     VkDevice              logical_device,
                     VkDeviceSize          size,
@@ -397,6 +407,7 @@ public:
 
         return VK_SUCCESS;
     }
+    */
 
     size_t copy(size_t size, void const * src_data)
     {
@@ -418,10 +429,16 @@ public:
         offset = 0;
     }
 
+    VkBuffer buffer_handle()
+    {
+        return vk_buffer;
+    }
+
     VkDeviceSize offset{0};
 
 private:
     VkDeviceSize memory_size{0};
+    VkBuffer     vk_buffer{VK_NULL_HANDLE};
     void *       data{nullptr};
 };
 
@@ -847,6 +864,7 @@ private:
  */
 struct FrameResources
 {
+public:
     std::vector<VkSemaphore> image_available_semaphores;
     std::vector<VkSemaphore> render_finished_semaphores;
     std::vector<VkFence>     in_flight_fences;
@@ -895,6 +913,41 @@ private:
                                std::vector<VkFramebuffer> & framebuffers);
 }; // struct RenderPassResources
 
+struct BufferResources
+{
+public:
+    std::vector<MappedBuffer> dynamic_mapped_vertices;
+    std::vector<MappedBuffer> dynamic_mapped_indices;
+
+    std::vector<MappedBuffer> staging_buffer;
+
+    bool init(RenderConfig & render_config, Device & device, FrameResources & frames);
+    void quit(Device & device);
+
+    std::optional<BufferHandle> create_buffer(Device &              render_device,
+                                              VkDeviceSize          size,
+                                              VkBufferUsageFlags    usage,
+                                              VkMemoryPropertyFlags properties);
+
+    std::optional<Buffer> get_buffer(BufferHandle handle);
+
+    void delete_buffer(Device & render_device, BufferHandle handle);
+
+private:
+    BufferHandle next_buffer_handle{0};
+    // todo: this isn't thread safe
+    std::unordered_map<BufferHandle, Buffer> buffers;
+
+    VkResult createDynamicObjectResources(Device &         device,
+                                          FrameResources & frames,
+                                          size_t           dynamic_vertices_count,
+                                          size_t           dynamic_indices_count);
+
+    VkResult createStagingObjectResources(Device &         device,
+                                          FrameResources & frames,
+                                          size_t           staging_buffer_size);
+}; // struct BufferResources
+
 /*
  * Manages Uniforms
  */
@@ -906,11 +959,11 @@ public:
     std::vector<VkDescriptorPool>             pools;
     std::vector<UniformVariant>               uniform_collections;
 
-    bool init(RenderConfig & render_config, Device & device);
+    bool init(RenderConfig & render_config, Device & device, BufferResources & buffers);
     void quit(Device & device);
 
 private:
-    VkResult createUniformLayouts(Device & device);
+    VkResult createUniformLayouts(Device & device, BufferResources & buffers);
 }; // struct UniformResources
 
 struct PipelineResources
@@ -975,27 +1028,6 @@ private:
     VkResult createCommandbuffers(Device & device);
 }; // struct CommandResources
 
-struct VertexResources
-{
-public:
-    std::vector<MappedBuffer> dynamic_mapped_vertices;
-    std::vector<MappedBuffer> dynamic_mapped_indices;
-
-    std::vector<MappedBuffer> staging_buffer;
-
-    bool init(RenderConfig & render_config, Device & device, FrameResources & frames);
-    void quit(Device & device);
-
-private:
-    VkResult createDynamicObjectResources(Device &         device,
-                                          FrameResources & frames,
-                                          size_t           dynamic_vertices_count,
-                                          size_t           dynamic_indices_count);
-
-    VkResult createStagingObjectResources(Device &         device,
-                                          FrameResources & frames,
-                                          size_t           staging_buffer_size);
-}; // struct VertexResources
 }; // namespace module
 
 /*
@@ -1080,24 +1112,24 @@ public:
 
     void draw(PipelineHandle    pipeline,
               glm::mat4 const & transform,
-              VkBuffer          vertexbuffer,
+              BufferHandle      vertexbuffer_handle,
               VkDeviceSize      vertexbuffer_offset,
-              VkBuffer          indexbuffer,
+              BufferHandle      indexbuffer_handle,
               VkDeviceSize      indexbuffer_offset,
               VkDeviceSize      indexbuffer_count);
 
-    std::optional<Buffer> create_buffer(VkDeviceSize          size,
-                                        VkBufferUsageFlags    usage,
-                                        VkMemoryPropertyFlags properties);
+    std::optional<BufferHandle> create_buffer(VkDeviceSize          size,
+                                              VkBufferUsageFlags    usage,
+                                              VkMemoryPropertyFlags properties);
 
-    void update_buffer(Buffer buffer, VkDeviceSize size, void * data);
+    void update_buffer(BufferHandle buffer, VkDeviceSize size, void * data);
 
     Sampler create_texture(char const * texture_path);
 
-    void delete_objects(size_t    buffer_count,
-                        Buffer *  buffers,
-                        size_t    sampler_count,
-                        Sampler * samplers);
+    void delete_objects(size_t         buffer_count,
+                        BufferHandle * buffers,
+                        size_t         sampler_count,
+                        Sampler *      samplers);
 
 private:
     VkResult createCommandbuffer(uint32_t        image_index,
@@ -1117,9 +1149,9 @@ private:
     module::UniformResources    uniforms;
     module::PipelineResources   pipelines;
     module::CommandResources    commands;
-    module::VertexResources     vertices;
+    module::BufferResources     buffers;
 
-}; // class renderer
+}; // class Renderer
 }; // namespace gfx
 
 #endif
@@ -1897,7 +1929,7 @@ void DynamicBufferCollection::destroy(VkDevice & logical_device)
 {
     for (auto & mapped_buffer: uniform_buffers)
     {
-        mapped_buffer.destroy(logical_device);
+        //mapped_buffer.destroy(logical_device);
     }
 }
 
@@ -2208,19 +2240,20 @@ cmd::BackendDispatchFunction const SetImageLayout::DISPATCH_FUNCTION = &setImage
 
 void deleteObjects(void const * data)
 {
+	std::cout << "new command\n";
     auto const * delete_data = reinterpret_cast<DeleteObjects const *>(data);
-
-    // vkDestroyBuffer(deletedata->logical_device, deletedata->buffer, nullptr);
-    // vkFreeMemory(deletedata->logical_device, deletedata->memory, nullptr);
 
     for (size_t i = 0; i < delete_data->buffer_count; ++i)
     {
+    	std::cout << "Deleting: " << delete_data->buffers[i] << " " << delete_data->memories[i] << "\n";
+
         vkDestroyBuffer(delete_data->logical_device, delete_data->buffers[i], nullptr);
         vkFreeMemory(delete_data->logical_device, delete_data->memories[i], nullptr);
     }
 
     for (size_t i = 0; i < delete_data->image_count; ++i)
     {
+    	std::cout << "In here?\n";
         vkDestroySampler(delete_data->logical_device, delete_data->samplers[i], nullptr);
         vkDestroyImageView(delete_data->logical_device, delete_data->views[i], nullptr);
         vkDestroyImage(delete_data->logical_device, delete_data->images[i], nullptr);
@@ -2228,6 +2261,7 @@ void deleteObjects(void const * data)
                      delete_data->memories[delete_data->buffer_count + i],
                      nullptr);
     }
+    std::cout << "Finished\n";
 }
 
 cmd::BackendDispatchFunction const DeleteObjects::DISPATCH_FUNCTION = &deleteObjects;
@@ -3200,14 +3234,14 @@ VkResult RenderPassResources::createFramebuffer(Device &                     dev
     return VK_SUCCESS;
 }
 
-bool UniformResources::init(RenderConfig & render_config, Device & device)
+bool UniformResources::init(RenderConfig & render_config, Device & device, BufferResources & buffers)
 {
     uniform_layout_infos = std::move(render_config.uniform_layout_infos);
     uniform_layouts.resize(uniform_layout_infos.size());
     pools.resize(uniform_layout_infos.size());
     uniform_collections.resize(uniform_layout_infos.size());
 
-    return createUniformLayouts(device) == VK_SUCCESS;
+    return createUniformLayouts(device, buffers) == VK_SUCCESS;
 }
 
 void UniformResources::quit(Device & device)
@@ -3229,7 +3263,7 @@ void UniformResources::quit(Device & device)
     }
 }
 
-VkResult UniformResources::createUniformLayouts(Device & device)
+VkResult UniformResources::createUniformLayouts(Device & device, BufferResources & buffers)
 {
     for (size_t ul_i = 0; ul_i < uniform_layout_infos.size(); ++ul_i)
     {
@@ -3272,18 +3306,24 @@ VkResult UniformResources::createUniformLayouts(Device & device)
             const size_t uniform_buffer_blocks = 8;
             const size_t uniform_block_size    = 256;
 
-            std::vector<MappedBuffer> uniform_buffers{descriptor_count};
+            std::vector<MappedBuffer> uniform_buffers;//{descriptor_count};
 
             VkDeviceSize memory_size = uniform_buffer_blocks * uniform_block_size;
 
-            for (auto & uniform_buffer: uniform_buffers)
+            for (size_t i = 0; i < descriptor_count; ++i)
             {
-                uniform_buffer.create(
-                    device.physical_device,
-                    device.logical_device,
-                    memory_size,
-                    VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
-                    VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+            	std::cout << "Creating buffer for uniforms\n";
+
+                Buffer uniform_buffer = buffers.get_buffer(
+                                     buffers.create_buffer(device,
+                                                   memory_size,
+                                                   VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+                                                   VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT
+                                                       | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT)
+                                         .value())
+                                     .value();
+
+                uniform_buffers.emplace_back(device.logical_device, uniform_buffer, memory_size);
             }
 
             // ALLOCATE DESCRIPTORSETS GUY
@@ -3721,7 +3761,7 @@ VkResult CommandResources::createCommandbuffers(Device & device)
         device.logical_device, &allocInfo, transfer_commandbuffers.data());
 }
 
-bool VertexResources::init(RenderConfig & render_config, Device & device, FrameResources & frames)
+bool BufferResources::init(RenderConfig & render_config, Device & device, FrameResources & frames)
 {
     if (createDynamicObjectResources(device,
                                      frames,
@@ -3741,29 +3781,64 @@ bool VertexResources::init(RenderConfig & render_config, Device & device, FrameR
     return true;
 }
 
-void VertexResources::quit(Device & device)
+void BufferResources::quit(Device & device)
 {
+    /*
     for (size_t i = 0; i < dynamic_mapped_vertices.size(); ++i)
     {
         dynamic_mapped_indices[i].destroy(device.logical_device);
         dynamic_mapped_vertices[i].destroy(device.logical_device);
         staging_buffer[i].destroy(device.logical_device);
     }
+    */
+
+    for (auto & buffer_iter: buffers)
+    {
+        buffer_iter.second.destroy(device.logical_device);
+    }
 }
 
-VkResult VertexResources::createDynamicObjectResources(Device &         device,
+VkResult BufferResources::createDynamicObjectResources(Device &         device,
                                                        FrameResources & frames,
                                                        size_t           dynamic_vertices_count,
                                                        size_t           dynamic_indices_count)
 {
-    dynamic_mapped_vertices.resize(frames.MAX_BUFFERED_RESOURCES);
-    dynamic_mapped_indices.resize(frames.MAX_BUFFERED_RESOURCES);
+    dynamic_mapped_vertices.reserve(frames.MAX_BUFFERED_RESOURCES);
+    dynamic_mapped_indices.reserve(frames.MAX_BUFFERED_RESOURCES);
 
     VkDeviceSize vertices_memory_size = sizeof(Vertex) * dynamic_vertices_count;
     VkDeviceSize indices_memory_size  = sizeof(uint32_t) * dynamic_indices_count;
 
     for (uint32_t i = 0; i < frames.MAX_BUFFERED_RESOURCES; ++i)
     {
+    	std::cout << "Creating mapped vertices\n";
+
+        Buffer vertices_buffer = get_buffer(
+                                     create_buffer(device,
+                                                   vertices_memory_size,
+                                                   VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+                                                   VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT
+                                                       | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT)
+                                         .value())
+                                     .value();
+
+        dynamic_mapped_vertices.emplace_back(
+            device.logical_device, vertices_buffer, vertices_memory_size);
+
+        std::cout << "Creating mapped indices\n";
+
+        Buffer indices_buffer = get_buffer(create_buffer(device,
+                                                         indices_memory_size,
+                                                         VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+                                                         VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT
+                                                             | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT)
+                                               .value())
+                                    .value();
+
+        dynamic_mapped_indices.emplace_back(
+            device.logical_device, indices_buffer, indices_memory_size);
+
+        /*
         dynamic_mapped_vertices[i].create(
             device.physical_device,
             device.logical_device,
@@ -3777,28 +3852,89 @@ VkResult VertexResources::createDynamicObjectResources(Device &         device,
             indices_memory_size,
             VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
             VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+        */
     }
 
     return VK_SUCCESS;
 }
 
-VkResult VertexResources::createStagingObjectResources(Device &         device,
+VkResult BufferResources::createStagingObjectResources(Device &         device,
                                                        FrameResources & frames,
                                                        size_t           staging_buffer_size)
 {
-    staging_buffer.resize(frames.MAX_BUFFERED_RESOURCES);
+    staging_buffer.reserve(frames.MAX_BUFFERED_RESOURCES);
 
     for (uint32_t i = 0; i < frames.MAX_BUFFERED_RESOURCES; ++i)
     {
+    	std::cout << "Creating staged resources\n";
+
+        Buffer single_staging_buffer = get_buffer(create_buffer(device,
+                                                         staging_buffer_size,
+                                                         VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+                                                         VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT
+                                                             | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT)
+                                               .value())
+                                    .value();
+
+        staging_buffer.emplace_back(
+            device.logical_device, single_staging_buffer, staging_buffer_size);
+
+
+        /*
         staging_buffer[i].create(
             device.physical_device,
             device.logical_device,
             staging_buffer_size,
             VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
             VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+        */
     }
 
     return VK_SUCCESS;
+}
+
+std::optional<BufferHandle> BufferResources::create_buffer(Device &              render_device,
+                                                           VkDeviceSize          size,
+                                                           VkBufferUsageFlags    usage,
+                                                           VkMemoryPropertyFlags properties)
+{
+    BufferHandle handle = next_buffer_handle++;
+
+    Buffer & buffer = buffers[handle];
+
+    if (buffer.create(
+            render_device.physical_device, render_device.logical_device, size, usage, properties)
+        != VK_SUCCESS)
+    {
+        return std::nullopt;
+    }
+
+    std::cout << "\tCreated: " << buffer.buffer_handle() << " " << buffer.memory_handle() << std::endl;
+
+    return handle;
+}
+
+std::optional<Buffer> BufferResources::get_buffer(BufferHandle handle)
+{
+    auto buffer_iter = buffers.find(handle);
+
+    if (buffer_iter != buffers.end())
+    {
+        return buffer_iter->second;
+    }
+
+    return std::nullopt;
+}
+
+void BufferResources::delete_buffer(Device & render_device, BufferHandle handle)
+{
+    auto buffer_iter = buffers.find(handle);
+
+    if (buffer_iter != buffers.end())
+    {
+        //buffer_iter->second.destroy(render_device.logical_device);
+        buffers.erase(buffer_iter);
+    }
 }
 
 }; // namespace module
@@ -3832,7 +3968,13 @@ bool Renderer::init(RenderConfig & render_config)
         return false;
     }
 
-    if (!uniforms.init(render_config, render_device))
+    if (!buffers.init(render_config, render_device, frames))
+    {
+        std::cout << "Init Commands failed\n";
+        return false;
+    }
+
+    if (!uniforms.init(render_config, render_device, buffers))
     {
         std::cout << "Init Uniforms failed\n";
         return false;
@@ -3850,21 +3992,15 @@ bool Renderer::init(RenderConfig & render_config)
         return false;
     }
 
-    if (!vertices.init(render_config, render_device, frames))
-    {
-        std::cout << "Init Commands failed\n";
-        return false;
-    }
-
     return true;
 }
 
 void Renderer::quit()
 {
-    vertices.quit(render_device);
     commands.quit(render_device);
     pipelines.quit(render_device);
     uniforms.quit(render_device);
+    buffers.quit(render_device);
     render_passes.quit(render_device);
     images.quit(render_device);
     frames.quit(render_device.logical_device);
@@ -3991,9 +4127,9 @@ void Renderer::draw_frame(uint32_t uniform_count, UniformHandle * p_uniforms)
     frames.currentResource = (frames.currentResource + 1) % frames.MAX_BUFFERED_RESOURCES;
 
     // reset buffer offsets for copies
-    vertices.dynamic_mapped_vertices[frames.currentResource].reset();
-    vertices.dynamic_mapped_indices[frames.currentResource].reset();
-    vertices.staging_buffer[frames.currentResource].reset();
+    buffers.dynamic_mapped_vertices[frames.currentResource].reset();
+    buffers.dynamic_mapped_indices[frames.currentResource].reset();
+    buffers.staging_buffer[frames.currentResource].reset();
 
     commands.draw_buckets[frames.currentResource].Clear();
     commands.transfer_buckets[frames.currentResource].Clear();
@@ -4066,12 +4202,13 @@ void Renderer::draw(PipelineHandle    pipeline,
                     uint32_t          index_count,
                     uint32_t *        indices)
 {
-    auto & mapped_vertices = this->vertices.dynamic_mapped_vertices[frames.currentResource];
-    auto & mapped_indices  = this->vertices.dynamic_mapped_indices[frames.currentResource];
+    auto & mapped_vertices = buffers.dynamic_mapped_vertices[frames.currentResource];
+    auto & mapped_indices  = buffers.dynamic_mapped_indices[frames.currentResource];
 
     VkDeviceSize vertex_offset = mapped_vertices.copy(sizeof(Vertex) * vertex_count, vertices);
     VkDeviceSize index_offset  = mapped_indices.copy(sizeof(uint32_t) * index_count, indices);
 
+    /*
     draw(pipeline,
          transform,
          mapped_vertices.buffer_handle(),
@@ -4079,47 +4216,47 @@ void Renderer::draw(PipelineHandle    pipeline,
          mapped_indices.buffer_handle(),
          index_offset,
          index_count);
+    */
 }
 
 void Renderer::draw(PipelineHandle    pipeline,
                     glm::mat4 const & transform,
-                    VkBuffer          vertexbuffer,
+                    BufferHandle      vertexbuffer_handle,
                     VkDeviceSize      vertexbuffer_offset,
-                    VkBuffer          indexbuffer,
+                    BufferHandle      indexbuffer_handle,
                     VkDeviceSize      indexbuffer_offset,
                     VkDeviceSize      indexbuffer_count)
 {
     auto & bucket = commands.draw_buckets[frames.currentResource];
 
+    Buffer vertexbuffer = buffers.get_buffer(vertexbuffer_handle).value(); //
+    Buffer indexbuffer  = buffers.get_buffer(indexbuffer_handle).value();  //
+
     Draw * command               = bucket.AddCommand<Draw>(0, sizeof(glm::mat4));
     command->commandbuffer       = commands.draw_commandbuffers[frames.currentResource];
     command->pipeline_layout     = pipelines.pipelines[pipeline].vk_pipeline_layout;
     command->transform           = transform;
-    command->vertexbuffer        = vertexbuffer;
+    command->vertexbuffer        = vertexbuffer.buffer_handle();
     command->vertexbuffer_offset = vertexbuffer_offset;
-    command->indexbuffer         = indexbuffer;
+    command->indexbuffer         = indexbuffer.buffer_handle();
     command->indexbuffer_offset  = indexbuffer_offset;
     command->indexbuffer_count   = indexbuffer_count;
 }
 
-std::optional<Buffer> Renderer::create_buffer(VkDeviceSize          size,
-                                              VkBufferUsageFlags    usage,
-                                              VkMemoryPropertyFlags properties)
+std::optional<BufferHandle> Renderer::create_buffer(VkDeviceSize          size,
+                                                    VkBufferUsageFlags    usage,
+                                                    VkMemoryPropertyFlags properties)
 {
-    Buffer buffer;
-    if (buffer.create(
-            render_device.physical_device, render_device.logical_device, size, usage, properties)
-        != VK_SUCCESS)
-    {
-        return std::nullopt;
-    }
-    return buffer;
+	std::cout << "Creating buffer through renderer interface\n";
+
+    return buffers.create_buffer(render_device, size, usage, properties);
 }
 
-void Renderer::update_buffer(Buffer buffer, VkDeviceSize size, void * data)
+void Renderer::update_buffer(BufferHandle buffer_handle, VkDeviceSize size, void * data)
 {
-    // TODO:
-    auto & mapped_buffer = this->vertices.staging_buffer[frames.currentResource];
+    Buffer buffer = buffers.get_buffer(buffer_handle).value();
+
+    auto & mapped_buffer = buffers.staging_buffer[frames.currentResource];
 
     VkDeviceSize data_offset = mapped_buffer.copy(size, data);
 
@@ -4133,19 +4270,6 @@ void Renderer::update_buffer(Buffer buffer, VkDeviceSize size, void * data)
     vertex_command->dstOffset     = 0;
     vertex_command->size          = size;
 }
-
-/*
-void Renderer::delete_buffer(Buffer & buffer)
-{
-    auto & bucket = commands.delete_buckets[frames.currentResource];
-
-    DeleteBuffer * delete_command = bucket.AddCommand<DeleteBuffer>(0, 0);
-
-    delete_command->logical_device = render_device.logical_device;
-    delete_command->buffer         = buffer.buffer_handle();
-    delete_command->memory         = buffer.memory_handle();
-}
-*/
 
 Sampler Renderer::create_texture(char const * texture_path)
 {
@@ -4162,7 +4286,7 @@ Sampler Renderer::create_texture(char const * texture_path)
         throw std::runtime_error("failed to load texture image!");
     }
 
-    VkDeviceSize pixel_data_offset = vertices.staging_buffer[frames.currentResource].copy(
+    VkDeviceSize pixel_data_offset = buffers.staging_buffer[frames.currentResource].copy(
         static_cast<size_t>(imageSize), pixels);
 
     stbi_image_free(pixels);
@@ -4201,7 +4325,7 @@ Sampler Renderer::create_texture(char const * texture_path)
 
     CopyToImage * copy_command  = bucket.AddCommand<CopyToImage>(0, 0);
     copy_command->commandbuffer = commands.transfer_commandbuffers[frames.currentResource];
-    copy_command->srcBuffer     = vertices.staging_buffer[frames.currentResource].buffer_handle();
+    copy_command->srcBuffer     = buffers.staging_buffer[frames.currentResource].buffer_handle();
     copy_command->srcOffset     = pixel_data_offset;
     copy_command->dstImage      = texture.image_handle();
     copy_command->width         = static_cast<uint32_t>(texWidth);
@@ -4223,25 +4347,10 @@ Sampler Renderer::create_texture(char const * texture_path)
     return texture;
 }
 
-/*
-void Renderer::delete_texture(Sampler & texture)
-{
-    //texture.destroy(render_device.logical_device);
-
-    auto & bucket = commands.delete_buckets[frames.currentResource];
-
-    DeleteBuffer * delete_command = bucket.AddCommand<DeleteTexture>(0, 0);
-
-    delete_command->logical_device = render_device.logical_device;
-    delete_command->buffer         = buffer.buffer_handle();
-    delete_command->memory         = buffer.memory_handle();
-}
-*/
-
-void Renderer::delete_objects(size_t    buffer_count,
-                              Buffer *  buffers,
-                              size_t    sampler_count,
-                              Sampler * samplers)
+void Renderer::delete_objects(size_t         buffer_count,
+                              BufferHandle * buffer_handles,
+                              size_t         sampler_count,
+                              Sampler *      samplers)
 {
     auto & bucket = commands.delete_buckets[frames.currentResource];
 
@@ -4279,8 +4388,13 @@ void Renderer::delete_objects(size_t    buffer_count,
     delete_command->memories     = memory_iter;
     for (size_t i = 0; i < buffer_count; ++i)
     {
-        *(buffer_iter++) = buffers[i].buffer_handle();
-        *(memory_iter++) = buffers[i].memory_handle();
+        auto buffer = buffers.get_buffer(buffer_handles[i]).value();
+        buffers.delete_buffer(render_device, buffer_handles[i]);
+
+        std::cout << "Queuing buffer for delete: " << buffer.buffer_handle() << " " << buffer.memory_handle() << "\n";
+
+        *(buffer_iter++) = buffer.buffer_handle();
+        *(memory_iter++) = buffer.memory_handle();
     }
 
     delete_command->image_count = sampler_count;
@@ -4300,8 +4414,8 @@ VkResult Renderer::createCommandbuffer(uint32_t        image_index,
                                        uint32_t        uniform_count,
                                        UniformHandle * p_uniforms)
 {
-    auto & mapped_vertices = vertices.dynamic_mapped_vertices[frames.currentResource];
-    auto & mapped_indices  = vertices.dynamic_mapped_indices[frames.currentResource];
+    auto & mapped_vertices = buffers.dynamic_mapped_vertices[frames.currentResource];
+    auto & mapped_indices  = buffers.dynamic_mapped_indices[frames.currentResource];
 
     auto   commandbuffer = commands.draw_commandbuffers[frames.currentResource];
     auto & draw_bucket   = commands.draw_buckets[frames.currentResource];
