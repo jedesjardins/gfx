@@ -1929,7 +1929,7 @@ void DynamicBufferCollection::destroy(VkDevice & logical_device)
 {
     for (auto & mapped_buffer: uniform_buffers)
     {
-        //mapped_buffer.destroy(logical_device);
+        // mapped_buffer.destroy(logical_device);
     }
 }
 
@@ -2240,12 +2240,13 @@ cmd::BackendDispatchFunction const SetImageLayout::DISPATCH_FUNCTION = &setImage
 
 void deleteObjects(void const * data)
 {
-	std::cout << "new command\n";
+    std::cout << "new command\n";
     auto const * delete_data = reinterpret_cast<DeleteObjects const *>(data);
 
     for (size_t i = 0; i < delete_data->buffer_count; ++i)
     {
-    	std::cout << "Deleting: " << delete_data->buffers[i] << " " << delete_data->memories[i] << "\n";
+        std::cout << "Deleting: " << delete_data->buffers[i] << " " << delete_data->memories[i]
+                  << "\n";
 
         vkDestroyBuffer(delete_data->logical_device, delete_data->buffers[i], nullptr);
         vkFreeMemory(delete_data->logical_device, delete_data->memories[i], nullptr);
@@ -2253,7 +2254,7 @@ void deleteObjects(void const * data)
 
     for (size_t i = 0; i < delete_data->image_count; ++i)
     {
-    	std::cout << "In here?\n";
+        std::cout << "In here?\n";
         vkDestroySampler(delete_data->logical_device, delete_data->samplers[i], nullptr);
         vkDestroyImageView(delete_data->logical_device, delete_data->views[i], nullptr);
         vkDestroyImage(delete_data->logical_device, delete_data->images[i], nullptr);
@@ -2287,7 +2288,7 @@ Device::Device(GLFWwindow * window_ptr): window{window_ptr}
 
 bool Device::init(RenderConfig & render_config)
 {
-// clang-format off
+    // clang-format off
     #ifndef NDEBUG
     checkValidationLayerSupport();
     #endif
@@ -2441,7 +2442,7 @@ void Device::getRequiredExtensions()
 // INSTANCE
 VkResult Device::createInstance(char const * window_name)
 {
-// clang-format off
+    // clang-format off
     #ifdef NDEBUG
     use_validation = false;
     #else
@@ -3234,7 +3235,9 @@ VkResult RenderPassResources::createFramebuffer(Device &                     dev
     return VK_SUCCESS;
 }
 
-bool UniformResources::init(RenderConfig & render_config, Device & device, BufferResources & buffers)
+bool UniformResources::init(RenderConfig &    render_config,
+                            Device &          device,
+                            BufferResources & buffers)
 {
     uniform_layout_infos = std::move(render_config.uniform_layout_infos);
     uniform_layouts.resize(uniform_layout_infos.size());
@@ -3306,22 +3309,24 @@ VkResult UniformResources::createUniformLayouts(Device & device, BufferResources
             const size_t uniform_buffer_blocks = 8;
             const size_t uniform_block_size    = 256;
 
-            std::vector<MappedBuffer> uniform_buffers;//{descriptor_count};
+            std::vector<MappedBuffer> uniform_buffers; //{descriptor_count};
 
             VkDeviceSize memory_size = uniform_buffer_blocks * uniform_block_size;
 
             for (size_t i = 0; i < descriptor_count; ++i)
             {
-            	std::cout << "Creating buffer for uniforms\n";
+                std::cout << "Creating buffer for uniforms\n";
 
-                Buffer uniform_buffer = buffers.get_buffer(
-                                     buffers.create_buffer(device,
-                                                   memory_size,
-                                                   VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
-                                                   VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT
-                                                       | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT)
-                                         .value())
-                                     .value();
+                Buffer uniform_buffer
+                    = buffers
+                          .get_buffer(buffers
+                                          .create_buffer(device,
+                                                         memory_size,
+                                                         VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+                                                         VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT
+                                                             | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT)
+                                          .value())
+                          .value();
 
                 uniform_buffers.emplace_back(device.logical_device, uniform_buffer, memory_size);
             }
@@ -3811,7 +3816,7 @@ VkResult BufferResources::createDynamicObjectResources(Device &         device,
 
     for (uint32_t i = 0; i < frames.MAX_BUFFERED_RESOURCES; ++i)
     {
-    	std::cout << "Creating mapped vertices\n";
+        std::cout << "Creating mapped vertices\n";
 
         Buffer vertices_buffer = get_buffer(
                                      create_buffer(device,
@@ -3866,19 +3871,19 @@ VkResult BufferResources::createStagingObjectResources(Device &         device,
 
     for (uint32_t i = 0; i < frames.MAX_BUFFERED_RESOURCES; ++i)
     {
-    	std::cout << "Creating staged resources\n";
+        std::cout << "Creating staged resources\n";
 
-        Buffer single_staging_buffer = get_buffer(create_buffer(device,
+        Buffer single_staging_buffer = get_buffer(
+                                           create_buffer(device,
                                                          staging_buffer_size,
                                                          VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
                                                          VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT
                                                              | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT)
                                                .value())
-                                    .value();
+                                           .value();
 
         staging_buffer.emplace_back(
             device.logical_device, single_staging_buffer, staging_buffer_size);
-
 
         /*
         staging_buffer[i].create(
@@ -3909,7 +3914,8 @@ std::optional<BufferHandle> BufferResources::create_buffer(Device &             
         return std::nullopt;
     }
 
-    std::cout << "\tCreated: " << buffer.buffer_handle() << " " << buffer.memory_handle() << std::endl;
+    std::cout << "\tCreated: " << buffer.buffer_handle() << " " << buffer.memory_handle()
+              << std::endl;
 
     return handle;
 }
@@ -3932,7 +3938,7 @@ void BufferResources::delete_buffer(Device & render_device, BufferHandle handle)
 
     if (buffer_iter != buffers.end())
     {
-        //buffer_iter->second.destroy(render_device.logical_device);
+        // buffer_iter->second.destroy(render_device.logical_device);
         buffers.erase(buffer_iter);
     }
 }
@@ -4208,16 +4214,6 @@ void Renderer::draw(PipelineHandle    pipeline,
     VkDeviceSize vertex_offset = mapped_vertices.copy(sizeof(Vertex) * vertex_count, vertices);
     VkDeviceSize index_offset  = mapped_indices.copy(sizeof(uint32_t) * index_count, indices);
 
-    /*
-    draw(pipeline,
-         transform,
-         mapped_vertices.buffer_handle(),
-         vertex_offset,
-         mapped_indices.buffer_handle(),
-         index_offset,
-         index_count);
-    */
-
     auto & bucket = commands.draw_buckets[frames.currentResource];
 
     Draw * command               = bucket.AddCommand<Draw>(0, sizeof(glm::mat4));
@@ -4259,7 +4255,7 @@ std::optional<BufferHandle> Renderer::create_buffer(VkDeviceSize          size,
                                                     VkBufferUsageFlags    usage,
                                                     VkMemoryPropertyFlags properties)
 {
-	std::cout << "Creating buffer through renderer interface\n";
+    std::cout << "Creating buffer through renderer interface\n";
 
     return buffers.create_buffer(render_device, size, usage, properties);
 }
@@ -4403,7 +4399,8 @@ void Renderer::delete_objects(size_t         buffer_count,
         auto buffer = buffers.get_buffer(buffer_handles[i]).value();
         buffers.delete_buffer(render_device, buffer_handles[i]);
 
-        std::cout << "Queuing buffer for delete: " << buffer.buffer_handle() << " " << buffer.memory_handle() << "\n";
+        std::cout << "Queuing buffer for delete: " << buffer.buffer_handle() << " "
+                  << buffer.memory_handle() << "\n";
 
         *(buffer_iter++) = buffer.buffer_handle();
         *(memory_iter++) = buffer.memory_handle();
