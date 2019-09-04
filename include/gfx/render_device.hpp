@@ -543,6 +543,7 @@ struct SamplerCollection
                                                  VkSampler   sampler);
     std::optional<VkDescriptorSet> getUniform(UniformHandle handle);
     std::optional<VkDeviceSize>    getDynamicOffset(UniformHandle handle);
+    void                           destroyUniform(UniformHandle handle);
     void                           destroy(VkDevice & logical_device);
 };
 
@@ -723,6 +724,19 @@ struct DeleteTextures
 static_assert(std::is_pod<DeleteTextures>::value == true, "DeleteTextures must be a POD.");
 
 void deleteTextures(void const * data);
+
+struct DeleteUniforms
+{
+    static cmd::BackendDispatchFunction const DISPATCH_FUNCTION;
+
+    std::vector<UniformVariant> * uniform_collections;
+    size_t                        uniform_count;
+    UniformHandle *               uniform_handles;
+};
+
+static_assert(std::is_pod<DeleteUniforms>::value == true, "DeleteUniforms must be a POD.");
+
+void deleteUniforms(void const * data);
 
 //
 // PHYSICAL DEVICE
@@ -1082,6 +1096,21 @@ public:
 
     void draw_frame(uint32_t uniform_count, UniformHandle * p_uniforms);
 
+    void draw(PipelineHandle    pipeline,
+              glm::mat4 const & transform,
+              uint32_t          vertex_count,
+              Vertex *          vertices,
+              uint32_t          index_count,
+              uint32_t *        indices);
+
+    void draw(PipelineHandle    pipeline,
+              glm::mat4 const & transform,
+              BufferHandle      vertexbuffer_handle,
+              VkDeviceSize      vertexbuffer_offset,
+              BufferHandle      indexbuffer_handle,
+              VkDeviceSize      indexbuffer_offset,
+              VkDeviceSize      indexbuffer_count);
+
     /*
     template <typename... Args>
     std::optional<UniformHandle> newUniform(UniformLayoutHandle layout_handle, Args &&... args)
@@ -1131,21 +1160,6 @@ public:
     }
 
     void delete_uniforms(size_t uniform_count, UniformHandle * uniforms);
-
-    void draw(PipelineHandle    pipeline,
-              glm::mat4 const & transform,
-              uint32_t          vertex_count,
-              Vertex *          vertices,
-              uint32_t          index_count,
-              uint32_t *        indices);
-
-    void draw(PipelineHandle    pipeline,
-              glm::mat4 const & transform,
-              BufferHandle      vertexbuffer_handle,
-              VkDeviceSize      vertexbuffer_offset,
-              BufferHandle      indexbuffer_handle,
-              VkDeviceSize      indexbuffer_offset,
-              VkDeviceSize      indexbuffer_count);
 
     std::optional<BufferHandle> create_buffer(VkDeviceSize          size,
                                               VkBufferUsageFlags    usage,
@@ -1957,6 +1971,10 @@ std::optional<VkDeviceSize> DynamicBufferCollection::getDynamicOffset(UniformHan
     return uniforms[handle.uniform_id].offset;
 }
 
+void DynamicBufferCollection::destroyUniform(UniformHandle)
+{
+}
+
 void DynamicBufferCollection::destroy(VkDevice & logical_device)
 {
     for (auto & mapped_buffer: uniform_buffers)
@@ -1999,6 +2017,10 @@ std::optional<VkDescriptorSet> SamplerCollection::getUniform(UniformHandle handl
 std::optional<VkDeviceSize> SamplerCollection::getDynamicOffset(UniformHandle handle)
 {
     return std::nullopt;
+}
+
+void SamplerCollection::destroyUniform(UniformHandle)
+{
 }
 
 void SamplerCollection::destroy(VkDevice & logical_device)
@@ -2305,6 +2327,26 @@ void deleteTextures(void const * data)
 }
 
 cmd::BackendDispatchFunction const DeleteTextures::DISPATCH_FUNCTION = &deleteTextures;
+
+void deleteUniforms(void const * data)
+{
+    std::cout << "new command\n";
+    auto const * delete_data = reinterpret_cast<DeleteUniforms const *>(data);
+
+    for (size_t i = 0; i < delete_data->uniform_count; ++i)
+    {
+        auto   uniform_handle     = delete_data->uniform_handles[i];
+        auto & uniform_collection = (*delete_data->uniform_collections)[uniform_handle.uniform_layout_id];
+
+        // delete the uniforms somehow here...
+        std::visit(
+            [uniform_handle](auto && collection) { collection.destroyUniform(uniform_handle); },
+            uniform_collection);
+    }
+    std::cout << "Finished\n";
+}
+
+cmd::BackendDispatchFunction const DeleteUniforms::DISPATCH_FUNCTION = &deleteUniforms;
 
 //
 // PHYSICALDEVICEINFO
@@ -4236,6 +4278,56 @@ void Renderer::draw_frame(uint32_t uniform_count, UniformHandle * p_uniforms)
     commands.delete_buckets[frames.currentResource].Submit();
 }
 
+void Renderer::draw(PipelineHandle    pipeline,
+                    glm::mat4 const & transform,
+                    uint32_t          vertex_count,
+                    Vertex *          vertices,
+                    uint32_t          index_count,
+                    uint32_t *        indices)
+{
+    auto & mapped_vertices = buffers.dynamic_mapped_vertices[frames.currentResource];
+    auto & mapped_indices  = buffers.dynamic_mapped_indices[frames.currentResource];
+
+    VkDeviceSize vertex_offset = mapped_vertices.copy(sizeof(Vertex) * vertex_count, vertices);
+    VkDeviceSize index_offset  = mapped_indices.copy(sizeof(uint32_t) * index_count, indices);
+
+    auto & bucket = commands.draw_buckets[frames.currentResource];
+
+    Draw * command               = bucket.AddCommand<Draw>(0, sizeof(glm::mat4));
+    command->commandbuffer       = commands.draw_commandbuffers[frames.currentResource];
+    command->pipeline_layout     = pipelines.pipelines[pipeline].vk_pipeline_layout;
+    command->transform           = transform;
+    command->vertexbuffer        = mapped_vertices.buffer_handle();
+    command->vertexbuffer_offset = vertex_offset;
+    command->indexbuffer         = mapped_indices.buffer_handle();
+    command->indexbuffer_offset  = index_offset;
+    command->indexbuffer_count   = index_count;
+}
+
+void Renderer::draw(PipelineHandle    pipeline,
+                    glm::mat4 const & transform,
+                    BufferHandle      vertexbuffer_handle,
+                    VkDeviceSize      vertexbuffer_offset,
+                    BufferHandle      indexbuffer_handle,
+                    VkDeviceSize      indexbuffer_offset,
+                    VkDeviceSize      indexbuffer_count)
+{
+    auto & bucket = commands.draw_buckets[frames.currentResource];
+
+    Buffer vertexbuffer = buffers.get_buffer(vertexbuffer_handle).value(); //
+    Buffer indexbuffer  = buffers.get_buffer(indexbuffer_handle).value();  //
+
+    Draw * command               = bucket.AddCommand<Draw>(0, sizeof(glm::mat4));
+    command->commandbuffer       = commands.draw_commandbuffers[frames.currentResource];
+    command->pipeline_layout     = pipelines.pipelines[pipeline].vk_pipeline_layout;
+    command->transform           = transform;
+    command->vertexbuffer        = vertexbuffer.buffer_handle();
+    command->vertexbuffer_offset = vertexbuffer_offset;
+    command->indexbuffer         = indexbuffer.buffer_handle();
+    command->indexbuffer_offset  = indexbuffer_offset;
+    command->indexbuffer_count   = indexbuffer_count;
+}
+
 std::optional<UniformHandle> Renderer::new_uniform(UniformLayoutHandle layout_handle,
                                                    VkDeviceSize        size,
                                                    void *              data_ptr)
@@ -4296,54 +4388,20 @@ std::optional<VkDeviceSize> Renderer::getDynamicOffset(UniformHandle handle)
         uniform_collection);
 }
 
-void Renderer::draw(PipelineHandle    pipeline,
-                    glm::mat4 const & transform,
-                    uint32_t          vertex_count,
-                    Vertex *          vertices,
-                    uint32_t          index_count,
-                    uint32_t *        indices)
+void Renderer::delete_uniforms(size_t uniform_count, UniformHandle * uniform_handles)
 {
-    auto & mapped_vertices = buffers.dynamic_mapped_vertices[frames.currentResource];
-    auto & mapped_indices  = buffers.dynamic_mapped_indices[frames.currentResource];
+    auto & bucket = commands.delete_buckets[frames.currentResource];
 
-    VkDeviceSize vertex_offset = mapped_vertices.copy(sizeof(Vertex) * vertex_count, vertices);
-    VkDeviceSize index_offset  = mapped_indices.copy(sizeof(uint32_t) * index_count, indices);
+    DeleteUniforms * delete_command = bucket.AddCommand<DeleteUniforms>(
+        0, uniform_count + sizeof(UniformHandle));
 
-    auto & bucket = commands.draw_buckets[frames.currentResource];
+    char * command_memory = cmd::commandPacket::GetAuxiliaryMemory(delete_command);
 
-    Draw * command               = bucket.AddCommand<Draw>(0, sizeof(glm::mat4));
-    command->commandbuffer       = commands.draw_commandbuffers[frames.currentResource];
-    command->pipeline_layout     = pipelines.pipelines[pipeline].vk_pipeline_layout;
-    command->transform           = transform;
-    command->vertexbuffer        = mapped_vertices.buffer_handle();
-    command->vertexbuffer_offset = vertex_offset;
-    command->indexbuffer         = mapped_indices.buffer_handle();
-    command->indexbuffer_offset  = index_offset;
-    command->indexbuffer_count   = index_count;
-}
+    delete_command->uniform_collections = &uniforms.uniform_collections;
+    delete_command->uniform_count       = uniform_count;
+    delete_command->uniform_handles     = reinterpret_cast<UniformHandle *>(command_memory);
 
-void Renderer::draw(PipelineHandle    pipeline,
-                    glm::mat4 const & transform,
-                    BufferHandle      vertexbuffer_handle,
-                    VkDeviceSize      vertexbuffer_offset,
-                    BufferHandle      indexbuffer_handle,
-                    VkDeviceSize      indexbuffer_offset,
-                    VkDeviceSize      indexbuffer_count)
-{
-    auto & bucket = commands.draw_buckets[frames.currentResource];
-
-    Buffer vertexbuffer = buffers.get_buffer(vertexbuffer_handle).value(); //
-    Buffer indexbuffer  = buffers.get_buffer(indexbuffer_handle).value();  //
-
-    Draw * command               = bucket.AddCommand<Draw>(0, sizeof(glm::mat4));
-    command->commandbuffer       = commands.draw_commandbuffers[frames.currentResource];
-    command->pipeline_layout     = pipelines.pipelines[pipeline].vk_pipeline_layout;
-    command->transform           = transform;
-    command->vertexbuffer        = vertexbuffer.buffer_handle();
-    command->vertexbuffer_offset = vertexbuffer_offset;
-    command->indexbuffer         = indexbuffer.buffer_handle();
-    command->indexbuffer_offset  = indexbuffer_offset;
-    command->indexbuffer_count   = indexbuffer_count;
+    memcpy(delete_command->uniform_handles, uniform_handles, uniform_count * sizeof(UniformHandle));
 }
 
 std::optional<BufferHandle> Renderer::create_buffer(VkDeviceSize          size,
