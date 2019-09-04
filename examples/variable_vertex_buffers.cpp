@@ -296,7 +296,7 @@ int main()
     std::cout << "Create texture\n";
     auto texture = render_device.create_texture("../sword.png");
 
- 	std::cout << "Create first object\n";
+    std::cout << "Create first object\n";
     objects.emplace_back(render_device,
                          ObjectType::STATIC,
                          obj1_vertices.size(),
@@ -337,9 +337,8 @@ int main()
     auto opt_view_handle = render_device.new_uniform(0, sizeof(glm::mat4), glm::value_ptr(view));
     gfx::UniformHandle view_handle = opt_view_handle.value();
 
-    auto opt_sampler_handle = render_device.new_uniform(
-        1, texture.view_handle(), texture.sampler_handle());
-    gfx::UniformHandle sampler_handle = opt_sampler_handle.value();
+    auto               opt_sampler_handle = render_device.new_uniform(1, texture);
+    gfx::UniformHandle sampler_handle     = opt_sampler_handle.value();
 
     auto clock = RawClock{};
 

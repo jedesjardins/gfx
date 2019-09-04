@@ -53,7 +53,8 @@ using ShaderHandle          = size_t;
 using PipelineHandle        = size_t;
 
 // this should be replaced with a struct with a generation field
-using BufferHandle = size_t;
+using BufferHandle  = size_t;
+using TextureHandle = size_t;
 
 struct UniformHandle
 {
@@ -888,7 +889,26 @@ public:
     bool init(RenderConfig & render_config, Device & device);
     void quit(Device & device);
 
+    std::optional<TextureHandle> create_texture(VkPhysicalDevice      physical_device,
+                                                VkDevice              logical_device,
+                                                uint32_t              width,
+                                                uint32_t              height,
+                                                uint32_t              mipLevels,
+                                                VkSampleCountFlagBits numSamples,
+                                                VkFormat              format,
+                                                VkImageTiling         tiling,
+                                                VkImageUsageFlags     usage,
+                                                VkMemoryPropertyFlags properties,
+                                                VkImageAspectFlags    aspectFlags);
+
+    std::optional<Sampler> get_texture(TextureHandle handle);
+
+    void delete_texture(Device & render_device, TextureHandle handle);
+
 private:
+    TextureHandle                              next_buffer_handle{0};
+    std::unordered_map<TextureHandle, Sampler> samplers;
+
     VkResult createAttachments(Device & device);
 }; // struct ImageResources
 
@@ -1080,8 +1100,7 @@ public:
                                              void *              data_ptr);
 
     std::optional<UniformHandle> new_uniform(UniformLayoutHandle layout_handle,
-                                             VkImageView         view,
-                                             VkSampler           sampler);
+                                             TextureHandle       texture_handle);
 
     template <typename... Args>
     void update_uniform(UniformHandle handle, Args &&... args)
@@ -1124,12 +1143,12 @@ public:
 
     void update_buffer(BufferHandle buffer, VkDeviceSize size, void * data);
 
-    Sampler create_texture(char const * texture_path);
+    TextureHandle create_texture(char const * texture_path);
 
-    void delete_objects(size_t         buffer_count,
-                        BufferHandle * buffers,
-                        size_t         sampler_count,
-                        Sampler *      samplers);
+    void delete_objects(size_t          buffer_count,
+                        BufferHandle *  buffers,
+                        size_t          sampler_count,
+                        TextureHandle * sampler_handles);
 
 private:
     VkResult createCommandbuffer(uint32_t        image_index,
@@ -3024,6 +3043,63 @@ void ImageResources::quit(Device & device)
     }
 }
 
+std::optional<TextureHandle> ImageResources::create_texture(VkPhysicalDevice      physical_device,
+                                                            VkDevice              logical_device,
+                                                            uint32_t              width,
+                                                            uint32_t              height,
+                                                            uint32_t              mipLevels,
+                                                            VkSampleCountFlagBits numSamples,
+                                                            VkFormat              format,
+                                                            VkImageTiling         tiling,
+                                                            VkImageUsageFlags     usage,
+                                                            VkMemoryPropertyFlags properties,
+                                                            VkImageAspectFlags    aspectFlags)
+{
+    TextureHandle handle = next_buffer_handle++;
+
+    Sampler & sampler = samplers[handle];
+
+    if (sampler.create(physical_device,
+                       logical_device,
+                       width,
+                       height,
+                       mipLevels,
+                       numSamples,
+                       format,
+                       tiling,
+                       usage,
+                       properties,
+                       aspectFlags)
+        != VK_SUCCESS)
+    {
+        return std::nullopt;
+    }
+
+    return handle;
+}
+
+std::optional<Sampler> ImageResources::get_texture(TextureHandle handle)
+{
+    auto sampler_iter = samplers.find(handle);
+
+    if (sampler_iter != samplers.end())
+    {
+        return sampler_iter->second;
+    }
+
+    return std::nullopt;
+}
+
+void ImageResources::delete_texture(Device & render_device, TextureHandle handle)
+{
+    auto sampler_iter = samplers.find(handle);
+
+    if (sampler_iter != samplers.end())
+    {
+        samplers.erase(sampler_iter);
+    }
+}
+
 VkResult ImageResources::createAttachments(Device & device)
 {
     for (size_t i = 0; i < attachment_configs.size(); ++i)
@@ -3834,7 +3910,7 @@ VkResult BufferResources::createDynamicObjectResources(Device &         device,
 
         Buffer indices_buffer = get_buffer(create_buffer(device,
                                                          indices_memory_size,
-                                                         VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+                                                         VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
                                                          VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT
                                                              | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT)
                                                .value())
@@ -4161,15 +4237,16 @@ std::optional<UniformHandle> Renderer::new_uniform(UniformLayoutHandle layout_ha
 }
 
 std::optional<UniformHandle> Renderer::new_uniform(UniformLayoutHandle layout_handle,
-                                                   VkImageView         view,
-                                                   VkSampler           sampler)
+                                                   TextureHandle       texture_handle)
 {
+    auto sampler = images.get_texture(texture_handle).value();
+
     auto & uniform_collection = uniforms.uniform_collections[layout_handle];
 
     auto & sampler_collection = std::get<SamplerCollection>(uniform_collection);
 
     auto opt_uniform_handle = sampler_collection.createUniform(
-        render_device.logical_device, view, sampler);
+        render_device.logical_device, sampler.view_handle(), sampler.sampler_handle());
 
     if (opt_uniform_handle)
     {
@@ -4279,7 +4356,7 @@ void Renderer::update_buffer(BufferHandle buffer_handle, VkDeviceSize size, void
     vertex_command->size          = size;
 }
 
-Sampler Renderer::create_texture(char const * texture_path)
+TextureHandle Renderer::create_texture(char const * texture_path)
 {
     int       texWidth, texHeight, texChannels;
     stbi_uc * pixels = stbi_load(texture_path, &texWidth, &texHeight, &texChannels, STBI_rgb_alpha);
@@ -4299,23 +4376,22 @@ Sampler Renderer::create_texture(char const * texture_path)
 
     stbi_image_free(pixels);
 
-    Sampler texture;
+    TextureHandle texture_handle = images
+                                       .create_texture(render_device.physical_device,
+                                                       render_device.logical_device,
+                                                       texWidth,
+                                                       texHeight,
+                                                       1,
+                                                       VK_SAMPLE_COUNT_1_BIT,
+                                                       VK_FORMAT_R8G8B8A8_UNORM,
+                                                       VK_IMAGE_TILING_OPTIMAL,
+                                                       VK_IMAGE_USAGE_TRANSFER_DST_BIT
+                                                           | VK_IMAGE_USAGE_SAMPLED_BIT,
+                                                       VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+                                                       VK_IMAGE_ASPECT_COLOR_BIT)
+                                       .value();
 
-    if (texture.create(render_device.physical_device,
-                       render_device.logical_device,
-                       texWidth,
-                       texHeight,
-                       1,
-                       VK_SAMPLE_COUNT_1_BIT,
-                       VK_FORMAT_R8G8B8A8_UNORM,
-                       VK_IMAGE_TILING_OPTIMAL,
-                       VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
-                       VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-                       VK_IMAGE_ASPECT_COLOR_BIT)
-        != VK_SUCCESS)
-    {
-        throw std::runtime_error("failed to create texture sampler!");
-    }
+    Sampler texture = images.get_texture(texture_handle).value();
 
     auto & bucket = commands.transfer_buckets[frames.currentResource];
 
@@ -4352,13 +4428,13 @@ Sampler Renderer::create_texture(char const * texture_path)
     shader_optimal_command->sourceStage      = VK_PIPELINE_STAGE_TRANSFER_BIT;
     shader_optimal_command->destinationStage = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
 
-    return texture;
+    return texture_handle;
 }
 
-void Renderer::delete_objects(size_t         buffer_count,
-                              BufferHandle * buffer_handles,
-                              size_t         sampler_count,
-                              Sampler *      samplers)
+void Renderer::delete_objects(size_t          buffer_count,
+                              BufferHandle *  buffer_handles,
+                              size_t          sampler_count,
+                              TextureHandle * sampler_handles)
 {
     auto & bucket = commands.delete_buckets[frames.currentResource];
 
@@ -4412,10 +4488,13 @@ void Renderer::delete_objects(size_t         buffer_count,
     delete_command->images      = image_iter;
     for (size_t i = 0; i < sampler_count; ++i)
     {
-        *(sampler_iter++) = samplers[i].sampler_handle();
-        *(view_iter++)    = samplers[i].view_handle();
-        *(image_iter++)   = samplers[i].image_handle();
-        *(memory_iter++)  = samplers[i].memory_handle();
+        auto sampler = images.get_texture(sampler_handles[i]).value();
+        images.delete_texture(render_device, sampler_handles[i]);
+
+        *(sampler_iter++) = sampler.sampler_handle();
+        *(view_iter++)    = sampler.view_handle();
+        *(image_iter++)   = sampler.image_handle();
+        *(memory_iter++)  = sampler.memory_handle();
     }
 }
 
