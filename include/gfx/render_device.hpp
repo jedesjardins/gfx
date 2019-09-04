@@ -896,7 +896,7 @@ struct ImageResources
 {
 public:
     std::vector<AttachmentConfig> attachment_configs;
-    std::vector<Image>            images;
+    std::vector<TextureHandle>    attachment_handles;
 
     bool init(RenderConfig & render_config, Device & device);
     void quit(Device & device);
@@ -918,7 +918,7 @@ public:
     void delete_texture(Device & render_device, TextureHandle handle);
 
 private:
-    TextureHandle                              next_buffer_handle{0};
+    TextureHandle                              next_sampler_handle{0};
     std::unordered_map<TextureHandle, Sampler> samplers;
 
     VkResult createAttachments(Device & device);
@@ -3050,17 +3050,21 @@ void FrameResources::quit(VkDevice device)
 bool ImageResources::init(RenderConfig & render_config, Device & device)
 {
     attachment_configs = std::move(render_config.attachment_configs);
-    images.resize(attachment_configs.size());
+    attachment_handles.resize(attachment_configs.size());
 
     return createAttachments(device) == VK_SUCCESS;
 }
 
 void ImageResources::quit(Device & device)
 {
-    for (auto & image: images)
+    attachment_handles.clear();
+
+    for (auto & sampler_iter: samplers)
     {
-        image.destroy(device.logical_device);
+        sampler_iter.second.destroy(device.logical_device);
     }
+
+    samplers.clear();
 }
 
 std::optional<TextureHandle> ImageResources::create_texture(VkPhysicalDevice      physical_device,
@@ -3075,7 +3079,7 @@ std::optional<TextureHandle> ImageResources::create_texture(VkPhysicalDevice    
                                                             VkMemoryPropertyFlags properties,
                                                             VkImageAspectFlags    aspectFlags)
 {
-    TextureHandle handle = next_buffer_handle++;
+    TextureHandle handle = next_sampler_handle++;
 
     Sampler & sampler = samplers[handle];
 
@@ -3124,8 +3128,6 @@ VkResult ImageResources::createAttachments(Device & device)
 {
     for (size_t i = 0; i < attachment_configs.size(); ++i)
     {
-        Image & image = images[i];
-
         auto const & attachment_config = attachment_configs[i];
 
         if (attachment_config.is_swapchain_image)
@@ -3164,19 +3166,18 @@ VkResult ImageResources::createAttachments(Device & device)
             samples = VK_SAMPLE_COUNT_1_BIT;
         }
 
-        auto result = image.create(device.physical_device,
-                                   device.logical_device,
-                                   device.swapchain_extent.width,
-                                   device.swapchain_extent.height,
-                                   1,
-                                   samples,
-                                   format,
-                                   VK_IMAGE_TILING_OPTIMAL,
-                                   VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT | usage,
-                                   VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-                                   aspect);
-
-        assert(result == VK_SUCCESS);
+        attachment_handles[i] = create_texture(device.physical_device,
+                                               device.logical_device,
+                                               device.swapchain_extent.width,
+                                               device.swapchain_extent.height,
+                                               1,
+                                               samples,
+                                               format,
+                                               VK_IMAGE_TILING_OPTIMAL,
+                                               VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT | usage,
+                                               VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+                                               aspect)
+                                    .value();
     }
 
     return VK_SUCCESS;
@@ -3307,7 +3308,11 @@ VkResult RenderPassResources::createFramebuffer(Device &                     dev
             }
             else
             {
-                fb_attachments.push_back(image_resources.images[attachment_handle].view_handle());
+                Sampler attachment = image_resources
+                                         .get_texture(
+                                             image_resources.attachment_handles[attachment_handle])
+                                         .value();
+                fb_attachments.push_back(attachment.view_handle());
             }
         }
 
@@ -3884,19 +3889,12 @@ bool BufferResources::init(RenderConfig & render_config, Device & device, FrameR
 
 void BufferResources::quit(Device & device)
 {
-    /*
-    for (size_t i = 0; i < dynamic_mapped_vertices.size(); ++i)
-    {
-        dynamic_mapped_indices[i].destroy(device.logical_device);
-        dynamic_mapped_vertices[i].destroy(device.logical_device);
-        staging_buffer[i].destroy(device.logical_device);
-    }
-    */
-
     for (auto & buffer_iter: buffers)
     {
         buffer_iter.second.destroy(device.logical_device);
     }
+
+    buffers.clear();
 }
 
 VkResult BufferResources::createDynamicObjectResources(Device &         device,
