@@ -1901,9 +1901,17 @@ void FramebufferConfig::init(rapidjson::Value & document)
     }
 }
 
+/*
+ * Acquires a open slot in the uniform buffer
+ * Acquires an available DynamicBufferUniform element
+ * Copies the data into the uniform buffer
+ * Returns a UniformHandle to the DynamicBuffer Uniform (which holds the index of it's
+ * descriptorset, and the offset into it's Uniform Buffer)
+ */
 std::optional<UniformHandle> DynamicBufferCollection::createUniform(VkDeviceSize size,
                                                                     void *       data_ptr)
 {
+    // this is the "block" in the Uniform Buffer
     auto uniform_buffer_slot = free_uniform_buffer_slots.acquire();
     if (uniform_buffer_slot < 0)
     {
@@ -1913,6 +1921,7 @@ std::optional<UniformHandle> DynamicBufferCollection::createUniform(VkDeviceSize
     size_t descriptor_index = uniform_buffer_slot / 8; // slots_per_buffer;
     auto & uniform_buffer   = uniform_buffers[descriptor_index];
 
+    // this is the free index in the DynamicBuffer list (offset, descriptorset pair)
     auto uniform_slot = free_uniform_slots.acquire();
     if (uniform_slot < 0)
     {
@@ -1928,17 +1937,24 @@ std::optional<UniformHandle> DynamicBufferCollection::createUniform(VkDeviceSize
     return UniformHandle{.uniform_layout_id = 0, .uniform_id = static_cast<uint64_t>(uniform_slot)};
 }
 
+/*
+ * Releases the uniform buffer slot
+ * Acquires a new uniform buffer slot
+ * UniformHandle (and DynamicBufferUniform slot) stays the same
+ */
 void DynamicBufferCollection::updateUniform(UniformHandle handle,
                                             VkDeviceSize  size,
                                             void *        data_ptr)
 {
     auto & uniform = uniforms[handle.uniform_id];
 
-    auto old_buffer_slot = uniform.offset / 256;
+    auto old_buffer_slot = (uniform.offset / 256) + (uniform.descriptor_set * 8);
     free_uniform_buffer_slots.release(old_buffer_slot);
+    std::cout << "release " << old_buffer_slot << "\n";
 
     // get new buffer slot
     auto uniform_buffer_slot = free_uniform_buffer_slots.acquire();
+    std::cout << "acquire " << uniform_buffer_slot << "\n";
     if (uniform_buffer_slot < 0)
     {
         return;
@@ -1952,6 +1968,19 @@ void DynamicBufferCollection::updateUniform(UniformHandle handle,
     uniform.offset         = (uniform_buffer_slot % 8) * 256;
     uniform_buffer.offset  = uniform.offset;
     uniform_buffer.copy(size, data_ptr);
+}
+
+/*
+ * Release the DynamicBufferUniform slot
+ * Release the Uniform Buffer "block"
+ */
+void DynamicBufferCollection::destroyUniform(UniformHandle handle)
+{
+    DynamicBufferUniform & uniform = uniforms[handle.uniform_id];
+    free_uniform_slots.release(handle.uniform_id);
+
+    auto uniform_buffer_slot = (uniform.offset / 256) + (uniform.descriptor_set * 8);
+    free_uniform_buffer_slots.release(uniform_buffer_slot);
 }
 
 std::optional<VkDescriptorSet> DynamicBufferCollection::getUniform(UniformHandle handle)
@@ -1969,10 +1998,6 @@ std::optional<VkDescriptorSet> DynamicBufferCollection::getUniform(UniformHandle
 std::optional<VkDeviceSize> DynamicBufferCollection::getDynamicOffset(UniformHandle handle)
 {
     return uniforms[handle.uniform_id].offset;
-}
-
-void DynamicBufferCollection::destroyUniform(UniformHandle)
-{
 }
 
 void DynamicBufferCollection::destroy(VkDevice & logical_device)

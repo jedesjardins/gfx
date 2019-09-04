@@ -388,6 +388,8 @@ int main()
 
     render_device.wait_for_idle();
 
+    render_device.delete_uniforms(1, &view_handle);
+
     std::cout << "delete texture\n";
     render_device.delete_textures(1, &texture);
 
