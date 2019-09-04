@@ -158,7 +158,7 @@ public:
 
         gfx::BufferHandle buffers[2] = {static_data.vertexbuffer, static_data.indexbuffer};
 
-        render_device.delete_objects(2, buffers, 0, nullptr);
+        render_device.delete_buffers(2, buffers);
     }
 
     void draw(gfx::Renderer & render_device)
@@ -389,7 +389,7 @@ int main()
     render_device.wait_for_idle();
 
     std::cout << "delete texture\n";
-    render_device.delete_objects(0, nullptr, 1, &texture);
+    render_device.delete_textures(1, &texture);
 
     std::cout << "delete first object\n";
     objects[0].destroyStaticObject(render_device);
