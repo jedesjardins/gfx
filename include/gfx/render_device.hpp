@@ -86,56 +86,6 @@ struct UniformHandle
     uint64_t uniform_id : 32;
 };
 
-bool operator==(VkAttachmentDescription const & lhs, VkAttachmentDescription const & rhs);
-bool operator!=(VkAttachmentDescription const & lhs, VkAttachmentDescription const & rhs);
-
-bool operator==(VkAttachmentReference const & lhs, VkAttachmentReference const & rhs);
-bool operator!=(VkAttachmentReference const & lhs, VkAttachmentReference const & rhs);
-
-bool operator==(VkSubpassDependency const & lhs, VkSubpassDependency const & rhs);
-bool operator!=(VkSubpassDependency const & lhs, VkSubpassDependency const & rhs);
-
-//
-//  CONFIGURATION STRUCTURES
-//
-
-enum class Format
-{
-    USE_DEPTH,
-    USE_COLOR
-};
-
-struct AttachmentConfig
-{
-    Format format;
-    bool   multisampled;
-    bool   is_swapchain_image;
-
-    void init(rapidjson::Value & document);
-
-    friend bool operator==(AttachmentConfig const & lhs, AttachmentConfig const & rhs);
-    friend bool operator!=(AttachmentConfig const & lhs, AttachmentConfig const & rhs);
-};
-
-std::optional<uint32_t> findMemoryType(VkPhysicalDevice      physical_device,
-                                       uint32_t              typeFilter,
-                                       VkMemoryPropertyFlags properties)
-{
-    VkPhysicalDeviceMemoryProperties memProperties;
-    vkGetPhysicalDeviceMemoryProperties(physical_device, &memProperties);
-
-    for (uint32_t i = 0; i < memProperties.memoryTypeCount; ++i)
-    {
-        if (typeFilter & (1 << i)
-            && (memProperties.memoryTypes[i].propertyFlags & properties) == properties)
-        {
-            return i;
-        }
-    }
-
-    return std::nullopt;
-}
-
 class Memory
 {
 public:
@@ -163,49 +113,31 @@ public:
         return bindMemory(logical_device, object_handle);
     }
 
-    VkResult map(VkDevice logical_device, VkDeviceSize offset, VkDeviceSize size, void ** data)
-    {
-        return vkMapMemory(logical_device, vk_memory, offset, size, 0, data);
-    }
+    VkResult map(VkDevice logical_device, VkDeviceSize offset, VkDeviceSize size, void ** data);
 
-    void destroy(VkDevice logical_device)
-    {
-        vkFreeMemory(logical_device, vk_memory, nullptr);
-        vk_memory = VK_NULL_HANDLE;
-    }
+    void destroy(VkDevice logical_device);
 
-    VkDeviceMemory memory_handle()
-    {
-        return vk_memory;
-    }
+    VkDeviceMemory memory_handle();
 
 protected:
     VkDeviceMemory vk_memory{VK_NULL_HANDLE};
 
 private:
+    std::optional<uint32_t> findMemoryType(VkPhysicalDevice      physical_device,
+                                           uint32_t              typeFilter,
+                                           VkMemoryPropertyFlags properties);
+
     void getMemoryRequirements(VkDevice               logical_device,
                                VkBuffer               buffer,
-                               VkMemoryRequirements & requirements)
-    {
-        vkGetBufferMemoryRequirements(logical_device, buffer, &requirements);
-    }
+                               VkMemoryRequirements & requirements);
 
     void getMemoryRequirements(VkDevice               logical_device,
                                VkImage                image,
-                               VkMemoryRequirements & requirements)
-    {
-        vkGetImageMemoryRequirements(logical_device, image, &requirements);
-    }
+                               VkMemoryRequirements & requirements);
 
-    VkResult bindMemory(VkDevice logical_device, VkBuffer buffer)
-    {
-        return vkBindBufferMemory(logical_device, buffer, vk_memory, 0);
-    }
+    VkResult bindMemory(VkDevice logical_device, VkBuffer buffer);
 
-    VkResult bindMemory(VkDevice logical_device, VkImage image)
-    {
-        return vkBindImageMemory(logical_device, image, vk_memory, 0);
-    }
+    VkResult bindMemory(VkDevice logical_device, VkImage image);
 };
 
 class Image: public Memory
@@ -221,59 +153,13 @@ public:
                     VkImageTiling         tiling,
                     VkImageUsageFlags     usage,
                     VkMemoryPropertyFlags properties,
-                    VkImageAspectFlags    aspectFlags)
-    {
-        auto imageInfo = VkImageCreateInfo{.sType         = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
-                                           .imageType     = VK_IMAGE_TYPE_2D,
-                                           .extent.width  = width,
-                                           .extent.height = height,
-                                           .extent.depth  = 1,
-                                           .mipLevels     = mipLevels,
-                                           .arrayLayers   = 1,
-                                           .format        = format,
-                                           .tiling        = tiling,
-                                           .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
-                                           .usage         = usage,
-                                           .sharingMode   = VK_SHARING_MODE_EXCLUSIVE,
-                                           .samples       = numSamples};
+                    VkImageAspectFlags    aspectFlags);
 
-        auto result = vkCreateImage(logical_device, &imageInfo, nullptr, &vk_image);
-        assert(result == VK_SUCCESS);
+    void destroy(VkDevice logical_device);
 
-        result = allocateAndBind(physical_device, logical_device, properties, vk_image);
-        assert(result == VK_SUCCESS);
+    VkImageView view_handle();
 
-        auto viewInfo = VkImageViewCreateInfo{.sType    = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
-                                              .image    = vk_image,
-                                              .viewType = VK_IMAGE_VIEW_TYPE_2D,
-                                              .format   = format,
-                                              .subresourceRange.aspectMask     = aspectFlags,
-                                              .subresourceRange.baseMipLevel   = 0,
-                                              .subresourceRange.levelCount     = mipLevels,
-                                              .subresourceRange.baseArrayLayer = 0,
-                                              .subresourceRange.layerCount     = 1};
-
-        return vkCreateImageView(logical_device, &viewInfo, nullptr, &vk_image_view);
-    }
-
-    void destroy(VkDevice logical_device)
-    {
-        vkDestroyImageView(logical_device, vk_image_view, nullptr);
-        vk_image_view = VK_NULL_HANDLE;
-        vkDestroyImage(logical_device, vk_image, nullptr);
-        vk_image = VK_NULL_HANDLE;
-        static_cast<Memory &>(*this).destroy(logical_device);
-    }
-
-    VkImageView view_handle()
-    {
-        return vk_image_view;
-    }
-
-    VkImage image_handle()
-    {
-        return vk_image;
-    }
+    VkImage image_handle();
 
 protected:
     VkImage     vk_image{VK_NULL_HANDLE};
@@ -293,60 +179,11 @@ public:
                     VkImageTiling         tiling,
                     VkImageUsageFlags     usage,
                     VkMemoryPropertyFlags properties,
-                    VkImageAspectFlags    aspectFlags)
-    {
-        auto result = static_cast<Image &>(*this).create(physical_device,
-                                                         logical_device,
-                                                         width,
-                                                         height,
-                                                         mipLevels,
-                                                         numSamples,
-                                                         format,
-                                                         tiling,
-                                                         usage,
-                                                         properties,
-                                                         aspectFlags);
-        if (result != VK_SUCCESS)
-        {
-            return result;
-        }
+                    VkImageAspectFlags    aspectFlags);
 
-        auto samplerInfo = VkSamplerCreateInfo{.sType     = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
-                                               .magFilter = VK_FILTER_NEAREST,
-                                               .minFilter = VK_FILTER_NEAREST,
-                                               .addressModeU     = VK_SAMPLER_ADDRESS_MODE_REPEAT,
-                                               .addressModeV     = VK_SAMPLER_ADDRESS_MODE_REPEAT,
-                                               .addressModeW     = VK_SAMPLER_ADDRESS_MODE_REPEAT,
-                                               .anisotropyEnable = VK_TRUE,
-                                               .maxAnisotropy    = 16,
-                                               .borderColor      = VK_BORDER_COLOR_INT_OPAQUE_BLACK,
-                                               .unnormalizedCoordinates = VK_FALSE,
-                                               .compareEnable           = VK_FALSE,
-                                               .compareOp               = VK_COMPARE_OP_ALWAYS,
-                                               .mipmapMode = VK_SAMPLER_MIPMAP_MODE_NEAREST,
-                                               .mipLodBias = 0.0f,
-                                               .minLod     = 0.0f,
-                                               .maxLod     = 1};
+    void destroy(VkDevice logical_device);
 
-        if (vkCreateSampler(logical_device, &samplerInfo, nullptr, &vk_sampler) != VK_SUCCESS)
-        {
-            throw std::runtime_error("failed to create texture sampler!");
-        }
-
-        return VK_SUCCESS;
-    }
-
-    void destroy(VkDevice logical_device)
-    {
-        vkDestroySampler(logical_device, vk_sampler, nullptr);
-        vk_sampler = VK_NULL_HANDLE;
-        static_cast<Image &>(*this).destroy(logical_device);
-    }
-
-    VkSampler sampler_handle()
-    {
-        return vk_sampler;
-    }
+    VkSampler sampler_handle();
 
 private:
     VkSampler vk_sampler{VK_NULL_HANDLE};
@@ -359,41 +196,11 @@ public:
                     VkDevice              logical_device,
                     VkDeviceSize          size,
                     VkBufferUsageFlags    usage,
-                    VkMemoryPropertyFlags properties)
-    {
-        auto bufferInfo = VkBufferCreateInfo{.sType       = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
-                                             .size        = size,
-                                             .usage       = usage,
-                                             .sharingMode = VK_SHARING_MODE_EXCLUSIVE};
+                    VkMemoryPropertyFlags properties);
 
-        auto result = vkCreateBuffer(logical_device, &bufferInfo, nullptr, &vk_buffer);
-        if (result != VK_SUCCESS)
-        {
-            return result;
-        }
+    void destroy(VkDevice logical_device);
 
-        result = allocateAndBind(physical_device, logical_device, properties, vk_buffer);
-
-        assert(result == VK_SUCCESS);
-        if (result != VK_SUCCESS)
-        {
-            return result;
-        }
-
-        return VK_SUCCESS;
-    }
-
-    void destroy(VkDevice logical_device)
-    {
-        vkDestroyBuffer(logical_device, vk_buffer, nullptr);
-        vk_buffer = VK_NULL_HANDLE;
-        static_cast<Memory &>(*this).destroy(logical_device);
-    }
-
-    VkBuffer buffer_handle()
-    {
-        return vk_buffer;
-    }
+    VkBuffer buffer_handle();
 
 protected:
     VkBuffer vk_buffer{VK_NULL_HANDLE};
@@ -402,62 +209,13 @@ protected:
 class MappedBuffer
 {
 public:
-    MappedBuffer(VkDevice logical_device, Buffer buffer, VkDeviceSize size)
-    : offset{0}, memory_size{size}, vk_buffer{buffer.buffer_handle()}
-    {
-        buffer.map(logical_device, 0, size, &data);
-    }
+    MappedBuffer(VkDevice logical_device, Buffer buffer, VkDeviceSize size);
 
-    /*
-    VkResult create(VkPhysicalDevice      physical_device,
-                    VkDevice              logical_device,
-                    VkDeviceSize          size,
-                    VkBufferUsageFlags    usage,
-                    VkMemoryPropertyFlags properties)
-    {
-        memory_size = size;
+    size_t copy(size_t size, void const * src_data);
 
-        auto result = static_cast<Buffer &>(*this).create(
-            physical_device, logical_device, size, usage, properties);
-        if (result != VK_SUCCESS)
-        {
-            return result;
-        }
+    void reset();
 
-        result = map(logical_device, 0, size, &data);
-        if (result != VK_SUCCESS)
-        {
-            return result;
-        }
-
-        return VK_SUCCESS;
-    }
-    */
-
-    size_t copy(size_t size, void const * src_data)
-    {
-        auto * dest_data = static_cast<void *>(static_cast<char *>(data) + offset);
-
-        // assert there's enough space left in the buffers
-        assert(size <= memory_size - offset);
-
-        // copy the data over
-        memcpy(dest_data, src_data, size);
-
-        auto prev_offset = offset;
-        offset += size;
-        return prev_offset;
-    }
-
-    void reset()
-    {
-        offset = 0;
-    }
-
-    VkBuffer buffer_handle()
-    {
-        return vk_buffer;
-    }
+    VkBuffer buffer_handle();
 
     VkDeviceSize offset{0};
 
@@ -467,89 +225,17 @@ private:
     void *       data{nullptr};
 };
 
-struct FramebufferConfig
-{
-    std::vector<AttachmentHandle> attachments;
-    uint32_t                      width;
-    uint32_t                      height;
-    uint32_t                      depth;
-
-    void init(rapidjson::Value & document);
-};
-
-struct SubpassInfo
-{
-    std::vector<VkAttachmentReference> color_attachments;
-    VkAttachmentReference              color_resolve_attachment;
-    VkAttachmentReference              depth_stencil_attachment;
-
-    void init(rapidjson::Value & document);
-
-    friend bool operator==(SubpassInfo const & lhs, SubpassInfo const & rhs);
-    friend bool operator!=(SubpassInfo const & lhs, SubpassInfo const & rhs);
-};
-
-struct RenderpassConfig
-{
-    FramebufferConfig                    framebuffer_config;
-    std::vector<VkAttachmentDescription> descriptions;
-    std::vector<SubpassInfo>             subpasses;
-    std::vector<VkSubpassDependency>     subpass_dependencies;
-
-    void init(rapidjson::Value & document);
-
-    friend bool operator==(RenderpassConfig const & lhs, RenderpassConfig const & rhs);
-    friend bool operator!=(RenderpassConfig const & lhs, RenderpassConfig const & rhs);
-};
-
 struct IndexAllocator
 {
     int32_t              next_index;
     int32_t              last_index;
     std::vector<int32_t> indices;
 
-    void init(size_t number_of_indices)
-    {
-        indices.resize(number_of_indices);
-        for (size_t i = 0; i < indices.size() - 1; ++i)
-        {
-            indices[i] = i + 1;
-        }
+    void init(size_t number_of_indices);
 
-        next_index = 0;
-        last_index = indices.size() - 1;
-    }
+    int32_t acquire();
 
-    int32_t acquire()
-    {
-        auto free_index = next_index;
-
-        if (next_index == last_index)
-        {
-            next_index = -1;
-            last_index = -1;
-        }
-        else
-        {
-            next_index = indices[next_index];
-        }
-
-        return free_index;
-    }
-
-    void release(int32_t released_index)
-    {
-        if (last_index == -1)
-        {
-            next_index = released_index;
-            last_index = released_index;
-        }
-        else
-        {
-            indices[last_index] = released_index;
-            last_index          = released_index;
-        }
-    }
+    void release(int32_t released_index);
 };
 
 struct DynamicBufferUniform
@@ -594,6 +280,63 @@ struct DynamicBufferCollection
 };
 
 using UniformVariant = std::variant<DynamicBufferCollection, SamplerCollection>;
+
+//
+//  CONFIGURATION STRUCTURES
+//
+
+enum class Format
+{
+    USE_DEPTH,
+    USE_COLOR
+};
+
+struct AttachmentConfig
+{
+    Format format;
+    bool   multisampled;
+    bool   is_swapchain_image;
+
+    void init(rapidjson::Value & document);
+
+    friend bool operator==(AttachmentConfig const & lhs, AttachmentConfig const & rhs);
+    friend bool operator!=(AttachmentConfig const & lhs, AttachmentConfig const & rhs);
+};
+
+struct FramebufferConfig
+{
+    std::vector<AttachmentHandle> attachments;
+    uint32_t                      width;
+    uint32_t                      height;
+    uint32_t                      depth;
+
+    void init(rapidjson::Value & document);
+};
+
+struct SubpassInfo
+{
+    std::vector<VkAttachmentReference> color_attachments;
+    VkAttachmentReference              color_resolve_attachment;
+    VkAttachmentReference              depth_stencil_attachment;
+
+    void init(rapidjson::Value & document);
+
+    friend bool operator==(SubpassInfo const & lhs, SubpassInfo const & rhs);
+    friend bool operator!=(SubpassInfo const & lhs, SubpassInfo const & rhs);
+};
+
+struct RenderpassConfig
+{
+    FramebufferConfig                    framebuffer_config;
+    std::vector<VkAttachmentDescription> descriptions;
+    std::vector<SubpassInfo>             subpasses;
+    std::vector<VkSubpassDependency>     subpass_dependencies;
+
+    void init(rapidjson::Value & document);
+
+    friend bool operator==(RenderpassConfig const & lhs, RenderpassConfig const & rhs);
+    friend bool operator!=(RenderpassConfig const & lhs, RenderpassConfig const & rhs);
+};
 
 struct PipelineConfig
 {
@@ -905,9 +648,9 @@ private:
 
     VkFormat findDepthFormat();
 
-    VkFormat findSupportedFormat(const std::vector<VkFormat> & candidates,
-                                 VkImageTiling                 tiling,
-                                 VkFormatFeatureFlags          features);
+    std::optional<VkFormat> findSupportedFormat(const std::vector<VkFormat> & candidates,
+                                                VkImageTiling                 tiling,
+                                                VkFormatFeatureFlags          features);
 }; // struct Device
 
 /*
@@ -1193,7 +936,7 @@ public:
 
     void delete_buffers(size_t buffer_count, BufferHandle * buffers);
 
-    TextureHandle create_texture(char const * texture_path);
+    std::optional<TextureHandle> create_texture(char const * texture_path);
 
     void delete_textures(size_t sampler_count, TextureHandle * sampler_handles);
 
@@ -1259,7 +1002,7 @@ std::vector<char> readFile(std::string const & filename)
     if (!file.is_open())
     {
         LOG_ERROR("Failed to open file {}", filename);
-        throw std::runtime_error("failed to open file!");
+        return {};
     }
 
     size_t            fileSize = (size_t)file.tellg();
@@ -1383,6 +1126,464 @@ bool operator!=(RenderpassConfig const & lhs, RenderpassConfig const & rhs)
 {
     return !(lhs == rhs);
 }
+
+VkResult Memory::map(VkDevice logical_device, VkDeviceSize offset, VkDeviceSize size, void ** data)
+{
+    return vkMapMemory(logical_device, vk_memory, offset, size, 0, data);
+}
+
+void Memory::destroy(VkDevice logical_device)
+{
+    vkFreeMemory(logical_device, vk_memory, nullptr);
+    vk_memory = VK_NULL_HANDLE;
+}
+
+VkDeviceMemory Memory::memory_handle()
+{
+    return vk_memory;
+}
+
+std::optional<uint32_t> Memory::findMemoryType(VkPhysicalDevice      physical_device,
+                                               uint32_t              typeFilter,
+                                               VkMemoryPropertyFlags properties)
+{
+    VkPhysicalDeviceMemoryProperties memProperties;
+    vkGetPhysicalDeviceMemoryProperties(physical_device, &memProperties);
+
+    for (uint32_t i = 0; i < memProperties.memoryTypeCount; ++i)
+    {
+        if (typeFilter & (1 << i)
+            && (memProperties.memoryTypes[i].propertyFlags & properties) == properties)
+        {
+            return i;
+        }
+    }
+
+    return std::nullopt;
+}
+
+void Memory::getMemoryRequirements(VkDevice               logical_device,
+                                   VkBuffer               buffer,
+                                   VkMemoryRequirements & requirements)
+{
+    vkGetBufferMemoryRequirements(logical_device, buffer, &requirements);
+}
+
+void Memory::getMemoryRequirements(VkDevice               logical_device,
+                                   VkImage                image,
+                                   VkMemoryRequirements & requirements)
+{
+    vkGetImageMemoryRequirements(logical_device, image, &requirements);
+}
+
+VkResult Memory::bindMemory(VkDevice logical_device, VkBuffer buffer)
+{
+    return vkBindBufferMemory(logical_device, buffer, vk_memory, 0);
+}
+
+VkResult Memory::bindMemory(VkDevice logical_device, VkImage image)
+{
+    return vkBindImageMemory(logical_device, image, vk_memory, 0);
+}
+
+VkResult Image::create(VkPhysicalDevice      physical_device,
+                       VkDevice              logical_device,
+                       uint32_t              width,
+                       uint32_t              height,
+                       uint32_t              mipLevels,
+                       VkSampleCountFlagBits numSamples,
+                       VkFormat              format,
+                       VkImageTiling         tiling,
+                       VkImageUsageFlags     usage,
+                       VkMemoryPropertyFlags properties,
+                       VkImageAspectFlags    aspectFlags)
+{
+    auto imageInfo = VkImageCreateInfo{.sType         = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
+                                       .imageType     = VK_IMAGE_TYPE_2D,
+                                       .extent.width  = width,
+                                       .extent.height = height,
+                                       .extent.depth  = 1,
+                                       .mipLevels     = mipLevels,
+                                       .arrayLayers   = 1,
+                                       .format        = format,
+                                       .tiling        = tiling,
+                                       .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+                                       .usage         = usage,
+                                       .sharingMode   = VK_SHARING_MODE_EXCLUSIVE,
+                                       .samples       = numSamples};
+
+    auto result = vkCreateImage(logical_device, &imageInfo, nullptr, &vk_image);
+    assert(result == VK_SUCCESS);
+
+    result = allocateAndBind(physical_device, logical_device, properties, vk_image);
+    assert(result == VK_SUCCESS);
+
+    auto viewInfo = VkImageViewCreateInfo{.sType    = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
+                                          .image    = vk_image,
+                                          .viewType = VK_IMAGE_VIEW_TYPE_2D,
+                                          .format   = format,
+                                          .subresourceRange.aspectMask     = aspectFlags,
+                                          .subresourceRange.baseMipLevel   = 0,
+                                          .subresourceRange.levelCount     = mipLevels,
+                                          .subresourceRange.baseArrayLayer = 0,
+                                          .subresourceRange.layerCount     = 1};
+
+    return vkCreateImageView(logical_device, &viewInfo, nullptr, &vk_image_view);
+}
+
+void Image::destroy(VkDevice logical_device)
+{
+    vkDestroyImageView(logical_device, vk_image_view, nullptr);
+    vk_image_view = VK_NULL_HANDLE;
+    vkDestroyImage(logical_device, vk_image, nullptr);
+    vk_image = VK_NULL_HANDLE;
+    static_cast<Memory &>(*this).destroy(logical_device);
+}
+
+VkImageView Image::view_handle()
+{
+    return vk_image_view;
+}
+
+VkImage Image::image_handle()
+{
+    return vk_image;
+}
+
+VkResult Sampler::create(VkPhysicalDevice      physical_device,
+                         VkDevice              logical_device,
+                         uint32_t              width,
+                         uint32_t              height,
+                         uint32_t              mipLevels,
+                         VkSampleCountFlagBits numSamples,
+                         VkFormat              format,
+                         VkImageTiling         tiling,
+                         VkImageUsageFlags     usage,
+                         VkMemoryPropertyFlags properties,
+                         VkImageAspectFlags    aspectFlags)
+{
+    auto result = static_cast<Image &>(*this).create(physical_device,
+                                                     logical_device,
+                                                     width,
+                                                     height,
+                                                     mipLevels,
+                                                     numSamples,
+                                                     format,
+                                                     tiling,
+                                                     usage,
+                                                     properties,
+                                                     aspectFlags);
+    if (result != VK_SUCCESS)
+    {
+        return result;
+    }
+
+    auto samplerInfo = VkSamplerCreateInfo{.sType        = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
+                                           .magFilter    = VK_FILTER_NEAREST,
+                                           .minFilter    = VK_FILTER_NEAREST,
+                                           .addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT,
+                                           .addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT,
+                                           .addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT,
+                                           .anisotropyEnable = VK_TRUE,
+                                           .maxAnisotropy    = 16,
+                                           .borderColor      = VK_BORDER_COLOR_INT_OPAQUE_BLACK,
+                                           .unnormalizedCoordinates = VK_FALSE,
+                                           .compareEnable           = VK_FALSE,
+                                           .compareOp               = VK_COMPARE_OP_ALWAYS,
+                                           .mipmapMode = VK_SAMPLER_MIPMAP_MODE_NEAREST,
+                                           .mipLodBias = 0.0f,
+                                           .minLod     = 0.0f,
+                                           .maxLod     = 1};
+
+    result = vkCreateSampler(logical_device, &samplerInfo, nullptr, &vk_sampler);
+
+    if (result != VK_SUCCESS)
+    {
+        LOG_ERROR("Failed to create texture sampler!");
+        return result;
+    }
+
+    return VK_SUCCESS;
+}
+
+void Sampler::destroy(VkDevice logical_device)
+{
+    vkDestroySampler(logical_device, vk_sampler, nullptr);
+    vk_sampler = VK_NULL_HANDLE;
+    static_cast<Image &>(*this).destroy(logical_device);
+}
+
+VkSampler Sampler::sampler_handle()
+{
+    return vk_sampler;
+}
+
+VkResult Buffer::create(VkPhysicalDevice      physical_device,
+                        VkDevice              logical_device,
+                        VkDeviceSize          size,
+                        VkBufferUsageFlags    usage,
+                        VkMemoryPropertyFlags properties)
+{
+    auto bufferInfo = VkBufferCreateInfo{.sType       = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
+                                         .size        = size,
+                                         .usage       = usage,
+                                         .sharingMode = VK_SHARING_MODE_EXCLUSIVE};
+
+    auto result = vkCreateBuffer(logical_device, &bufferInfo, nullptr, &vk_buffer);
+    if (result != VK_SUCCESS)
+    {
+        return result;
+    }
+
+    result = allocateAndBind(physical_device, logical_device, properties, vk_buffer);
+
+    assert(result == VK_SUCCESS);
+    if (result != VK_SUCCESS)
+    {
+        return result;
+    }
+
+    return VK_SUCCESS;
+}
+
+void Buffer::destroy(VkDevice logical_device)
+{
+    vkDestroyBuffer(logical_device, vk_buffer, nullptr);
+    vk_buffer = VK_NULL_HANDLE;
+    static_cast<Memory &>(*this).destroy(logical_device);
+}
+
+VkBuffer Buffer::buffer_handle()
+{
+    return vk_buffer;
+}
+
+MappedBuffer::MappedBuffer(VkDevice logical_device, Buffer buffer, VkDeviceSize size)
+: offset{0}, memory_size{size}, vk_buffer{buffer.buffer_handle()}
+{
+    buffer.map(logical_device, 0, size, &data);
+}
+
+size_t MappedBuffer::copy(size_t size, void const * src_data)
+{
+    auto * dest_data = static_cast<void *>(static_cast<char *>(data) + offset);
+
+    // assert there's enough space left in the buffers
+    assert(size <= memory_size - offset);
+
+    // copy the data over
+    memcpy(dest_data, src_data, size);
+
+    auto prev_offset = offset;
+    offset += size;
+    return prev_offset;
+}
+
+void MappedBuffer::reset()
+{
+    offset = 0;
+}
+
+VkBuffer MappedBuffer::buffer_handle()
+{
+    return vk_buffer;
+}
+
+void IndexAllocator::init(size_t number_of_indices)
+{
+    indices.resize(number_of_indices);
+    for (size_t i = 0; i < indices.size() - 1; ++i)
+    {
+        indices[i] = i + 1;
+    }
+
+    next_index = 0;
+    last_index = indices.size() - 1;
+}
+
+int32_t IndexAllocator::acquire()
+{
+    auto free_index = next_index;
+
+    if (next_index == last_index)
+    {
+        next_index = -1;
+        last_index = -1;
+    }
+    else
+    {
+        next_index = indices[next_index];
+    }
+
+    return free_index;
+}
+
+void IndexAllocator::release(int32_t released_index)
+{
+    if (last_index == -1)
+    {
+        next_index = released_index;
+        last_index = released_index;
+    }
+    else
+    {
+        indices[last_index] = released_index;
+        last_index          = released_index;
+    }
+}
+
+/*
+ * Acquires a open slot in the uniform buffer
+ * Acquires an available DynamicBufferUniform element
+ * Copies the data into the uniform buffer
+ * Returns a UniformHandle to the DynamicBuffer Uniform (which holds the index of it's
+ * descriptorset, and the offset into it's Uniform Buffer)
+ */
+std::optional<UniformHandle> DynamicBufferCollection::createUniform(VkDeviceSize size,
+                                                                    void *       data_ptr)
+{
+    // this is the "block" in the Uniform Buffer
+    auto uniform_buffer_slot = free_uniform_buffer_slots.acquire();
+    if (uniform_buffer_slot < 0)
+    {
+        return std::nullopt;
+    }
+
+    size_t descriptor_index = uniform_buffer_slot / 8; // slots_per_buffer;
+    auto & uniform_buffer   = uniform_buffers[descriptor_index];
+
+    // this is the free index in the DynamicBuffer list (offset, descriptorset pair)
+    auto uniform_slot = free_uniform_slots.acquire();
+    if (uniform_slot < 0)
+    {
+        return std::nullopt;
+    }
+
+    DynamicBufferUniform & uniform = uniforms[uniform_slot];
+    uniform.descriptor_set         = descriptor_index;
+    uniform.offset                 = (uniform_buffer_slot % 8) * 256;
+    uniform_buffer.offset          = uniform.offset;
+    uniform_buffer.copy(size, data_ptr);
+
+    return UniformHandle{.uniform_layout_id = 0, .uniform_id = static_cast<uint64_t>(uniform_slot)};
+}
+
+/*
+ * Releases the uniform buffer slot
+ * Acquires a new uniform buffer slot
+ * UniformHandle (and DynamicBufferUniform slot) stays the same
+ */
+void DynamicBufferCollection::updateUniform(UniformHandle handle,
+                                            VkDeviceSize  size,
+                                            void *        data_ptr)
+{
+    auto & uniform = uniforms[handle.uniform_id];
+
+    auto old_buffer_slot = (uniform.offset / 256) + (uniform.descriptor_set * 8);
+    free_uniform_buffer_slots.release(old_buffer_slot);
+    LOG_DEBUG("Release {}", old_buffer_slot);
+
+    // get new buffer slot
+    auto uniform_buffer_slot = free_uniform_buffer_slots.acquire();
+    LOG_DEBUG("Acquire {}", uniform_buffer_slot);
+    if (uniform_buffer_slot < 0)
+    {
+        return;
+    }
+
+    // get descriptor and uniform_buffer for that slot
+    size_t descriptor_index = uniform_buffer_slot / 8; // slots_per_buffer;
+    auto & uniform_buffer   = uniform_buffers[descriptor_index];
+
+    uniform.descriptor_set = descriptor_index;
+    uniform.offset         = (uniform_buffer_slot % 8) * 256;
+    uniform_buffer.offset  = uniform.offset;
+    uniform_buffer.copy(size, data_ptr);
+}
+
+/*
+ * Release the DynamicBufferUniform slot
+ * Release the Uniform Buffer "block"
+ */
+void DynamicBufferCollection::destroyUniform(UniformHandle handle)
+{
+    DynamicBufferUniform & uniform = uniforms[handle.uniform_id];
+    free_uniform_slots.release(handle.uniform_id);
+
+    auto uniform_buffer_slot = (uniform.offset / 256) + (uniform.descriptor_set * 8);
+    free_uniform_buffer_slots.release(uniform_buffer_slot);
+}
+
+std::optional<VkDescriptorSet> DynamicBufferCollection::getUniform(UniformHandle handle)
+{
+    if (uniforms.size() > handle.uniform_id)
+    {
+        return descriptor_sets[uniforms[handle.uniform_id].descriptor_set];
+    }
+    else
+    {
+        return std::nullopt;
+    }
+}
+
+std::optional<VkDeviceSize> DynamicBufferCollection::getDynamicOffset(UniformHandle handle)
+{
+    return uniforms[handle.uniform_id].offset;
+}
+
+void DynamicBufferCollection::destroy(VkDevice & logical_device)
+{
+    for (auto & mapped_buffer: uniform_buffers)
+    {
+        // mapped_buffer.destroy(logical_device);
+    }
+}
+
+std::optional<UniformHandle> SamplerCollection::createUniform(VkDevice &  logical_device,
+                                                              VkImageView view,
+                                                              VkSampler   sampler)
+{
+    size_t descriptor_set_index = 0;
+
+    auto imageInfo = VkDescriptorImageInfo{.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                                           .imageView   = view,
+                                           .sampler     = sampler};
+
+    auto descriptorWrite = VkWriteDescriptorSet{
+        .sType            = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+        .dstSet           = descriptor_sets[0],
+        .dstBinding       = 1,
+        .dstArrayElement  = 0,
+        .descriptorType   = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+        .descriptorCount  = 1,
+        .pBufferInfo      = nullptr,
+        .pImageInfo       = &imageInfo,
+        .pTexelBufferView = nullptr};
+
+    vkUpdateDescriptorSets(logical_device, 1, &descriptorWrite, 0, nullptr);
+
+    return UniformHandle{.uniform_id = descriptor_set_index};
+}
+
+std::optional<VkDescriptorSet> SamplerCollection::getUniform(UniformHandle handle)
+{
+    return descriptor_sets[handle.uniform_id];
+}
+
+std::optional<VkDeviceSize> SamplerCollection::getDynamicOffset(UniformHandle handle)
+{
+    return std::nullopt;
+}
+
+void SamplerCollection::destroyUniform(UniformHandle)
+{}
+
+void SamplerCollection::destroy(VkDevice & logical_device)
+{}
+
+//
+// CONFIGURATION CODE
+//
 
 VkImageLayout getVkImageLayout(std::string const & layout_name)
 {
@@ -1926,155 +2127,6 @@ void FramebufferConfig::init(rapidjson::Value & document)
         attachments.push_back(att_obj["attachment"].GetInt());
     }
 }
-
-/*
- * Acquires a open slot in the uniform buffer
- * Acquires an available DynamicBufferUniform element
- * Copies the data into the uniform buffer
- * Returns a UniformHandle to the DynamicBuffer Uniform (which holds the index of it's
- * descriptorset, and the offset into it's Uniform Buffer)
- */
-std::optional<UniformHandle> DynamicBufferCollection::createUniform(VkDeviceSize size,
-                                                                    void *       data_ptr)
-{
-    // this is the "block" in the Uniform Buffer
-    auto uniform_buffer_slot = free_uniform_buffer_slots.acquire();
-    if (uniform_buffer_slot < 0)
-    {
-        return std::nullopt;
-    }
-
-    size_t descriptor_index = uniform_buffer_slot / 8; // slots_per_buffer;
-    auto & uniform_buffer   = uniform_buffers[descriptor_index];
-
-    // this is the free index in the DynamicBuffer list (offset, descriptorset pair)
-    auto uniform_slot = free_uniform_slots.acquire();
-    if (uniform_slot < 0)
-    {
-        return std::nullopt;
-    }
-
-    DynamicBufferUniform & uniform = uniforms[uniform_slot];
-    uniform.descriptor_set         = descriptor_index;
-    uniform.offset                 = (uniform_buffer_slot % 8) * 256;
-    uniform_buffer.offset          = uniform.offset;
-    uniform_buffer.copy(size, data_ptr);
-
-    return UniformHandle{.uniform_layout_id = 0, .uniform_id = static_cast<uint64_t>(uniform_slot)};
-}
-
-/*
- * Releases the uniform buffer slot
- * Acquires a new uniform buffer slot
- * UniformHandle (and DynamicBufferUniform slot) stays the same
- */
-void DynamicBufferCollection::updateUniform(UniformHandle handle,
-                                            VkDeviceSize  size,
-                                            void *        data_ptr)
-{
-    auto & uniform = uniforms[handle.uniform_id];
-
-    auto old_buffer_slot = (uniform.offset / 256) + (uniform.descriptor_set * 8);
-    free_uniform_buffer_slots.release(old_buffer_slot);
-    LOG_DEBUG("Release {}", old_buffer_slot);
-
-    // get new buffer slot
-    auto uniform_buffer_slot = free_uniform_buffer_slots.acquire();
-    LOG_DEBUG("Acquire {}", uniform_buffer_slot);
-    if (uniform_buffer_slot < 0)
-    {
-        return;
-    }
-
-    // get descriptor and uniform_buffer for that slot
-    size_t descriptor_index = uniform_buffer_slot / 8; // slots_per_buffer;
-    auto & uniform_buffer   = uniform_buffers[descriptor_index];
-
-    uniform.descriptor_set = descriptor_index;
-    uniform.offset         = (uniform_buffer_slot % 8) * 256;
-    uniform_buffer.offset  = uniform.offset;
-    uniform_buffer.copy(size, data_ptr);
-}
-
-/*
- * Release the DynamicBufferUniform slot
- * Release the Uniform Buffer "block"
- */
-void DynamicBufferCollection::destroyUniform(UniformHandle handle)
-{
-    DynamicBufferUniform & uniform = uniforms[handle.uniform_id];
-    free_uniform_slots.release(handle.uniform_id);
-
-    auto uniform_buffer_slot = (uniform.offset / 256) + (uniform.descriptor_set * 8);
-    free_uniform_buffer_slots.release(uniform_buffer_slot);
-}
-
-std::optional<VkDescriptorSet> DynamicBufferCollection::getUniform(UniformHandle handle)
-{
-    if (uniforms.size() > handle.uniform_id)
-    {
-        return descriptor_sets[uniforms[handle.uniform_id].descriptor_set];
-    }
-    else
-    {
-        return std::nullopt;
-    }
-}
-
-std::optional<VkDeviceSize> DynamicBufferCollection::getDynamicOffset(UniformHandle handle)
-{
-    return uniforms[handle.uniform_id].offset;
-}
-
-void DynamicBufferCollection::destroy(VkDevice & logical_device)
-{
-    for (auto & mapped_buffer: uniform_buffers)
-    {
-        // mapped_buffer.destroy(logical_device);
-    }
-}
-
-std::optional<UniformHandle> SamplerCollection::createUniform(VkDevice &  logical_device,
-                                                              VkImageView view,
-                                                              VkSampler   sampler)
-{
-    size_t descriptor_set_index = 0;
-
-    auto imageInfo = VkDescriptorImageInfo{.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-                                           .imageView   = view,
-                                           .sampler     = sampler};
-
-    auto descriptorWrite = VkWriteDescriptorSet{
-        .sType            = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-        .dstSet           = descriptor_sets[0],
-        .dstBinding       = 1,
-        .dstArrayElement  = 0,
-        .descriptorType   = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
-        .descriptorCount  = 1,
-        .pBufferInfo      = nullptr,
-        .pImageInfo       = &imageInfo,
-        .pTexelBufferView = nullptr};
-
-    vkUpdateDescriptorSets(logical_device, 1, &descriptorWrite, 0, nullptr);
-
-    return UniformHandle{.uniform_id = descriptor_set_index};
-}
-
-std::optional<VkDescriptorSet> SamplerCollection::getUniform(UniformHandle handle)
-{
-    return descriptor_sets[handle.uniform_id];
-}
-
-std::optional<VkDeviceSize> SamplerCollection::getDynamicOffset(UniformHandle handle)
-{
-    return std::nullopt;
-}
-
-void SamplerCollection::destroyUniform(UniformHandle)
-{}
-
-void SamplerCollection::destroy(VkDevice & logical_device)
-{}
 
 void PipelineConfig::init(rapidjson::Value & document)
 {
@@ -2628,7 +2680,23 @@ VKAPI_ATTR VkBool32 VKAPI_CALL
                       const VkDebugUtilsMessengerCallbackDataEXT * pCallbackData,
                       void *                                       pUserData)
 {
-    std::cerr << "validation layer: " << pCallbackData->pMessage << std::endl;
+    if (messageSeverity == VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT)
+    {
+        LOG_DEBUG("vulkan validation: {}", pCallbackData->pMessage);
+    }
+    else if (messageSeverity == VK_DEBUG_UTILS_MESSAGE_SEVERITY_INFO_BIT_EXT)
+    {
+        LOG_INFO("vulkan validation: {}", pCallbackData->pMessage);
+    }
+    else if (messageSeverity == VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT)
+    {
+        LOG_WARN("vulkan validation: {}", pCallbackData->pMessage);
+    }
+    else if (messageSeverity == VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT)
+    {
+        LOG_ERROR("vulkan validation: {}", pCallbackData->pMessage);
+    }
+
     return VK_FALSE;
 }
 
@@ -2690,7 +2758,8 @@ bool Device::pickPhysicalDevice()
 
     if (deviceCount == 0)
     {
-        throw std::runtime_error("failed to find GPUs with Vulkan support!");
+        LOG_ERROR("Failed to find GPUs with Vulkan support!");
+        return false;
     }
 
     std::vector<VkPhysicalDevice> devices{deviceCount};
@@ -3085,14 +3154,15 @@ VkResult Device::createSwapChainImageViews()
 VkFormat Device::findDepthFormat()
 {
     return findSupportedFormat(
-        {VK_FORMAT_D32_SFLOAT, VK_FORMAT_D32_SFLOAT_S8_UINT, VK_FORMAT_D24_UNORM_S8_UINT},
-        VK_IMAGE_TILING_OPTIMAL,
-        VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT);
+               {VK_FORMAT_D32_SFLOAT, VK_FORMAT_D32_SFLOAT_S8_UINT, VK_FORMAT_D24_UNORM_S8_UINT},
+               VK_IMAGE_TILING_OPTIMAL,
+               VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT)
+        .value();
 }
 
-VkFormat Device::findSupportedFormat(const std::vector<VkFormat> & candidates,
-                                     VkImageTiling                 tiling,
-                                     VkFormatFeatureFlags          features)
+std::optional<VkFormat> Device::findSupportedFormat(const std::vector<VkFormat> & candidates,
+                                                    VkImageTiling                 tiling,
+                                                    VkFormatFeatureFlags          features)
 {
     for (VkFormat format: candidates)
     {
@@ -3110,7 +3180,7 @@ VkFormat Device::findSupportedFormat(const std::vector<VkFormat> & candidates,
         }
     }
 
-    throw std::runtime_error("failed to find supported format!");
+    return std::nullopt;
 }
 
 bool FrameResources::init(RenderConfig & render_config, VkDevice device)
@@ -4236,12 +4306,13 @@ void Renderer::draw_frame(uint32_t uniform_count, UniformHandle * p_uniforms)
 
     if (result == VK_ERROR_OUT_OF_DATE_KHR)
     {
-        // recreateSwapChain();
+        LOG_DEBUG("Swapchain is out of date");
         return;
     }
     else if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR)
     {
-        throw std::runtime_error("failed to acquire swap chain image!");
+        LOG_ERROR("Failed to acquire swap chain image!");
+        return;
     }
 
     // TRANSFER OPERATIONS
@@ -4271,8 +4342,12 @@ void Renderer::draw_frame(uint32_t uniform_count, UniformHandle * p_uniforms)
         .commandBufferCount = 1,
         .pCommandBuffers    = &commands.transfer_commandbuffers[frames.currentResource]};
 
-    vkQueueSubmit(commands.graphics_queue, 1, &submitTransferInfo, VK_NULL_HANDLE);
-
+    if (vkQueueSubmit(commands.graphics_queue, 1, &submitTransferInfo, VK_NULL_HANDLE)
+        != VK_SUCCESS)
+    {
+        LOG_ERROR("Failed to submit transfer command buffer!");
+        return;
+    }
     // the graphics queue will wait to do anything in the color_attachment_output stage
     // until the waitSemaphore is signalled by vkAcquireNextImageKHR
     VkSemaphore waitSemaphores[]      = {frames.image_available_semaphores[frames.currentFrame]};
@@ -4301,7 +4376,8 @@ void Renderer::draw_frame(uint32_t uniform_count, UniformHandle * p_uniforms)
             commands.graphics_queue, 1, &submitInfo, frames.in_flight_fences[frames.currentFrame])
         != VK_SUCCESS)
     {
-        throw std::runtime_error("failed to submit draw command buffer!");
+        LOG_ERROR("Failed to submit draw command buffer!");
+        return;
     }
 
     VkSwapchainKHR swapChains[] = {render_device.swapchain};
@@ -4322,11 +4398,12 @@ void Renderer::draw_frame(uint32_t uniform_count, UniformHandle * p_uniforms)
     if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR || framebuffer_resized)
     {
         framebuffer_resized = false;
-        // recreateSwapChain();
+        LOG_DEBUG("Swapchain is out of date");
     }
     else if (result != VK_SUCCESS)
     {
-        throw std::runtime_error("failed to present swap chain image!");
+        LOG_ERROR("Failed to present swap chain image!");
+        return;
     }
 
     frames.currentFrame    = (frames.currentFrame + 1) % frames.MAX_FRAMES_IN_FLIGHT;
@@ -4528,7 +4605,7 @@ void Renderer::delete_buffers(size_t buffer_count, BufferHandle * buffer_handles
     }
 }
 
-TextureHandle Renderer::create_texture(char const * texture_path)
+std::optional<TextureHandle> Renderer::create_texture(char const * texture_path)
 {
     int       texWidth, texHeight, texChannels;
     stbi_uc * pixels = stbi_load(texture_path, &texWidth, &texHeight, &texChannels, STBI_rgb_alpha);
@@ -4540,7 +4617,8 @@ TextureHandle Renderer::create_texture(char const * texture_path)
 
     if (!pixels)
     {
-        throw std::runtime_error("failed to load texture image!");
+        LOG_ERROR("Failed to load texture image {}", texture_path);
+        return std::nullopt;
     }
 
     VkDeviceSize pixel_data_offset = buffers.staging_buffer[frames.currentResource].copy(

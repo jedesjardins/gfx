@@ -300,12 +300,13 @@ int main()
     LOG_INFO("Initializing Render Device");
     if (!render_device.init(render_config))
     {
-        throw std::runtime_error("Couldn't initialize Vulkan!");
+        LOG_ERROR("Couldn't initialize the Renderer");
+        return 0;
     }
 
     std::vector<Object> objects{};
 
-    auto texture = render_device.create_texture("../sword.png");
+    auto texture = render_device.create_texture("../sword.png").value();
 
     objects.emplace_back(render_device,
                          ObjectType::STATIC,
