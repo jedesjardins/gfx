@@ -48,15 +48,6 @@
 #define LOG_CRITICAL(...)
 #endif
 
-struct Vertex
-{
-    glm::vec3 pos;
-    glm::vec3 color;
-
-    static VkVertexInputBindingDescription                  getBindingDescription();
-    static std::array<VkVertexInputAttributeDescription, 2> getAttributeDescriptions();
-};
-
 std::vector<char> readFile(std::string const & filename);
 
 namespace gfx
@@ -865,8 +856,8 @@ public:
 
     void draw(PipelineHandle    pipeline,
               glm::mat4 const & transform,
-              uint32_t          vertex_count,
-              Vertex *          vertices,
+              size_t            vertices_size,
+              void *            vertices,
               uint32_t          index_count,
               uint32_t *        indices);
 
@@ -970,29 +961,6 @@ private:
 #endif
 
 #ifdef JED_GFX_IMPLEMENTATION
-
-VkVertexInputBindingDescription Vertex::getBindingDescription()
-{
-    auto bindingDescription = VkVertexInputBindingDescription{
-        .binding = 0, .stride = sizeof(Vertex), .inputRate = VK_VERTEX_INPUT_RATE_VERTEX};
-
-    return bindingDescription;
-}
-
-std::array<VkVertexInputAttributeDescription, 2> Vertex::getAttributeDescriptions()
-{
-    auto attributeDescriptions = std::array<VkVertexInputAttributeDescription, 2>{
-        VkVertexInputAttributeDescription{.binding  = 0,
-                                          .location = 0,
-                                          .format   = VK_FORMAT_R32G32B32_SFLOAT,
-                                          .offset   = offsetof(Vertex, pos)},
-        VkVertexInputAttributeDescription{.binding  = 0,
-                                          .location = 1,
-                                          .format   = VK_FORMAT_R32G32B32_SFLOAT,
-                                          .offset   = offsetof(Vertex, color)}};
-
-    return attributeDescriptions;
-}
 
 std::vector<char> readFile(std::string const & filename)
 {
@@ -4077,7 +4045,7 @@ VkResult BufferResources::createDynamicObjectResources(Device &         device,
     dynamic_mapped_vertices.reserve(frames.MAX_BUFFERED_RESOURCES);
     dynamic_mapped_indices.reserve(frames.MAX_BUFFERED_RESOURCES);
 
-    VkDeviceSize vertices_memory_size = sizeof(Vertex) * dynamic_vertices_count;
+    VkDeviceSize vertices_memory_size = 32 * dynamic_vertices_count;
     VkDeviceSize indices_memory_size  = sizeof(uint32_t) * dynamic_indices_count;
 
     for (uint32_t i = 0; i < frames.MAX_BUFFERED_RESOURCES; ++i)
@@ -4421,15 +4389,15 @@ void Renderer::draw_frame(uint32_t uniform_count, UniformHandle * p_uniforms)
 
 void Renderer::draw(PipelineHandle    pipeline,
                     glm::mat4 const & transform,
-                    uint32_t          vertex_count,
-                    Vertex *          vertices,
+                    size_t            vertices_size,
+                    void *            vertices,
                     uint32_t          index_count,
                     uint32_t *        indices)
 {
     auto & mapped_vertices = buffers.dynamic_mapped_vertices[frames.currentResource];
     auto & mapped_indices  = buffers.dynamic_mapped_indices[frames.currentResource];
 
-    VkDeviceSize vertex_offset = mapped_vertices.copy(sizeof(Vertex) * vertex_count, vertices);
+    VkDeviceSize vertex_offset = mapped_vertices.copy(vertices_size, vertices);
     VkDeviceSize index_offset  = mapped_indices.copy(sizeof(uint32_t) * index_count, indices);
 
     auto & bucket = commands.draw_buckets[frames.currentResource];

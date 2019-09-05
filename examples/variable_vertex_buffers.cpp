@@ -22,6 +22,35 @@
 #include "stb_image.h"
 #undef STB_IMAGE_IMPLEMENTATION
 
+struct Vertex
+{
+    glm::vec3 pos;
+    glm::vec3 color;
+
+    static VkVertexInputBindingDescription getBindingDescription()
+    {
+        auto bindingDescription = VkVertexInputBindingDescription{
+            .binding = 0, .stride = sizeof(Vertex), .inputRate = VK_VERTEX_INPUT_RATE_VERTEX};
+
+        return bindingDescription;
+    }
+
+    static std::array<VkVertexInputAttributeDescription, 2> getAttributeDescriptions()
+    {
+        auto attributeDescriptions = std::array<VkVertexInputAttributeDescription, 2>{
+            VkVertexInputAttributeDescription{.binding  = 0,
+                                              .location = 0,
+                                              .format   = VK_FORMAT_R32G32B32_SFLOAT,
+                                              .offset   = offsetof(Vertex, pos)},
+            VkVertexInputAttributeDescription{.binding  = 0,
+                                              .location = 1,
+                                              .format   = VK_FORMAT_R32G32B32_SFLOAT,
+                                              .offset   = offsetof(Vertex, color)}};
+
+        return attributeDescriptions;
+    }
+};
+
 std::vector<Vertex> obj1_vertices{{{0.f, 1.f, 0.5f}, {1.f, 0.f, 0.f}},
                                   {{1.f, 1.f, 0.5f}, {1.f, 0.f, 0.f}},
                                   {{1.f, 0.f, 0.5f}, {1.f, 0.f, 0.f}},
@@ -185,7 +214,7 @@ public:
 
             render_device.draw(material.pipeline,
                                material.transform,
-                               streamed_data.vertex_count,
+                               streamed_data.vertex_count * sizeof(Vertex),
                                streamed_data.vertices,
                                streamed_data.index_count,
                                streamed_data.indices);
