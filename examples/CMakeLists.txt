@@ -5,6 +5,20 @@ message(STATUS "Examples included")
 
 # Modeled after Catch2 examples directory
 
+FetchContent_Declare(
+	Log
+	GIT_REPOSITORY https://github.com/jedesjardins/log.git
+)
+
+FetchContent_GetProperties(Log)
+if(NOT Log_POPULATED)
+	FetchContent_Populate(Log)
+	message(STATUS "Log source dir: ${log_SOURCE_DIR}")
+	message(STATUS "Log binary dir: ${log_BINARY_DIR}")
+	message(STATUS "Log include dir: ${log_SOURCE_DIR}/include")
+	add_subdirectory(${log_SOURCE_DIR} ${log_BINARY_DIR})
+endif()
+
 # gather all example files
 set(SOURCES_SINGLE_FILE
 	# list test files here
@@ -19,5 +33,5 @@ set(TARGETS_SINGLE_FILE ${BASENAMES_SINGLE_FILE} )
 
 foreach(name ${TARGETS_SINGLE_FILE})
     add_executable(${name} ${CMAKE_CURRENT_LIST_DIR}/${name}.cpp)
-    target_link_libraries(${name} JED::gfx)
+    target_link_libraries(${name} JED::gfx JED::log)
 endforeach()

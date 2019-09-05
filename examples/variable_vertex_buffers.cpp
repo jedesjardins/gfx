@@ -6,6 +6,10 @@
 #include <iostream>
 #include <numeric>
 
+#define JED_LOG_IMPLEMENTATION
+#include "log/logger.hpp"
+#undef JED_LOG_IMPLEMENTATION
+
 #define JED_GFX_IMPLEMENTATION
 #include "gfx/render_device.hpp"
 #undef JED_GFX_IMPLEMENTATION
@@ -267,11 +271,19 @@ private:
 
 }; // class RawClock
 
+
+
 int main()
 {
+    get_console_sink()->set_level(spdlog::level::warn);
+    get_file_sink()->set_level(spdlog::level::trace);
+    get_logger()->set_level(spdlog::level::trace);
+
+    LOG_INFO("Starting Example");
+
     if (glfwInit() == GLFW_FALSE)
     {
-        // error
+        LOG_ERROR("GLFW didn't initialize correctly");
     }
 
     glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
@@ -285,7 +297,7 @@ int main()
 
     render_config.init();
 
-    std::cout << "Render Device Init\n";
+    LOG_INFO("Initializing Render Device");
     if (!render_device.init(render_config))
     {
         throw std::runtime_error("Couldn't initialize Vulkan!");
@@ -293,10 +305,8 @@ int main()
 
     std::vector<Object> objects{};
 
-    std::cout << "Create texture\n";
     auto texture = render_device.create_texture("../sword.png");
 
-    std::cout << "Create first object\n";
     objects.emplace_back(render_device,
                          ObjectType::STATIC,
                          obj1_vertices.size(),
@@ -306,7 +316,6 @@ int main()
 
     objects[0].getMaterial().transform = glm::scale(glm::mat4{1.f}, glm::vec3{.5f, .5f, .5f});
 
-    std::cout << "Create second object\n";
     objects.emplace_back(render_device,
                          ObjectType::STATIC,
                          obj2_vertices.size(),
@@ -314,7 +323,6 @@ int main()
                          obj_indices.size(),
                          obj_indices.data());
 
-    std::cout << "Create third object\n";
     objects.emplace_back(render_device,
                          ObjectType::STREAMED,
                          obj3_vertices.size(),
@@ -322,7 +330,6 @@ int main()
                          obj_indices.size(),
                          obj_indices.data());
 
-    std::cout << "Create fourth object\n";
     objects.emplace_back(render_device,
                          ObjectType::STREAMED,
                          obj4_vertices.size(),
@@ -389,19 +396,15 @@ int main()
     render_device.wait_for_idle();
 
     render_device.delete_uniforms(1, &view_handle);
-
-    std::cout << "delete texture\n";
     render_device.delete_textures(1, &texture);
-
-    std::cout << "delete first object\n";
     objects[0].destroyStaticObject(render_device);
-    std::cout << "delete second object\n";
     objects[1].destroyStaticObject(render_device);
 
-    std::cout << "pump\n";
     render_device.quit();
 
     glfwDestroyWindow(window);
 
     glfwTerminate();
+
+    LOG_INFO("Stopping Example\n");
 }

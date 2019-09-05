@@ -24,6 +24,30 @@
 
 #include "stb_image.h"
 
+#ifndef LOG_TRACE
+#define LOG_TRACE(...)
+#endif
+
+#ifndef LOG_DEBUG
+#define LOG_DEBUG(...)
+#endif
+
+#ifndef LOG_INFO
+#define LOG_INFO(...)
+#endif
+
+#ifndef LOG_INFO
+#define LOG_WARN(...)
+#endif
+
+#ifndef LOG_ERROR
+#define LOG_ERROR(...)
+#endif
+
+#ifndef LOG_CRITICAL
+#define LOG_CRITICAL(...)
+#endif
+
 struct Vertex
 {
     glm::vec3 pos;
@@ -1229,10 +1253,12 @@ std::array<VkVertexInputAttributeDescription, 2> Vertex::getAttributeDescription
 
 std::vector<char> readFile(std::string const & filename)
 {
+    LOG_TRACE("Reading file {}", filename);
     std::ifstream file(filename, std::ios::ate | std::ios::binary);
 
     if (!file.is_open())
     {
+        LOG_ERROR("Failed to open file {}", filename);
         throw std::runtime_error("failed to open file!");
     }
 
@@ -1950,11 +1976,11 @@ void DynamicBufferCollection::updateUniform(UniformHandle handle,
 
     auto old_buffer_slot = (uniform.offset / 256) + (uniform.descriptor_set * 8);
     free_uniform_buffer_slots.release(old_buffer_slot);
-    std::cout << "release " << old_buffer_slot << "\n";
+    LOG_DEBUG("Release {}", old_buffer_slot);
 
     // get new buffer slot
     auto uniform_buffer_slot = free_uniform_buffer_slots.acquire();
-    std::cout << "acquire " << uniform_buffer_slot << "\n";
+    LOG_DEBUG("Acquire {}", uniform_buffer_slot);
     if (uniform_buffer_slot < 0)
     {
         return;
@@ -2045,8 +2071,7 @@ std::optional<VkDeviceSize> SamplerCollection::getDynamicOffset(UniformHandle ha
 }
 
 void SamplerCollection::destroyUniform(UniformHandle)
-{
-}
+{}
 
 void SamplerCollection::destroy(VkDevice & logical_device)
 {}
@@ -2115,13 +2140,12 @@ void RenderConfig::init()
 
     if (document.Parse(config_json.data()).HasParseError())
     {
-        std::cout << "\"" << config_json.data() << "\"\n";
-        std::cout << "Parse error\n";
+        LOG_ERROR("Parse error on json data: \"{}\"", config_json.data());
         return;
     }
     else
     {
-        std::cout << "Parsed okay\n";
+        LOG_INFO("Parsed file {} in RenderConfig", config_filename);
     }
 
     assert(document.IsObject());
@@ -2319,56 +2343,67 @@ cmd::BackendDispatchFunction const SetImageLayout::DISPATCH_FUNCTION = &setImage
 
 void deleteBuffers(void const * data)
 {
-    std::cout << "new command\n";
+    LOG_TRACE("Entering deleteBuffers");
     auto const * delete_data = reinterpret_cast<DeleteBuffers const *>(data);
 
     for (size_t i = 0; i < delete_data->buffer_count; ++i)
     {
-        std::cout << "Deleting: " << delete_data->buffers[i] << " " << delete_data->memories[i]
-                  << "\n";
+        LOG_DEBUG("Deleting buffer {} {}",
+                  static_cast<void *>(delete_data->buffers[i]),
+                  static_cast<void *>(delete_data->memories[i]));
 
         vkDestroyBuffer(delete_data->logical_device, delete_data->buffers[i], nullptr);
         vkFreeMemory(delete_data->logical_device, delete_data->memories[i], nullptr);
     }
 
-    std::cout << "Finished\n";
+    LOG_TRACE("Exiting deleteBuffers");
 }
 
 cmd::BackendDispatchFunction const DeleteBuffers::DISPATCH_FUNCTION = &deleteBuffers;
 
 void deleteTextures(void const * data)
 {
-    std::cout << "new command\n";
+    LOG_TRACE("Entering deleteTextures");
     auto const * delete_data = reinterpret_cast<DeleteTextures const *>(data);
 
     for (size_t i = 0; i < delete_data->texture_count; ++i)
     {
+        LOG_DEBUG("Deleting texture {} {} {} {}",
+                  static_cast<void *>(delete_data->samplers[i]),
+                  static_cast<void *>(delete_data->views[i]),
+                  static_cast<void *>(delete_data->images[i]),
+                  static_cast<void *>(delete_data->memories[i]));
         vkDestroySampler(delete_data->logical_device, delete_data->samplers[i], nullptr);
         vkDestroyImageView(delete_data->logical_device, delete_data->views[i], nullptr);
         vkDestroyImage(delete_data->logical_device, delete_data->images[i], nullptr);
         vkFreeMemory(delete_data->logical_device, delete_data->memories[i], nullptr);
     }
-    std::cout << "Finished\n";
+    LOG_TRACE("Exiting deleteTextures");
 }
 
 cmd::BackendDispatchFunction const DeleteTextures::DISPATCH_FUNCTION = &deleteTextures;
 
 void deleteUniforms(void const * data)
 {
-    std::cout << "new command\n";
+    LOG_TRACE("Entering deleteUniforms");
     auto const * delete_data = reinterpret_cast<DeleteUniforms const *>(data);
 
     for (size_t i = 0; i < delete_data->uniform_count; ++i)
     {
-        auto   uniform_handle     = delete_data->uniform_handles[i];
-        auto & uniform_collection = (*delete_data->uniform_collections)[uniform_handle.uniform_layout_id];
+        auto   uniform_handle = delete_data->uniform_handles[i];
+        auto & uniform_collection
+            = (*delete_data->uniform_collections)[uniform_handle.uniform_layout_id];
+
+        LOG_DEBUG("Deleting Uniform {} {}",
+                  delete_data->uniform_handles[i].uniform_layout_id,
+                  delete_data->uniform_handles[i].uniform_id);
 
         // delete the uniforms somehow here...
         std::visit(
             [uniform_handle](auto && collection) { collection.destroyUniform(uniform_handle); },
             uniform_collection);
     }
-    std::cout << "Finished\n";
+    LOG_TRACE("Exiting deleteUniforms");
 }
 
 cmd::BackendDispatchFunction const DeleteUniforms::DISPATCH_FUNCTION = &deleteUniforms;
@@ -3483,7 +3518,7 @@ VkResult UniformResources::createUniformLayouts(Device & device, BufferResources
 
             for (size_t i = 0; i < descriptor_count; ++i)
             {
-                std::cout << "Creating buffer for uniforms\n";
+                LOG_DEBUG("Creating buffer for uniforms");
 
                 Buffer uniform_buffer
                     = buffers
@@ -3977,7 +4012,7 @@ VkResult BufferResources::createDynamicObjectResources(Device &         device,
 
     for (uint32_t i = 0; i < frames.MAX_BUFFERED_RESOURCES; ++i)
     {
-        std::cout << "Creating mapped vertices\n";
+        LOG_DEBUG("Creating mapped vertices buffer for resource {}", i);
 
         Buffer vertices_buffer = get_buffer(
                                      create_buffer(device,
@@ -3991,7 +4026,7 @@ VkResult BufferResources::createDynamicObjectResources(Device &         device,
         dynamic_mapped_vertices.emplace_back(
             device.logical_device, vertices_buffer, vertices_memory_size);
 
-        std::cout << "Creating mapped indices\n";
+        LOG_DEBUG("Creating mapped vertices buffer for resource {}", i);
 
         Buffer indices_buffer = get_buffer(create_buffer(device,
                                                          indices_memory_size,
@@ -4032,7 +4067,7 @@ VkResult BufferResources::createStagingObjectResources(Device &         device,
 
     for (uint32_t i = 0; i < frames.MAX_BUFFERED_RESOURCES; ++i)
     {
-        std::cout << "Creating staged resources\n";
+        LOG_DEBUG("Creating staged buffer for resource {}", i);
 
         Buffer single_staging_buffer = get_buffer(
                                            create_buffer(device,
@@ -4072,11 +4107,13 @@ std::optional<BufferHandle> BufferResources::create_buffer(Device &             
             render_device.physical_device, render_device.logical_device, size, usage, properties)
         != VK_SUCCESS)
     {
+        LOG_ERROR("Couldn't create buffer");
         return std::nullopt;
     }
 
-    std::cout << "\tCreated: " << buffer.buffer_handle() << " " << buffer.memory_handle()
-              << std::endl;
+    LOG_DEBUG("Created buffer {} {}",
+              static_cast<void *>(buffer.buffer_handle()),
+              static_cast<void *>(buffer.memory_handle()));
 
     return handle;
 }
@@ -4107,55 +4144,57 @@ void BufferResources::delete_buffer(Device & render_device, BufferHandle handle)
 }; // namespace module
 
 Renderer::Renderer(GLFWwindow * window_ptr): render_device{window_ptr}
-{}
+{
+    LOG_INFO("In Renderer Constructor");
+}
 
 bool Renderer::init(RenderConfig & render_config)
 {
     if (!render_device.init(render_config))
     {
-        std::cout << "Init Device failed\n";
+        LOG_ERROR("Failed to initialize RenderDevice in Renderer");
         return false;
     }
 
     if (!frames.init(render_config, render_device.logical_device))
     {
-        std::cout << "Init Frames failed\n";
+        LOG_ERROR("Failed to initialize FrameResources in Renderer");
         return false;
     }
 
     if (!images.init(render_config, render_device))
     {
-        std::cout << "Init Images failed\n";
+        LOG_ERROR("Failed to initialize ImageResources in Renderer");
         return false;
     }
 
     if (!render_passes.init(render_config, render_device, images))
     {
-        std::cout << "Init Render Passes failed\n";
+        LOG_ERROR("Failed to initialize RenderPassResources in Renderer");
         return false;
     }
 
     if (!buffers.init(render_config, render_device, frames))
     {
-        std::cout << "Init Commands failed\n";
+        LOG_ERROR("Failed to initialize BufferResources in Renderer");
         return false;
     }
 
     if (!uniforms.init(render_config, render_device, buffers))
     {
-        std::cout << "Init Uniforms failed\n";
+        LOG_ERROR("Failed to initialize UniformResources in Renderer");
         return false;
     }
 
     if (!pipelines.init(render_config, render_device, render_passes, uniforms))
     {
-        std::cout << "Init Pipelines failed\n";
+        LOG_ERROR("Failed to initialize PipelineResources in Renderer");
         return false;
     }
 
     if (!commands.init(render_config, render_device))
     {
-        std::cout << "Init Commands failed\n";
+        LOG_ERROR("Failed to initialize CommandResources in Renderer");
         return false;
     }
 
@@ -4433,7 +4472,7 @@ std::optional<BufferHandle> Renderer::create_buffer(VkDeviceSize          size,
                                                     VkBufferUsageFlags    usage,
                                                     VkMemoryPropertyFlags properties)
 {
-    std::cout << "Creating buffer through renderer interface\n";
+    LOG_TRACE("Entering create_buffer");
 
     return buffers.create_buffer(render_device, size, usage, properties);
 }
@@ -4480,8 +4519,9 @@ void Renderer::delete_buffers(size_t buffer_count, BufferHandle * buffer_handles
         auto buffer = buffers.get_buffer(buffer_handles[i]).value();
         buffers.delete_buffer(render_device, buffer_handles[i]);
 
-        std::cout << "Queuing buffer for delete: " << buffer.buffer_handle() << " "
-                  << buffer.memory_handle() << "\n";
+        LOG_DEBUG("Queuing buffer {} {} for delete",
+                  static_cast<void *>(buffer.buffer_handle()),
+                  static_cast<void *>(buffer.memory_handle()));
 
         *(buffer_iter++) = buffer.buffer_handle();
         *(memory_iter++) = buffer.memory_handle();
@@ -4678,7 +4718,9 @@ VkResult Renderer::createCommandbuffer(uint32_t        image_index,
         }
         else
         {
-            std::cout << "No descriptorset\n";
+            LOG_ERROR("No Descriptor Set returned for Uniform {} {}",
+                      uniform_handle.uniform_layout_id,
+                      uniform_handle.uniform_id);
             continue;
         }
 
