@@ -6,6 +6,10 @@
 #include <iostream>
 #include <numeric>
 
+#define JED_LOG_IMPLEMENTATION
+#include "log/logger.hpp"
+#undef JED_LOG_IMPLEMENTATION
+
 #define JED_GFX_IMPLEMENTATION
 #include "gfx/render_device.hpp"
 #undef JED_GFX_IMPLEMENTATION
@@ -17,6 +21,35 @@
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
 #undef STB_IMAGE_IMPLEMENTATION
+
+struct Vertex
+{
+    glm::vec3 pos;
+    glm::vec3 color;
+
+    static VkVertexInputBindingDescription getBindingDescription()
+    {
+        auto bindingDescription = VkVertexInputBindingDescription{
+            .binding = 0, .stride = sizeof(Vertex), .inputRate = VK_VERTEX_INPUT_RATE_VERTEX};
+
+        return bindingDescription;
+    }
+
+    static std::array<VkVertexInputAttributeDescription, 2> getAttributeDescriptions()
+    {
+        auto attributeDescriptions = std::array<VkVertexInputAttributeDescription, 2>{
+            VkVertexInputAttributeDescription{.binding  = 0,
+                                              .location = 0,
+                                              .format   = VK_FORMAT_R32G32B32_SFLOAT,
+                                              .offset   = offsetof(Vertex, pos)},
+            VkVertexInputAttributeDescription{.binding  = 0,
+                                              .location = 1,
+                                              .format   = VK_FORMAT_R32G32B32_SFLOAT,
+                                              .offset   = offsetof(Vertex, color)}};
+
+        return attributeDescriptions;
+    }
+};
 
 std::vector<Vertex> obj1_vertices{{{0.f, 1.f, 0.5f}, {1.f, 0.f, 0.f}},
                                   {{1.f, 1.f, 0.5f}, {1.f, 0.f, 0.f}},
@@ -48,14 +81,9 @@ struct Material
 
 struct StaticVertexData // can be edited with a
 {
-    VkBuffer     vertexbuffer;
-    gfx::Memory  vertexbuffer_memory;
-    VkDeviceSize vertexbuffer_offset;
-
-    VkBuffer    indexbuffer;
-    gfx::Memory indexbuffer_memory;
-    size_t      indexbuffer_offset;
-    size_t      indexbuffer_count;
+    gfx::BufferHandle vertexbuffer;
+    gfx::BufferHandle indexbuffer;
+    size_t            index_count;
 };
 
 struct StreamedVertexData
@@ -77,11 +105,11 @@ class Object
 {
 public:
     Object(gfx::Renderer & render_device,
-           ObjectType          type,
-           uint32_t            vertex_count,
-           Vertex *            vertices,
-           uint32_t            index_count,
-           uint32_t *          indices)
+           ObjectType      type,
+           uint32_t        vertex_count,
+           Vertex *        vertices,
+           uint32_t        index_count,
+           uint32_t *      indices)
     {
         if (type == ObjectType::STATIC)
         {
@@ -94,39 +122,44 @@ public:
     }
 
     bool initStaticObject(gfx::Renderer & render_device,
-                          uint32_t            vertex_count,
-                          Vertex *            vertices,
-                          uint32_t            index_count,
-                          uint32_t *          indices)
+                          uint32_t        vertex_count,
+                          Vertex *        vertices,
+                          uint32_t        index_count,
+                          uint32_t *      indices)
     {
-        vertex_data = StaticVertexData{.vertexbuffer        = VK_NULL_HANDLE,
-                                       .vertexbuffer_offset = 0,
-                                       .indexbuffer         = VK_NULL_HANDLE,
-                                       .indexbuffer_offset  = 0,
-                                       .indexbuffer_count   = index_count};
+        auto static_vertex_data        = StaticVertexData{};
+        static_vertex_data.index_count = index_count;
+
+        vertex_data = static_vertex_data;
 
         auto & static_data = std::get<StaticVertexData>(vertex_data);
 
-        if (!render_device.createVertexbuffer(
-                static_data.vertexbuffer, static_data.vertexbuffer_memory, vertex_count, vertices))
-        {
-            return false;
-        }
+        auto opt_vertexbuffer = render_device.create_buffer(
+            vertex_count * sizeof(Vertex),
+            VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+            VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
 
-        if (!render_device.createIndexbuffer(
-                static_data.indexbuffer, static_data.indexbuffer_memory, index_count, indices))
-        {
-            return false;
-        }
+        static_data.vertexbuffer = opt_vertexbuffer.value();
+        render_device.update_buffer(
+            static_data.vertexbuffer, vertex_count * sizeof(Vertex), vertices);
+
+        auto opt_indexbuffer = render_device.create_buffer(
+            index_count * sizeof(uint32_t),
+            VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
+            VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+
+        static_data.indexbuffer = opt_indexbuffer.value();
+        render_device.update_buffer(
+            static_data.indexbuffer, index_count * sizeof(uint32_t), indices);
 
         return true;
     }
 
     void initDynamicObject(gfx::Renderer & render_device,
-                           uint32_t            vertex_count,
-                           Vertex *            vertices,
-                           uint32_t            index_count,
-                           uint32_t *          indices)
+                           uint32_t        vertex_count,
+                           Vertex *        vertices,
+                           uint32_t        index_count,
+                           uint32_t *      indices)
     {
         vertex_data = StreamedVertexData{.vertex_count = vertex_count,
                                          .vertices     = vertices,
@@ -135,21 +168,19 @@ public:
     }
 
     void updateStaticObject(gfx::Renderer & render_device,
-                            uint32_t            vertex_count,
-                            Vertex *            vertices,
-                            uint32_t            index_count,
-                            uint32_t *          indices)
+                            uint32_t        vertex_count,
+                            Vertex *        vertices,
+                            uint32_t        index_count,
+                            uint32_t *      indices)
     {
         assert(std::holds_alternative<StaticVertexData>(vertex_data));
 
         auto & static_data = std::get<StaticVertexData>(vertex_data);
 
-        render_device.updateDeviceLocalBuffers(static_data.vertexbuffer,
-                                               static_data.indexbuffer,
-                                               vertex_count,
-                                               vertices,
-                                               index_count,
-                                               indices);
+        render_device.update_buffer(
+            static_data.vertexbuffer, vertex_count * sizeof(Vertex), vertices);
+        render_device.update_buffer(
+            static_data.indexbuffer, index_count * sizeof(uint32_t), indices);
     }
 
     void destroyStaticObject(gfx::Renderer & render_device)
@@ -158,10 +189,9 @@ public:
 
         auto & static_data = std::get<StaticVertexData>(vertex_data);
 
-        render_device.destroyDeviceLocalBuffers(static_data.vertexbuffer,
-                                                static_data.vertexbuffer_memory,
-                                                static_data.indexbuffer,
-                                                static_data.indexbuffer_memory);
+        gfx::BufferHandle buffers[2] = {static_data.vertexbuffer, static_data.indexbuffer};
+
+        render_device.delete_buffers(2, buffers);
     }
 
     void draw(gfx::Renderer & render_device)
@@ -173,21 +203,21 @@ public:
             render_device.draw(material.pipeline,
                                material.transform,
                                static_data.vertexbuffer,
-                               static_data.vertexbuffer_offset,
+                               0,
                                static_data.indexbuffer,
-                               static_data.indexbuffer_offset,
-                               static_data.indexbuffer_count);
+                               0,
+                               static_data.index_count);
         }
         else if (std::holds_alternative<StreamedVertexData>(vertex_data))
         {
             auto & streamed_data = std::get<StreamedVertexData>(vertex_data);
 
-            render_device.dynamicDraw(material.pipeline,
-                                      material.transform,
-                                      streamed_data.vertex_count,
-                                      streamed_data.vertices,
-                                      streamed_data.index_count,
-                                      streamed_data.indices);
+            render_device.draw(material.pipeline,
+                               material.transform,
+                               streamed_data.vertex_count * sizeof(Vertex),
+                               streamed_data.vertices,
+                               streamed_data.index_count,
+                               streamed_data.indices);
         }
     }
 
@@ -270,11 +300,19 @@ private:
 
 }; // class RawClock
 
+
+
 int main()
 {
+    get_console_sink()->set_level(spdlog::level::warn);
+    get_file_sink()->set_level(spdlog::level::trace);
+    get_logger()->set_level(spdlog::level::trace);
+
+    LOG_INFO("Starting Example");
+
     if (glfwInit() == GLFW_FALSE)
     {
-        // error
+        LOG_ERROR("GLFW didn't initialize correctly");
     }
 
     glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
@@ -288,14 +326,16 @@ int main()
 
     render_config.init();
 
+    LOG_INFO("Initializing Render Device");
     if (!render_device.init(render_config))
     {
-        throw std::runtime_error("Couldn't initialize Vulkan!");
+        LOG_ERROR("Couldn't initialize the Renderer");
+        return 0;
     }
 
     std::vector<Object> objects{};
 
-    auto texture = render_device.createTexture("../sword.png");
+    auto texture = render_device.create_texture("../sword.png").value();
 
     objects.emplace_back(render_device,
                          ObjectType::STATIC,
@@ -331,10 +371,10 @@ int main()
 
     glm::mat4 view = glm::scale(glm::mat4(1.0), glm::vec3(1.f, -1.f, 1.f));
 
-    auto opt_view_handle = render_device.newUniform(0, sizeof(glm::mat4), glm::value_ptr(view));
+    auto opt_view_handle = render_device.new_uniform(0, sizeof(glm::mat4), glm::value_ptr(view));
     gfx::UniformHandle view_handle = opt_view_handle.value();
 
-    auto               opt_sampler_handle = render_device.newUniform(1, texture.view_handle(), texture.sampler_handle());
+    auto               opt_sampler_handle = render_device.new_uniform(1, texture);
     gfx::UniformHandle sampler_handle     = opt_sampler_handle.value();
 
     auto clock = RawClock{};
@@ -344,7 +384,9 @@ int main()
     std::vector<double> frame_times{10, 16.6};
     uint32_t            frameIndex{0};
 
-    while (!glfwWindowShouldClose(window))
+    bool draw_success{true};
+
+    while (!glfwWindowShouldClose(window) && draw_success)
     {
         glfwPollEvents();
 
@@ -352,7 +394,7 @@ int main()
         {
             view *= glm::vec4(1.f, -1.f, 1.f, 1.f);
 
-            render_device.updateUniform(
+            render_device.update_uniform(
                 view_handle, sizeof(glm::mat4), static_cast<void *>(glm::value_ptr(view)));
 
             obj1_vertices[0].pos.y -= .01f;
@@ -374,7 +416,7 @@ int main()
 
         std::array<gfx::UniformHandle, 2> uniforms = {view_handle, sampler_handle};
 
-        render_device.drawFrame(2, uniforms.data());
+        draw_success = render_device.draw_frame(2, uniforms.data());
 
         frame_times[++frameIndex % frame_times.size()] = clock.Restart();
 
@@ -383,10 +425,10 @@ int main()
         // std::cout << sum_time/frame_times.size() << "\n";
     }
 
-    render_device.waitForIdle();
+    render_device.wait_for_idle();
 
-    render_device.destroyTexture(texture);
-
+    render_device.delete_uniforms(1, &view_handle);
+    render_device.delete_textures(1, &texture);
     objects[0].destroyStaticObject(render_device);
     objects[1].destroyStaticObject(render_device);
 
@@ -395,4 +437,6 @@ int main()
     glfwDestroyWindow(window);
 
     glfwTerminate();
+
+    LOG_INFO("Stopping Example\n");
 }
