@@ -384,7 +384,9 @@ int main()
     std::vector<double> frame_times{10, 16.6};
     uint32_t            frameIndex{0};
 
-    while (!glfwWindowShouldClose(window))
+    bool draw_success{true};
+
+    while (!glfwWindowShouldClose(window) && draw_success)
     {
         glfwPollEvents();
 
@@ -414,7 +416,7 @@ int main()
 
         std::array<gfx::UniformHandle, 2> uniforms = {view_handle, sampler_handle};
 
-        render_device.draw_frame(2, uniforms.data());
+        draw_success = render_device.draw_frame(2, uniforms.data());
 
         frame_times[++frameIndex % frame_times.size()] = clock.Restart();
 

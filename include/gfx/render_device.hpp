@@ -852,7 +852,7 @@ public:
 
     void wait_for_idle();
 
-    void draw_frame(uint32_t uniform_count, UniformHandle * p_uniforms);
+    bool draw_frame(uint32_t uniform_count, UniformHandle * p_uniforms);
 
     void draw(PipelineHandle    pipeline,
               glm::mat4 const & transform,
@@ -4256,7 +4256,7 @@ void Renderer::wait_for_idle()
     vkDeviceWaitIdle(render_device.logical_device);
 }
 
-void Renderer::draw_frame(uint32_t uniform_count, UniformHandle * p_uniforms)
+bool Renderer::draw_frame(uint32_t uniform_count, UniformHandle * p_uniforms)
 {
     vkWaitForFences(render_device.logical_device,
                     1,
@@ -4275,12 +4275,12 @@ void Renderer::draw_frame(uint32_t uniform_count, UniformHandle * p_uniforms)
     if (result == VK_ERROR_OUT_OF_DATE_KHR)
     {
         LOG_DEBUG("Swapchain is out of date");
-        return;
+        return false;
     }
     else if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR)
     {
         LOG_ERROR("Failed to acquire swap chain image!");
-        return;
+        return false;
     }
 
     // TRANSFER OPERATIONS
@@ -4294,7 +4294,7 @@ void Renderer::draw_frame(uint32_t uniform_count, UniformHandle * p_uniforms)
                                   &beginInfo);
     if (result != VK_SUCCESS)
     {
-        return;
+        return false;
     }
 
     commands.transfer_buckets[frames.currentResource].Submit();
@@ -4302,7 +4302,7 @@ void Renderer::draw_frame(uint32_t uniform_count, UniformHandle * p_uniforms)
     result = vkEndCommandBuffer(commands.transfer_commandbuffers[frames.currentResource]);
     if (result != VK_SUCCESS)
     {
-        return;
+        return false;
     }
 
     auto submitTransferInfo = VkSubmitInfo{
@@ -4314,7 +4314,7 @@ void Renderer::draw_frame(uint32_t uniform_count, UniformHandle * p_uniforms)
         != VK_SUCCESS)
     {
         LOG_ERROR("Failed to submit transfer command buffer!");
-        return;
+        return false;
     }
     // the graphics queue will wait to do anything in the color_attachment_output stage
     // until the waitSemaphore is signalled by vkAcquireNextImageKHR
@@ -4345,7 +4345,7 @@ void Renderer::draw_frame(uint32_t uniform_count, UniformHandle * p_uniforms)
         != VK_SUCCESS)
     {
         LOG_ERROR("Failed to submit draw command buffer!");
-        return;
+        return false;
     }
 
     VkSwapchainKHR swapChains[] = {render_device.swapchain};
@@ -4367,11 +4367,12 @@ void Renderer::draw_frame(uint32_t uniform_count, UniformHandle * p_uniforms)
     {
         framebuffer_resized = false;
         LOG_DEBUG("Swapchain is out of date");
+        return false;
     }
     else if (result != VK_SUCCESS)
     {
         LOG_ERROR("Failed to present swap chain image!");
-        return;
+        return false;
     }
 
     frames.currentFrame    = (frames.currentFrame + 1) % frames.MAX_FRAMES_IN_FLIGHT;
@@ -4385,6 +4386,8 @@ void Renderer::draw_frame(uint32_t uniform_count, UniformHandle * p_uniforms)
     commands.draw_buckets[frames.currentResource].Clear();
     commands.transfer_buckets[frames.currentResource].Clear();
     commands.delete_buckets[frames.currentResource].Submit();
+
+    return true;
 }
 
 void Renderer::draw(PipelineHandle    pipeline,
