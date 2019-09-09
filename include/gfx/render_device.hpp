@@ -63,7 +63,7 @@
                          "at line",                 \
                          __LINE__);                 \
             assert(result == VK_SUCCESS);           \
-            return Error::VULKAN_ERROR;             \
+            return ErrorCode::VULKAN_ERROR;         \
         }                                           \
     } while (0)
 
@@ -72,7 +72,7 @@ std::vector<char> readFile(std::string const & filename);
 namespace gfx
 {
 
-enum class Error{
+enum class ErrorCode{
     NONE,
     VULKAN_ERROR
 };
@@ -108,7 +108,7 @@ class Memory
 {
 public:
     template <typename T>
-    VkResult allocateAndBind(VkPhysicalDevice      physical_device,
+    ErrorCode allocateAndBind(VkPhysicalDevice      physical_device,
                              VkDevice              logical_device,
                              VkMemoryPropertyFlags properties,
                              T                     object_handle)
@@ -122,16 +122,13 @@ public:
             .memoryTypeIndex
             = findMemoryType(physical_device, requirements.memoryTypeBits, properties).value()};
 
-        auto result = vkAllocateMemory(logical_device, &allocInfo, nullptr, &vk_memory);
-        if (result != VK_SUCCESS)
-        {
-            return result;
-        }
+        VK_CHECK_RESULT(vkAllocateMemory(logical_device, &allocInfo, nullptr, &vk_memory),
+            "Unable to allocate device memory");
 
         return bindMemory(logical_device, object_handle);
     }
 
-    VkResult map(VkDevice logical_device, VkDeviceSize offset, VkDeviceSize size, void ** data);
+    ErrorCode map(VkDevice logical_device, VkDeviceSize offset, VkDeviceSize size, void ** data);
 
     void destroy(VkDevice logical_device);
 
@@ -153,9 +150,9 @@ private:
                                VkImage                image,
                                VkMemoryRequirements & requirements);
 
-    VkResult bindMemory(VkDevice logical_device, VkBuffer buffer);
+    ErrorCode bindMemory(VkDevice logical_device, VkBuffer buffer);
 
-    VkResult bindMemory(VkDevice logical_device, VkImage image);
+    ErrorCode bindMemory(VkDevice logical_device, VkImage image);
 };
 
 class Image: public Memory
@@ -1159,9 +1156,12 @@ bool operator!=(RenderpassConfig const & lhs, RenderpassConfig const & rhs)
     return !(lhs == rhs);
 }
 
-VkResult Memory::map(VkDevice logical_device, VkDeviceSize offset, VkDeviceSize size, void ** data)
+ErrorCode Memory::map(VkDevice logical_device, VkDeviceSize offset, VkDeviceSize size, void ** data)
 {
-    return vkMapMemory(logical_device, vk_memory, offset, size, 0, data);
+    VK_CHECK_RESULT(vkMapMemory(logical_device, vk_memory, offset, size, 0, data),
+        "Unable to map device memory");
+
+    return ErrorCode::NONE;
 }
 
 void Memory::destroy(VkDevice logical_device)
@@ -1208,14 +1208,20 @@ void Memory::getMemoryRequirements(VkDevice               logical_device,
     vkGetImageMemoryRequirements(logical_device, image, &requirements);
 }
 
-VkResult Memory::bindMemory(VkDevice logical_device, VkBuffer buffer)
+ErrorCode Memory::bindMemory(VkDevice logical_device, VkBuffer buffer)
 {
-    return vkBindBufferMemory(logical_device, buffer, vk_memory, 0);
+    VK_CHECK_RESULT(vkBindBufferMemory(logical_device, buffer, vk_memory, 0),
+        "Unable to bind buffer memory");
+
+    return ErrorCode::NONE;
 }
 
-VkResult Memory::bindMemory(VkDevice logical_device, VkImage image)
+ErrorCode Memory::bindMemory(VkDevice logical_device, VkImage image)
 {
-    return vkBindImageMemory(logical_device, image, vk_memory, 0);
+    VK_CHECK_RESULT(vkBindImageMemory(logical_device, image, vk_memory, 0),
+        "Unable to bind image memory");
+
+    return ErrorCode::NONE;
 }
 
 VkResult Image::create(VkPhysicalDevice      physical_device,
@@ -1247,8 +1253,8 @@ VkResult Image::create(VkPhysicalDevice      physical_device,
     auto result = vkCreateImage(logical_device, &imageInfo, nullptr, &vk_image);
     assert(result == VK_SUCCESS);
 
-    result = allocateAndBind(physical_device, logical_device, properties, vk_image);
-    assert(result == VK_SUCCESS);
+    ErrorCode error = allocateAndBind(physical_device, logical_device, properties, vk_image);
+    assert(error == ErrorCode::NONE);
 
     auto viewInfo = VkImageViewCreateInfo{.sType    = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
                                           .image    = vk_image,
@@ -1367,13 +1373,8 @@ VkResult Buffer::create(VkPhysicalDevice      physical_device,
         return result;
     }
 
-    result = allocateAndBind(physical_device, logical_device, properties, vk_buffer);
-
-    assert(result == VK_SUCCESS);
-    if (result != VK_SUCCESS)
-    {
-        return result;
-    }
+    ErrorCode error = allocateAndBind(physical_device, logical_device, properties, vk_buffer);
+    assert(error == ErrorCode::NONE);
 
     return VK_SUCCESS;
 }
@@ -2610,13 +2611,13 @@ VkResult Device::createBuffer(VkDeviceSize          size,
         return result;
     }
 
-    result = bufferMemory.allocateAndBind(
+    ErrorCode error = bufferMemory.allocateAndBind(
         physical_device,
         logical_device,
         VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
         buffer);
 
-    assert(result == VK_SUCCESS);
+    assert(error == ErrorCode::NONE);
 
     return VK_SUCCESS;
 }
