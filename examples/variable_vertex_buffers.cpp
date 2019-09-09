@@ -306,7 +306,7 @@ int main()
 {
     get_console_sink()->set_level(spdlog::level::warn);
     get_file_sink()->set_level(spdlog::level::trace);
-    get_logger()->set_level(spdlog::level::trace);
+    get_logger()->set_level(spdlog::level::debug);
 
     LOG_INFO("Starting Example");
 
@@ -422,7 +422,7 @@ int main()
 
         double sum_time = std::accumulate(frame_times.cbegin(), frame_times.cend(), 0.0);
 
-        // std::cout << sum_time/frame_times.size() << "\n";
+        LOG_TRACE("Frame time {}", sum_time/frame_times.size());
     }
 
     render_device.wait_for_idle();
