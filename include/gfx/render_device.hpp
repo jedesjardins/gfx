@@ -725,14 +725,14 @@ public:
     void quit(Device & device);
 
 private:
-    VkResult createRenderPasses(Device & device, ImageResources & image_resources);
+    ErrorCode createRenderPasses(Device & device, ImageResources & image_resources);
 
     // FRAMEBUFFER
-    VkResult createFramebuffer(Device &                     device,
-                               ImageResources &             image_resources,
-                               RenderpassConfig const &     config,
-                               VkRenderPass const &         render_pass,
-                               std::vector<VkFramebuffer> & framebuffers);
+    ErrorCode createFramebuffer(Device &                     device,
+                                ImageResources &             image_resources,
+                                RenderpassConfig const &     config,
+                                VkRenderPass const &         render_pass,
+                                std::vector<VkFramebuffer> & framebuffers);
 }; // struct RenderPassResources
 
 struct BufferResources
@@ -3394,7 +3394,7 @@ bool RenderPassResources::init(RenderConfig &   render_config,
     render_passes.resize(render_pass_configs.size());
     framebuffers.resize(render_pass_configs.size());
 
-    return createRenderPasses(device, image_resources) == VK_SUCCESS;
+    return createRenderPasses(device, image_resources) == ErrorCode::NONE;
 }
 
 void RenderPassResources::quit(Device & device)
@@ -3413,7 +3413,7 @@ void RenderPassResources::quit(Device & device)
     }
 }
 
-VkResult RenderPassResources::createRenderPasses(Device & device, ImageResources & image_resources)
+ErrorCode RenderPassResources::createRenderPasses(Device & device, ImageResources & image_resources)
 {
     for (size_t rp_i = 0; rp_i < render_passes.size(); ++rp_i)
     {
@@ -3471,26 +3471,27 @@ VkResult RenderPassResources::createRenderPasses(Device & device, ImageResources
                 render_pass_config.subpass_dependencies.size()),
             .pDependencies = render_pass_config.subpass_dependencies.data()};
 
-        auto result = vkCreateRenderPass(
-            device.logical_device, &renderPassInfo, nullptr, &render_pass);
-        if (result != VK_SUCCESS)
-        {
-            return result;
-        }
+        VK_CHECK_RESULT(
+            vkCreateRenderPass(device.logical_device, &renderPassInfo, nullptr, &render_pass),
+            "Unable to create VkRenderPass");
 
-        createFramebuffer(
+        auto error = createFramebuffer(
             device, image_resources, render_pass_config, render_pass, framebuffers[rp_i]);
+        if (error != ErrorCode::NONE)
+        {
+            return error;
+        }
     }
 
-    return VK_SUCCESS;
+    return ErrorCode::NONE;
 }
 
 // FRAMEBUFFER
-VkResult RenderPassResources::createFramebuffer(Device &                     device,
-                                                ImageResources &             image_resources,
-                                                RenderpassConfig const &     config,
-                                                VkRenderPass const &         render_pass,
-                                                std::vector<VkFramebuffer> & framebuffers)
+ErrorCode RenderPassResources::createFramebuffer(Device &                     device,
+                                                 ImageResources &             image_resources,
+                                                 RenderpassConfig const &     config,
+                                                 VkRenderPass const &         render_pass,
+                                                 std::vector<VkFramebuffer> & framebuffers)
 {
     auto const & framebuffer_config = config.framebuffer_config;
     framebuffers.resize(device.swapchain_image_count);
@@ -3528,15 +3529,12 @@ VkResult RenderPassResources::createFramebuffer(Device &                     dev
             .height          = device.swapchain_extent.height,
             .layers          = 1};
 
-        auto result = vkCreateFramebuffer(
-            device.logical_device, &framebufferInfo, nullptr, &framebuffer);
-        if (result != VK_SUCCESS)
-        {
-            return result;
-        }
+        VK_CHECK_RESULT(
+            vkCreateFramebuffer(device.logical_device, &framebufferInfo, nullptr, &framebuffer),
+            "Unable to create VkFramebuffer");
     }
 
-    return VK_SUCCESS;
+    return ErrorCode::NONE;
 }
 
 bool UniformResources::init(RenderConfig &    render_config,
