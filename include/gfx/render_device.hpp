@@ -71,8 +71,8 @@ std::vector<char> readFile(std::string const & filename);
 
 namespace gfx
 {
-
-enum class ErrorCode{
+enum class ErrorCode
+{
     NONE,
     VULKAN_ERROR
 };
@@ -109,9 +109,9 @@ class Memory
 public:
     template <typename T>
     ErrorCode allocateAndBind(VkPhysicalDevice      physical_device,
-                             VkDevice              logical_device,
-                             VkMemoryPropertyFlags properties,
-                             T                     object_handle)
+                              VkDevice              logical_device,
+                              VkMemoryPropertyFlags properties,
+                              T                     object_handle)
     {
         VkMemoryRequirements requirements;
         getMemoryRequirements(logical_device, object_handle, requirements);
@@ -123,7 +123,7 @@ public:
             = findMemoryType(physical_device, requirements.memoryTypeBits, properties).value()};
 
         VK_CHECK_RESULT(vkAllocateMemory(logical_device, &allocInfo, nullptr, &vk_memory),
-            "Unable to allocate device memory");
+                        "Unable to allocate VkDeviceMemory");
 
         return bindMemory(logical_device, object_handle);
     }
@@ -158,17 +158,17 @@ private:
 class Image: public Memory
 {
 public:
-    VkResult create(VkPhysicalDevice      physical_device,
-                    VkDevice              logical_device,
-                    uint32_t              width,
-                    uint32_t              height,
-                    uint32_t              mipLevels,
-                    VkSampleCountFlagBits numSamples,
-                    VkFormat              format,
-                    VkImageTiling         tiling,
-                    VkImageUsageFlags     usage,
-                    VkMemoryPropertyFlags properties,
-                    VkImageAspectFlags    aspectFlags);
+    ErrorCode create(VkPhysicalDevice      physical_device,
+                     VkDevice              logical_device,
+                     uint32_t              width,
+                     uint32_t              height,
+                     uint32_t              mipLevels,
+                     VkSampleCountFlagBits numSamples,
+                     VkFormat              format,
+                     VkImageTiling         tiling,
+                     VkImageUsageFlags     usage,
+                     VkMemoryPropertyFlags properties,
+                     VkImageAspectFlags    aspectFlags);
 
     void destroy(VkDevice logical_device);
 
@@ -184,17 +184,17 @@ protected:
 class Sampler: public Image
 {
 public:
-    VkResult create(VkPhysicalDevice      physical_device,
-                    VkDevice              logical_device,
-                    uint32_t              width,
-                    uint32_t              height,
-                    uint32_t              mipLevels,
-                    VkSampleCountFlagBits numSamples,
-                    VkFormat              format,
-                    VkImageTiling         tiling,
-                    VkImageUsageFlags     usage,
-                    VkMemoryPropertyFlags properties,
-                    VkImageAspectFlags    aspectFlags);
+    ErrorCode create(VkPhysicalDevice      physical_device,
+                     VkDevice              logical_device,
+                     uint32_t              width,
+                     uint32_t              height,
+                     uint32_t              mipLevels,
+                     VkSampleCountFlagBits numSamples,
+                     VkFormat              format,
+                     VkImageTiling         tiling,
+                     VkImageUsageFlags     usage,
+                     VkMemoryPropertyFlags properties,
+                     VkImageAspectFlags    aspectFlags);
 
     void destroy(VkDevice logical_device);
 
@@ -711,13 +711,13 @@ public:
 
     std::optional<Sampler> get_texture(TextureHandle handle);
 
-    void delete_texture(Device & render_device, TextureHandle handle);
+    void delete_texture(TextureHandle handle);
 
 private:
     TextureHandle                              next_sampler_handle{0};
     std::unordered_map<TextureHandle, Sampler> samplers;
 
-    VkResult createAttachments(Device & device);
+    ErrorCode createAttachments(Device & device);
 }; // struct ImageResources
 
 struct RenderPassResources
@@ -1010,7 +1010,6 @@ std::vector<char> readFile(std::string const & filename)
 
 namespace gfx
 {
-
 char const * error_string(VkResult error_code)
 {
     switch (error_code)
@@ -1159,7 +1158,7 @@ bool operator!=(RenderpassConfig const & lhs, RenderpassConfig const & rhs)
 ErrorCode Memory::map(VkDevice logical_device, VkDeviceSize offset, VkDeviceSize size, void ** data)
 {
     VK_CHECK_RESULT(vkMapMemory(logical_device, vk_memory, offset, size, 0, data),
-        "Unable to map device memory");
+                    "Unable to map VkDeviceMemory");
 
     return ErrorCode::NONE;
 }
@@ -1211,7 +1210,7 @@ void Memory::getMemoryRequirements(VkDevice               logical_device,
 ErrorCode Memory::bindMemory(VkDevice logical_device, VkBuffer buffer)
 {
     VK_CHECK_RESULT(vkBindBufferMemory(logical_device, buffer, vk_memory, 0),
-        "Unable to bind buffer memory");
+                    "Unable to bind VkDeviceMemory to VkBuffer");
 
     return ErrorCode::NONE;
 }
@@ -1219,22 +1218,22 @@ ErrorCode Memory::bindMemory(VkDevice logical_device, VkBuffer buffer)
 ErrorCode Memory::bindMemory(VkDevice logical_device, VkImage image)
 {
     VK_CHECK_RESULT(vkBindImageMemory(logical_device, image, vk_memory, 0),
-        "Unable to bind image memory");
+                    "Unable to bind VkDeviceMemory to VkImage");
 
     return ErrorCode::NONE;
 }
 
-VkResult Image::create(VkPhysicalDevice      physical_device,
-                       VkDevice              logical_device,
-                       uint32_t              width,
-                       uint32_t              height,
-                       uint32_t              mipLevels,
-                       VkSampleCountFlagBits numSamples,
-                       VkFormat              format,
-                       VkImageTiling         tiling,
-                       VkImageUsageFlags     usage,
-                       VkMemoryPropertyFlags properties,
-                       VkImageAspectFlags    aspectFlags)
+ErrorCode Image::create(VkPhysicalDevice      physical_device,
+                        VkDevice              logical_device,
+                        uint32_t              width,
+                        uint32_t              height,
+                        uint32_t              mipLevels,
+                        VkSampleCountFlagBits numSamples,
+                        VkFormat              format,
+                        VkImageTiling         tiling,
+                        VkImageUsageFlags     usage,
+                        VkMemoryPropertyFlags properties,
+                        VkImageAspectFlags    aspectFlags)
 {
     auto imageInfo = VkImageCreateInfo{.sType         = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
                                        .imageType     = VK_IMAGE_TYPE_2D,
@@ -1250,11 +1249,15 @@ VkResult Image::create(VkPhysicalDevice      physical_device,
                                        .sharingMode   = VK_SHARING_MODE_EXCLUSIVE,
                                        .samples       = numSamples};
 
-    auto result = vkCreateImage(logical_device, &imageInfo, nullptr, &vk_image);
-    assert(result == VK_SUCCESS);
+    VK_CHECK_RESULT(vkCreateImage(logical_device, &imageInfo, nullptr, &vk_image),
+                    "Unable to create VkImage");
 
     ErrorCode error = allocateAndBind(physical_device, logical_device, properties, vk_image);
-    assert(error == ErrorCode::NONE);
+    if (error != ErrorCode::NONE)
+    {
+        LOG_ERROR("Couldn't bind device memory to VkImage {}", static_cast<void *>(vk_image));
+        return error;
+    }
 
     auto viewInfo = VkImageViewCreateInfo{.sType    = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
                                           .image    = vk_image,
@@ -1266,7 +1269,10 @@ VkResult Image::create(VkPhysicalDevice      physical_device,
                                           .subresourceRange.baseArrayLayer = 0,
                                           .subresourceRange.layerCount     = 1};
 
-    return vkCreateImageView(logical_device, &viewInfo, nullptr, &vk_image_view);
+    VK_CHECK_RESULT(vkCreateImageView(logical_device, &viewInfo, nullptr, &vk_image_view),
+                    "Unable to create VkImageView");
+
+    return ErrorCode::NONE;
 }
 
 void Image::destroy(VkDevice logical_device)
@@ -1288,32 +1294,32 @@ VkImage Image::image_handle()
     return vk_image;
 }
 
-VkResult Sampler::create(VkPhysicalDevice      physical_device,
-                         VkDevice              logical_device,
-                         uint32_t              width,
-                         uint32_t              height,
-                         uint32_t              mipLevels,
-                         VkSampleCountFlagBits numSamples,
-                         VkFormat              format,
-                         VkImageTiling         tiling,
-                         VkImageUsageFlags     usage,
-                         VkMemoryPropertyFlags properties,
-                         VkImageAspectFlags    aspectFlags)
+ErrorCode Sampler::create(VkPhysicalDevice      physical_device,
+                          VkDevice              logical_device,
+                          uint32_t              width,
+                          uint32_t              height,
+                          uint32_t              mipLevels,
+                          VkSampleCountFlagBits numSamples,
+                          VkFormat              format,
+                          VkImageTiling         tiling,
+                          VkImageUsageFlags     usage,
+                          VkMemoryPropertyFlags properties,
+                          VkImageAspectFlags    aspectFlags)
 {
-    auto result = static_cast<Image &>(*this).create(physical_device,
-                                                     logical_device,
-                                                     width,
-                                                     height,
-                                                     mipLevels,
-                                                     numSamples,
-                                                     format,
-                                                     tiling,
-                                                     usage,
-                                                     properties,
-                                                     aspectFlags);
-    if (result != VK_SUCCESS)
+    auto error = static_cast<Image &>(*this).create(physical_device,
+                                                    logical_device,
+                                                    width,
+                                                    height,
+                                                    mipLevels,
+                                                    numSamples,
+                                                    format,
+                                                    tiling,
+                                                    usage,
+                                                    properties,
+                                                    aspectFlags);
+    if (error != ErrorCode::NONE)
     {
-        return result;
+        return error;
     }
 
     auto samplerInfo = VkSamplerCreateInfo{.sType        = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
@@ -1333,15 +1339,10 @@ VkResult Sampler::create(VkPhysicalDevice      physical_device,
                                            .minLod     = 0.0f,
                                            .maxLod     = 1};
 
-    result = vkCreateSampler(logical_device, &samplerInfo, nullptr, &vk_sampler);
+    VK_CHECK_RESULT(vkCreateSampler(logical_device, &samplerInfo, nullptr, &vk_sampler),
+                    "Unable to create VkSampler");
 
-    if (result != VK_SUCCESS)
-    {
-        LOG_ERROR("Failed to create texture sampler!");
-        return result;
-    }
-
-    return VK_SUCCESS;
+    return ErrorCode::NONE;
 }
 
 void Sampler::destroy(VkDevice logical_device)
@@ -3257,7 +3258,7 @@ bool ImageResources::init(RenderConfig & render_config, Device & device)
     attachment_configs = std::move(render_config.attachment_configs);
     attachment_handles.resize(attachment_configs.size());
 
-    return createAttachments(device) == VK_SUCCESS;
+    return createAttachments(device) == ErrorCode::NONE;
 }
 
 void ImageResources::quit(Device & device)
@@ -3299,8 +3300,18 @@ std::optional<TextureHandle> ImageResources::create_texture(VkPhysicalDevice    
                        usage,
                        properties,
                        aspectFlags)
-        != VK_SUCCESS)
+        != ErrorCode::NONE)
     {
+        LOG_DEBUG("Failed Sampler creation: {} {} {} {}",
+                  static_cast<void *>(sampler.sampler_handle()),
+                  static_cast<void *>(sampler.view_handle()),
+                  static_cast<void *>(sampler.image_handle()),
+                  static_cast<void *>(sampler.memory_handle()));
+
+        sampler.destroy(logical_device);
+
+        delete_texture(handle);
+
         return std::nullopt;
     }
 
@@ -3319,7 +3330,7 @@ std::optional<Sampler> ImageResources::get_texture(TextureHandle handle)
     return std::nullopt;
 }
 
-void ImageResources::delete_texture(Device & render_device, TextureHandle handle)
+void ImageResources::delete_texture(TextureHandle handle)
 {
     auto sampler_iter = samplers.find(handle);
 
@@ -3329,7 +3340,7 @@ void ImageResources::delete_texture(Device & render_device, TextureHandle handle
     }
 }
 
-VkResult ImageResources::createAttachments(Device & device)
+ErrorCode ImageResources::createAttachments(Device & device)
 {
     for (size_t i = 0; i < attachment_configs.size(); ++i)
     {
@@ -3371,21 +3382,27 @@ VkResult ImageResources::createAttachments(Device & device)
             samples = VK_SAMPLE_COUNT_1_BIT;
         }
 
-        attachment_handles[i] = create_texture(device.physical_device,
-                                               device.logical_device,
-                                               device.swapchain_extent.width,
-                                               device.swapchain_extent.height,
-                                               1,
-                                               samples,
-                                               format,
-                                               VK_IMAGE_TILING_OPTIMAL,
-                                               VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT | usage,
-                                               VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-                                               aspect)
-                                    .value();
+        auto opt_handle = create_texture(device.physical_device,
+                                         device.logical_device,
+                                         device.swapchain_extent.width,
+                                         device.swapchain_extent.height,
+                                         1,
+                                         samples,
+                                         format,
+                                         VK_IMAGE_TILING_OPTIMAL,
+                                         VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT | usage,
+                                         VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+                                         aspect);
+
+        if (!opt_handle)
+        {
+            return ErrorCode::VULKAN_ERROR;
+        }
+
+        attachment_handles[i] = opt_handle.value();
     }
 
-    return VK_SUCCESS;
+    return ErrorCode::NONE;
 }
 
 bool RenderPassResources::init(RenderConfig &   render_config,
@@ -4753,7 +4770,7 @@ void Renderer::delete_textures(size_t texture_count, TextureHandle * texture_han
     for (size_t i = 0; i < texture_count; ++i)
     {
         auto sampler = images.get_texture(texture_handles[i]).value();
-        images.delete_texture(render_device, texture_handles[i]);
+        images.delete_texture(texture_handles[i]);
 
         *(sampler_iter++) = sampler.sampler_handle();
         *(view_iter++)    = sampler.view_handle();
