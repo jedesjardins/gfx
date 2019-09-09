@@ -604,7 +604,7 @@ private:
     void getRequiredExtensions();
 
     // INSTANCE
-    VkResult createInstance(char const * window_name);
+    ErrorCode createInstance(char const * window_name);
 
     // VALIDATION LAYER DEBUG MESSAGER
     static VKAPI_ATTR VkBool32 VKAPI_CALL
@@ -613,17 +613,17 @@ private:
                                              const VkDebugUtilsMessengerCallbackDataEXT * pCallbackData,
                                              void *                                       pUserData);
 
-    VkResult createDebugMessenger();
+    ErrorCode createDebugMessenger();
 
-    VkResult createDebugUtilsMessengerEXT(const VkDebugUtilsMessengerCreateInfoEXT * pCreateInfo,
-                                          const VkAllocationCallbacks *              pAllocator,
-                                          VkDebugUtilsMessengerEXT * pDebugMessenger);
+    ErrorCode createDebugUtilsMessengerEXT(const VkDebugUtilsMessengerCreateInfoEXT * pCreateInfo,
+                                           const VkAllocationCallbacks *              pAllocator,
+                                           VkDebugUtilsMessengerEXT * pDebugMessenger);
 
     void cleanupDebugUtilsMessengerEXT(VkDebugUtilsMessengerEXT      debugMessenger,
                                        const VkAllocationCallbacks * pAllocator);
 
     // SURFACE
-    VkResult createSurface();
+    ErrorCode createSurface();
 
     bool pickPhysicalDevice();
 
@@ -638,10 +638,10 @@ private:
     void getMaxUsableSampleCount();
 
     // LOGICAL DEVICE
-    VkResult createLogicalDevice();
+    ErrorCode createLogicalDevice();
 
     // SWAPCHAIN
-    VkResult createSwapChain();
+    ErrorCode createSwapChain();
 
     VkSurfaceFormatKHR chooseSwapSurfaceFormat(
         std::vector<VkSurfaceFormatKHR> const & availableFormats);
@@ -653,9 +653,9 @@ private:
 
     void getSwapChainImages();
 
-    VkResult createSwapChainImageViews();
+    ErrorCode createSwapChainImageViews();
 
-    VkFormat findDepthFormat();
+    std::optional<VkFormat> findDepthFormat();
 
     std::optional<VkFormat> findSupportedFormat(const std::vector<VkFormat> & candidates,
                                                 VkImageTiling                 tiling,
@@ -1503,11 +1503,11 @@ void DynamicBufferCollection::updateUniform(UniformHandle handle,
 
     auto old_buffer_slot = (uniform.offset / 256) + (uniform.descriptor_set * 8);
     free_uniform_buffer_slots.release(old_buffer_slot);
-    LOG_DEBUG("Release {}", old_buffer_slot);
+    LOG_TRACE("Release {}", old_buffer_slot);
 
     // get new buffer slot
     auto uniform_buffer_slot = free_uniform_buffer_slots.acquire();
-    LOG_DEBUG("Acquire {}", uniform_buffer_slot);
+    LOG_TRACE("Acquire {}", uniform_buffer_slot);
     if (uniform_buffer_slot < 0)
     {
         return;
@@ -2510,17 +2510,17 @@ bool Device::init(RenderConfig & render_config)
     // clang-format on
     getRequiredExtensions();
 
-    if (createInstance(render_config.window_name) != VK_SUCCESS)
+    if (createInstance(render_config.window_name) != ErrorCode::NONE)
     {
         return false;
     }
 
-    if (use_validation && createDebugMessenger() != VK_SUCCESS)
+    if (use_validation && createDebugMessenger() != ErrorCode::NONE)
     {
         return false;
     }
 
-    if (createSurface() != VK_SUCCESS)
+    if (createSurface() != ErrorCode::NONE)
     {
         return false;
     }
@@ -2530,19 +2530,19 @@ bool Device::init(RenderConfig & render_config)
         return false;
     }
 
-    if (createLogicalDevice() != VK_SUCCESS)
+    if (createLogicalDevice() != ErrorCode::NONE)
     {
         return false;
     }
 
-    if (createSwapChain() != VK_SUCCESS)
+    if (createSwapChain() != ErrorCode::NONE)
     {
         return false;
     }
 
     getSwapChainImages();
 
-    if (createSwapChainImageViews() != VK_SUCCESS)
+    if (createSwapChainImageViews() != ErrorCode::NONE)
     {
         return false;
     }
@@ -2604,9 +2604,11 @@ void Device::checkValidationLayerSupport()
         }
 
         validation_supported = false;
+        LOG_DEBUG("Vulkan validation layer {} not supported");
         break;
     }
 
+    LOG_DEBUG("All required Vulkan validation layers are supported");
     validation_supported = true;
 }
 
@@ -2627,7 +2629,7 @@ void Device::getRequiredExtensions()
 }
 
 // INSTANCE
-VkResult Device::createInstance(char const * window_name)
+ErrorCode Device::createInstance(char const * window_name)
 {
     // clang-format off
     #ifdef NDEBUG
@@ -2664,7 +2666,10 @@ VkResult Device::createInstance(char const * window_name)
     }
 
     // create instance
-    return vkCreateInstance(&createInfo, nullptr, &instance);
+    VK_CHECK_RESULT(vkCreateInstance(&createInfo, nullptr, &instance),
+                    "Unable to create VkInstance");
+
+    return ErrorCode::NONE;
 }
 
 // VALIDATION LAYER DEBUG MESSAGER
@@ -2694,7 +2699,7 @@ VKAPI_ATTR VkBool32 VKAPI_CALL
     return VK_FALSE;
 }
 
-VkResult Device::createDebugMessenger()
+ErrorCode Device::createDebugMessenger()
 {
     auto createInfo = VkDebugUtilsMessengerCreateInfoEXT{
         .sType           = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT,
@@ -2711,7 +2716,7 @@ VkResult Device::createDebugMessenger()
     return createDebugUtilsMessengerEXT(&createInfo, nullptr, &debug_messager);
 }
 
-VkResult Device::createDebugUtilsMessengerEXT(
+ErrorCode Device::createDebugUtilsMessengerEXT(
     const VkDebugUtilsMessengerCreateInfoEXT * pCreateInfo,
     const VkAllocationCallbacks *              pAllocator,
     VkDebugUtilsMessengerEXT *                 pDebugMessenger)
@@ -2720,12 +2725,17 @@ VkResult Device::createDebugUtilsMessengerEXT(
         instance, "vkCreateDebugUtilsMessengerEXT");
     if (func != nullptr)
     {
-        return func(instance, pCreateInfo, pAllocator, pDebugMessenger);
+        VK_CHECK_RESULT(func(instance, pCreateInfo, pAllocator, pDebugMessenger),
+                        "Unable to create VkDebugUtilsMessengerEXT");
+
+        return ErrorCode::NONE;
     }
     else
     {
-        return VK_ERROR_EXTENSION_NOT_PRESENT;
+        LOG_WARN("Vulkan DebugUtilsMessengerEXT extension is not present");
     }
+
+    return ErrorCode::NONE;
 }
 
 void Device::cleanupDebugUtilsMessengerEXT(VkDebugUtilsMessengerEXT      debugMessenger,
@@ -2740,9 +2750,12 @@ void Device::cleanupDebugUtilsMessengerEXT(VkDebugUtilsMessengerEXT      debugMe
 }
 
 // SURFACE
-VkResult Device::createSurface()
+ErrorCode Device::createSurface()
 {
-    return glfwCreateWindowSurface(instance, window, nullptr, &surface);
+    VK_CHECK_RESULT(glfwCreateWindowSurface(instance, window, nullptr, &surface),
+                    "Unable to create VkSurfaceKHR");
+
+    return ErrorCode::NONE;
 }
 
 bool Device::pickPhysicalDevice()
@@ -2941,7 +2954,7 @@ void Device::getMaxUsableSampleCount()
 }
 
 // LOGICAL DEVICE
-VkResult Device::createLogicalDevice()
+ErrorCode Device::createLogicalDevice()
 {
     // create queue info for graphics and present queues
     std::vector<VkDeviceQueueCreateInfo> queueCreateInfos;
@@ -2987,19 +3000,28 @@ VkResult Device::createLogicalDevice()
         createInfo.ppEnabledLayerNames = validation_layers.data();
     }
 
-    return vkCreateDevice(physical_device, &createInfo, nullptr, &logical_device);
+    VK_CHECK_RESULT(vkCreateDevice(physical_device, &createInfo, nullptr, &logical_device),
+                    "Unable to create VkDevice");
+
+    return ErrorCode::NONE;
 }
 
 // SWAPCHAIN
-VkResult Device::createSwapChain()
+ErrorCode Device::createSwapChain()
 {
-    VkSurfaceFormatKHR surfaceFormat = chooseSwapSurfaceFormat(physical_device_info.formats);
-    VkPresentModeKHR   presentMode   = chooseSwapPresentMode(physical_device_info.presentModes);
-    VkExtent2D         extent        = chooseSwapExtent(physical_device_info.capabilities);
+    VkSurfaceFormatKHR surfaceFormat    = chooseSwapSurfaceFormat(physical_device_info.formats);
+    VkPresentModeKHR   presentMode      = chooseSwapPresentMode(physical_device_info.presentModes);
+    VkExtent2D         extent           = chooseSwapExtent(physical_device_info.capabilities);
+    auto               opt_depth_format = findDepthFormat();
 
     swapchain_image_format = surfaceFormat.format;
     swapchain_extent       = extent;
-    depth_format           = findDepthFormat();
+    if (!opt_depth_format)
+    {
+        LOG_ERROR("Unable to find proper depth format");
+        return ErrorCode::VULKAN_ERROR;
+    }
+    depth_format = opt_depth_format.value();
 
     // imagecount is greater than min image count and less than or equal to maximage count
     uint32_t imageCount = physical_device_info.capabilities.minImageCount + 1;
@@ -3042,7 +3064,10 @@ VkResult Device::createSwapChain()
         createInfo.pQueueFamilyIndices   = nullptr; // Optional
     }
 
-    return vkCreateSwapchainKHR(logical_device, &createInfo, nullptr, &swapchain);
+    VK_CHECK_RESULT(vkCreateSwapchainKHR(logical_device, &createInfo, nullptr, &swapchain),
+                    "Unable to create the VkSwapchainKHR");
+
+    return ErrorCode::NONE;
 }
 
 VkSurfaceFormatKHR Device::chooseSwapSurfaceFormat(
@@ -3111,12 +3136,13 @@ VkExtent2D Device::chooseSwapExtent(VkSurfaceCapabilitiesKHR const & capabilitie
 void Device::getSwapChainImages()
 {
     vkGetSwapchainImagesKHR(logical_device, swapchain, &swapchain_image_count, nullptr);
+    assert(swapchain_image_count > 0);
     swapchain_images.resize(swapchain_image_count);
     vkGetSwapchainImagesKHR(
         logical_device, swapchain, &swapchain_image_count, swapchain_images.data());
 }
 
-VkResult Device::createSwapChainImageViews()
+ErrorCode Device::createSwapChainImageViews()
 {
     swapchain_image_views.resize(swapchain_images.size());
 
@@ -3133,25 +3159,20 @@ VkResult Device::createSwapChainImageViews()
         viewInfo.subresourceRange.baseArrayLayer = 0;
         viewInfo.subresourceRange.layerCount     = 1;
 
-        auto imageViewResult = vkCreateImageView(
-            logical_device, &viewInfo, nullptr, &swapchain_image_views[i]);
-
-        if (imageViewResult != VK_SUCCESS)
-        {
-            return imageViewResult;
-        }
+        VK_CHECK_RESULT(
+            vkCreateImageView(logical_device, &viewInfo, nullptr, &swapchain_image_views[i]),
+            "Unable to create VkImageView for Swapchain image");
     }
 
-    return VK_SUCCESS;
+    return ErrorCode::NONE;
 }
 
-VkFormat Device::findDepthFormat()
+std::optional<VkFormat> Device::findDepthFormat()
 {
     return findSupportedFormat(
-               {VK_FORMAT_D32_SFLOAT, VK_FORMAT_D32_SFLOAT_S8_UINT, VK_FORMAT_D24_UNORM_S8_UINT},
-               VK_IMAGE_TILING_OPTIMAL,
-               VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT)
-        .value();
+        {VK_FORMAT_D32_SFLOAT, VK_FORMAT_D32_SFLOAT_S8_UINT, VK_FORMAT_D24_UNORM_S8_UINT},
+        VK_IMAGE_TILING_OPTIMAL,
+        VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT);
 }
 
 std::optional<VkFormat> Device::findSupportedFormat(const std::vector<VkFormat> & candidates,
