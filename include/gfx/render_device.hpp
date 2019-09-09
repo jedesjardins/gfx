@@ -207,11 +207,11 @@ private:
 class Buffer: public Memory
 {
 public:
-    VkResult create(VkPhysicalDevice      physical_device,
-                    VkDevice              logical_device,
-                    VkDeviceSize          size,
-                    VkBufferUsageFlags    usage,
-                    VkMemoryPropertyFlags properties);
+    ErrorCode create(VkPhysicalDevice      physical_device,
+                     VkDevice              logical_device,
+                     VkDeviceSize          size,
+                     VkBufferUsageFlags    usage,
+                     VkMemoryPropertyFlags properties);
 
     void destroy(VkDevice logical_device);
 
@@ -597,12 +597,6 @@ public:
 
     bool init(RenderConfig & render_config);
     void quit();
-
-    VkResult createBuffer(VkDeviceSize          size,
-                          VkBufferUsageFlags    usage,
-                          VkMemoryPropertyFlags properties,
-                          VkBuffer &            buffer,
-                          Memory &              bufferMemory);
 
 private:
     void checkValidationLayerSupport();
@@ -1357,27 +1351,21 @@ VkSampler Sampler::sampler_handle()
     return vk_sampler;
 }
 
-VkResult Buffer::create(VkPhysicalDevice      physical_device,
-                        VkDevice              logical_device,
-                        VkDeviceSize          size,
-                        VkBufferUsageFlags    usage,
-                        VkMemoryPropertyFlags properties)
+ErrorCode Buffer::create(VkPhysicalDevice      physical_device,
+                         VkDevice              logical_device,
+                         VkDeviceSize          size,
+                         VkBufferUsageFlags    usage,
+                         VkMemoryPropertyFlags properties)
 {
     auto bufferInfo = VkBufferCreateInfo{.sType       = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
                                          .size        = size,
                                          .usage       = usage,
                                          .sharingMode = VK_SHARING_MODE_EXCLUSIVE};
 
-    auto result = vkCreateBuffer(logical_device, &bufferInfo, nullptr, &vk_buffer);
-    if (result != VK_SUCCESS)
-    {
-        return result;
-    }
+    VK_CHECK_RESULT(vkCreateBuffer(logical_device, &bufferInfo, nullptr, &vk_buffer),
+                    "Unable to create VkBuffer");
 
-    ErrorCode error = allocateAndBind(physical_device, logical_device, properties, vk_buffer);
-    assert(error == ErrorCode::NONE);
-
-    return VK_SUCCESS;
+    return allocateAndBind(physical_device, logical_device, properties, vk_buffer);
 }
 
 void Buffer::destroy(VkDevice logical_device)
@@ -2593,34 +2581,6 @@ void Device::quit()
     {
         vkDestroyInstance(instance, nullptr);
     }
-}
-
-VkResult Device::createBuffer(VkDeviceSize          size,
-                              VkBufferUsageFlags    usage,
-                              VkMemoryPropertyFlags properties,
-                              VkBuffer &            buffer,
-                              Memory &              bufferMemory)
-{
-    auto bufferInfo = VkBufferCreateInfo{.sType       = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
-                                         .size        = size,
-                                         .usage       = usage,
-                                         .sharingMode = VK_SHARING_MODE_EXCLUSIVE};
-
-    auto result = vkCreateBuffer(logical_device, &bufferInfo, nullptr, &buffer);
-    if (result != VK_SUCCESS)
-    {
-        return result;
-    }
-
-    ErrorCode error = bufferMemory.allocateAndBind(
-        physical_device,
-        logical_device,
-        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-        buffer);
-
-    assert(error == ErrorCode::NONE);
-
-    return VK_SUCCESS;
 }
 
 void Device::checkValidationLayerSupport()
@@ -4225,7 +4185,7 @@ std::optional<BufferHandle> BufferResources::create_buffer(Device &             
 
     if (buffer.create(
             render_device.physical_device, render_device.logical_device, size, usage, properties)
-        != VK_SUCCESS)
+        != ErrorCode::NONE)
     {
         LOG_ERROR("Couldn't create buffer");
         return std::nullopt;
