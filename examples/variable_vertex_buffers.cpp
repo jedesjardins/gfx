@@ -300,8 +300,6 @@ private:
 
 }; // class RawClock
 
-
-
 int main()
 {
     get_console_sink()->set_level(spdlog::level::warn);
@@ -326,7 +324,6 @@ int main()
 
     render_config.init();
 
-    LOG_INFO("Initializing Render Device");
     if (!render_device.init(render_config))
     {
         LOG_ERROR("Couldn't initialize the Renderer");
@@ -335,7 +332,15 @@ int main()
 
     std::vector<Object> objects{};
 
-    auto texture = render_device.create_texture("../sword.png").value();
+    auto opt_texture = render_device.create_texture("../sword.png");
+    if (!opt_texture)
+    {
+        LOG_ERROR("Couldn't create texture, exiting program!!");
+        return 0;
+    }
+
+    auto texture = opt_texture.value();
+    LOG_DEBUG("Created texture {}", texture);
 
     objects.emplace_back(render_device,
                          ObjectType::STATIC,
@@ -422,7 +427,7 @@ int main()
 
         double sum_time = std::accumulate(frame_times.cbegin(), frame_times.cend(), 0.0);
 
-        LOG_TRACE("Frame time {}", sum_time/frame_times.size());
+        LOG_TRACE("Frame time {}", sum_time / frame_times.size());
     }
 
     render_device.wait_for_idle();
