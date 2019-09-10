@@ -48,10 +48,38 @@
 #define LOG_CRITICAL(...)
 #endif
 
+#define VK_CHECK_RESULT(op, error_message)          \
+    do                                              \
+    {                                               \
+        VkResult result = op;                       \
+        if (result != VK_SUCCESS)                   \
+        {                                           \
+            LOG_CRITICAL("{} {} {} {} {} {} {}",    \
+                         error_message,             \
+                         "with value",              \
+                         gfx::error_string(result), \
+                         "in",                      \
+                         __FILE__,                  \
+                         "at line",                 \
+                         __LINE__);                 \
+            assert(result == VK_SUCCESS);           \
+            return ErrorCode::VULKAN_ERROR;         \
+        }                                           \
+    } while (0)
+
 std::vector<char> readFile(std::string const & filename);
 
 namespace gfx
 {
+enum class ErrorCode
+{
+    NONE,
+    VULKAN_ERROR,
+    API_ERROR
+};
+
+char const * error_string(VkResult error_code);
+
 //
 //  HANDLES
 //
@@ -81,30 +109,33 @@ class Memory
 {
 public:
     template <typename T>
-    VkResult allocateAndBind(VkPhysicalDevice      physical_device,
-                             VkDevice              logical_device,
-                             VkMemoryPropertyFlags properties,
-                             T                     object_handle)
+    ErrorCode allocateAndBind(VkPhysicalDevice      physical_device,
+                              VkDevice              logical_device,
+                              VkMemoryPropertyFlags properties,
+                              T                     object_handle)
     {
         VkMemoryRequirements requirements;
         getMemoryRequirements(logical_device, object_handle, requirements);
 
-        auto allocInfo = VkMemoryAllocateInfo{
-            .sType          = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
-            .allocationSize = requirements.size,
-            .memoryTypeIndex
-            = findMemoryType(physical_device, requirements.memoryTypeBits, properties).value()};
+        auto opt_memory_type = findMemoryType(
+            physical_device, requirements.memoryTypeBits, properties);
 
-        auto result = vkAllocateMemory(logical_device, &allocInfo, nullptr, &vk_memory);
-        if (result != VK_SUCCESS)
+        if (!opt_memory_type)
         {
-            return result;
+            return ErrorCode::VULKAN_ERROR;
         }
+
+        auto allocInfo = VkMemoryAllocateInfo{.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
+                                              .allocationSize  = requirements.size,
+                                              .memoryTypeIndex = opt_memory_type.value()};
+
+        VK_CHECK_RESULT(vkAllocateMemory(logical_device, &allocInfo, nullptr, &vk_memory),
+                        "Unable to allocate VkDeviceMemory");
 
         return bindMemory(logical_device, object_handle);
     }
 
-    VkResult map(VkDevice logical_device, VkDeviceSize offset, VkDeviceSize size, void ** data);
+    ErrorCode map(VkDevice logical_device, VkDeviceSize offset, VkDeviceSize size, void ** data);
 
     void destroy(VkDevice logical_device);
 
@@ -126,25 +157,25 @@ private:
                                VkImage                image,
                                VkMemoryRequirements & requirements);
 
-    VkResult bindMemory(VkDevice logical_device, VkBuffer buffer);
+    ErrorCode bindMemory(VkDevice logical_device, VkBuffer buffer);
 
-    VkResult bindMemory(VkDevice logical_device, VkImage image);
+    ErrorCode bindMemory(VkDevice logical_device, VkImage image);
 };
 
 class Image: public Memory
 {
 public:
-    VkResult create(VkPhysicalDevice      physical_device,
-                    VkDevice              logical_device,
-                    uint32_t              width,
-                    uint32_t              height,
-                    uint32_t              mipLevels,
-                    VkSampleCountFlagBits numSamples,
-                    VkFormat              format,
-                    VkImageTiling         tiling,
-                    VkImageUsageFlags     usage,
-                    VkMemoryPropertyFlags properties,
-                    VkImageAspectFlags    aspectFlags);
+    ErrorCode create(VkPhysicalDevice      physical_device,
+                     VkDevice              logical_device,
+                     uint32_t              width,
+                     uint32_t              height,
+                     uint32_t              mipLevels,
+                     VkSampleCountFlagBits numSamples,
+                     VkFormat              format,
+                     VkImageTiling         tiling,
+                     VkImageUsageFlags     usage,
+                     VkMemoryPropertyFlags properties,
+                     VkImageAspectFlags    aspectFlags);
 
     void destroy(VkDevice logical_device);
 
@@ -160,17 +191,17 @@ protected:
 class Sampler: public Image
 {
 public:
-    VkResult create(VkPhysicalDevice      physical_device,
-                    VkDevice              logical_device,
-                    uint32_t              width,
-                    uint32_t              height,
-                    uint32_t              mipLevels,
-                    VkSampleCountFlagBits numSamples,
-                    VkFormat              format,
-                    VkImageTiling         tiling,
-                    VkImageUsageFlags     usage,
-                    VkMemoryPropertyFlags properties,
-                    VkImageAspectFlags    aspectFlags);
+    ErrorCode create(VkPhysicalDevice      physical_device,
+                     VkDevice              logical_device,
+                     uint32_t              width,
+                     uint32_t              height,
+                     uint32_t              mipLevels,
+                     VkSampleCountFlagBits numSamples,
+                     VkFormat              format,
+                     VkImageTiling         tiling,
+                     VkImageUsageFlags     usage,
+                     VkMemoryPropertyFlags properties,
+                     VkImageAspectFlags    aspectFlags);
 
     void destroy(VkDevice logical_device);
 
@@ -183,11 +214,11 @@ private:
 class Buffer: public Memory
 {
 public:
-    VkResult create(VkPhysicalDevice      physical_device,
-                    VkDevice              logical_device,
-                    VkDeviceSize          size,
-                    VkBufferUsageFlags    usage,
-                    VkMemoryPropertyFlags properties);
+    ErrorCode create(VkPhysicalDevice      physical_device,
+                     VkDevice              logical_device,
+                     VkDeviceSize          size,
+                     VkBufferUsageFlags    usage,
+                     VkMemoryPropertyFlags properties);
 
     void destroy(VkDevice logical_device);
 
@@ -574,19 +605,13 @@ public:
     bool init(RenderConfig & render_config);
     void quit();
 
-    VkResult createBuffer(VkDeviceSize          size,
-                          VkBufferUsageFlags    usage,
-                          VkMemoryPropertyFlags properties,
-                          VkBuffer &            buffer,
-                          Memory &              bufferMemory);
-
 private:
     void checkValidationLayerSupport();
 
     void getRequiredExtensions();
 
     // INSTANCE
-    VkResult createInstance(char const * window_name);
+    ErrorCode createInstance(char const * window_name);
 
     // VALIDATION LAYER DEBUG MESSAGER
     static VKAPI_ATTR VkBool32 VKAPI_CALL
@@ -595,17 +620,17 @@ private:
                                              const VkDebugUtilsMessengerCallbackDataEXT * pCallbackData,
                                              void *                                       pUserData);
 
-    VkResult createDebugMessenger();
+    ErrorCode createDebugMessenger();
 
-    VkResult createDebugUtilsMessengerEXT(const VkDebugUtilsMessengerCreateInfoEXT * pCreateInfo,
-                                          const VkAllocationCallbacks *              pAllocator,
-                                          VkDebugUtilsMessengerEXT * pDebugMessenger);
+    ErrorCode createDebugUtilsMessengerEXT(const VkDebugUtilsMessengerCreateInfoEXT * pCreateInfo,
+                                           const VkAllocationCallbacks *              pAllocator,
+                                           VkDebugUtilsMessengerEXT * pDebugMessenger);
 
     void cleanupDebugUtilsMessengerEXT(VkDebugUtilsMessengerEXT      debugMessenger,
                                        const VkAllocationCallbacks * pAllocator);
 
     // SURFACE
-    VkResult createSurface();
+    ErrorCode createSurface();
 
     bool pickPhysicalDevice();
 
@@ -620,10 +645,10 @@ private:
     void getMaxUsableSampleCount();
 
     // LOGICAL DEVICE
-    VkResult createLogicalDevice();
+    ErrorCode createLogicalDevice();
 
     // SWAPCHAIN
-    VkResult createSwapChain();
+    ErrorCode createSwapChain();
 
     VkSurfaceFormatKHR chooseSwapSurfaceFormat(
         std::vector<VkSurfaceFormatKHR> const & availableFormats);
@@ -635,9 +660,9 @@ private:
 
     void getSwapChainImages();
 
-    VkResult createSwapChainImageViews();
+    ErrorCode createSwapChainImageViews();
 
-    VkFormat findDepthFormat();
+    std::optional<VkFormat> findDepthFormat();
 
     std::optional<VkFormat> findSupportedFormat(const std::vector<VkFormat> & candidates,
                                                 VkImageTiling                 tiling,
@@ -687,13 +712,13 @@ public:
 
     std::optional<Sampler> get_texture(TextureHandle handle);
 
-    void delete_texture(Device & render_device, TextureHandle handle);
+    void delete_texture(TextureHandle handle);
 
 private:
     TextureHandle                              next_sampler_handle{0};
     std::unordered_map<TextureHandle, Sampler> samplers;
 
-    VkResult createAttachments(Device & device);
+    ErrorCode createAttachments(Device & device);
 }; // struct ImageResources
 
 struct RenderPassResources
@@ -707,14 +732,14 @@ public:
     void quit(Device & device);
 
 private:
-    VkResult createRenderPasses(Device & device, ImageResources & image_resources);
+    ErrorCode createRenderPasses(Device & device, ImageResources & image_resources);
 
     // FRAMEBUFFER
-    VkResult createFramebuffer(Device &                     device,
-                               ImageResources &             image_resources,
-                               RenderpassConfig const &     config,
-                               VkRenderPass const &         render_pass,
-                               std::vector<VkFramebuffer> & framebuffers);
+    ErrorCode createFramebuffer(Device &                     device,
+                                ImageResources &             image_resources,
+                                RenderpassConfig const &     config,
+                                VkRenderPass const &         render_pass,
+                                std::vector<VkFramebuffer> & framebuffers);
 }; // struct RenderPassResources
 
 struct BufferResources
@@ -742,14 +767,14 @@ private:
     // todo: this isn't thread safe
     std::unordered_map<BufferHandle, Buffer> buffers;
 
-    VkResult createDynamicObjectResources(Device &         device,
-                                          FrameResources & frames,
-                                          size_t           dynamic_vertices_count,
-                                          size_t           dynamic_indices_count);
+    ErrorCode createDynamicObjectResources(Device &         device,
+                                           FrameResources & frames,
+                                           size_t           dynamic_vertices_count,
+                                           size_t           dynamic_indices_count);
 
-    VkResult createStagingObjectResources(Device &         device,
-                                          FrameResources & frames,
-                                          size_t           staging_buffer_size);
+    ErrorCode createStagingObjectResources(Device &         device,
+                                           FrameResources & frames,
+                                           size_t           staging_buffer_size);
 }; // struct BufferResources
 
 /*
@@ -767,7 +792,7 @@ public:
     void quit(Device & device);
 
 private:
-    VkResult createUniformLayouts(Device & device, BufferResources & buffers);
+    ErrorCode createUniformLayouts(Device & device, BufferResources & buffers);
 }; // struct UniformResources
 
 struct PipelineResources
@@ -789,15 +814,15 @@ public:
     void quit(Device & device);
 
 private:
-    VkResult createShaderModule(Device &                  device,
-                                std::vector<char> const & code,
-                                VkShaderModule &          shaderModule);
+    ErrorCode createShaderModule(Device &                  device,
+                                 std::vector<char> const & code,
+                                 VkShaderModule &          shaderModule);
 
-    VkResult createShaders(Device & device);
+    ErrorCode createShaders(Device & device);
 
-    VkResult createGraphicsPipeline(Device &                    device,
-                                    RenderPassResources const & render_passes,
-                                    UniformResources const &    uniforms);
+    ErrorCode createGraphicsPipeline(Device &                    device,
+                                     RenderPassResources const & render_passes,
+                                     UniformResources const &    uniforms);
 }; // struct PipelineResources
 
 /*
@@ -827,9 +852,9 @@ public:
 private:
     void getQueues(Device & device);
 
-    VkResult createCommandPool(Device & device);
+    ErrorCode createCommandPool(Device & device);
 
-    VkResult createCommandbuffers(Device & device);
+    ErrorCode createCommandbuffers(Device & device);
 }; // struct CommandResources
 
 }; // namespace module
@@ -854,20 +879,20 @@ public:
 
     bool draw_frame(uint32_t uniform_count, UniformHandle * p_uniforms);
 
-    void draw(PipelineHandle    pipeline,
-              glm::mat4 const & transform,
-              size_t            vertices_size,
-              void *            vertices,
-              uint32_t          index_count,
-              uint32_t *        indices);
+    ErrorCode draw(PipelineHandle    pipeline,
+                   glm::mat4 const & transform,
+                   size_t            vertices_size,
+                   void *            vertices,
+                   uint32_t          index_count,
+                   uint32_t *        indices);
 
-    void draw(PipelineHandle    pipeline,
-              glm::mat4 const & transform,
-              BufferHandle      vertexbuffer_handle,
-              VkDeviceSize      vertexbuffer_offset,
-              BufferHandle      indexbuffer_handle,
-              VkDeviceSize      indexbuffer_offset,
-              VkDeviceSize      indexbuffer_count);
+    ErrorCode draw(PipelineHandle    pipeline,
+                   glm::mat4 const & transform,
+                   BufferHandle      vertexbuffer_handle,
+                   VkDeviceSize      vertexbuffer_offset,
+                   BufferHandle      indexbuffer_handle,
+                   VkDeviceSize      indexbuffer_offset,
+                   VkDeviceSize      indexbuffer_count);
 
     /*
     template <typename... Args>
@@ -936,9 +961,9 @@ private:
 
     std::optional<VkDeviceSize> getDynamicOffset(UniformHandle handle);
 
-    VkResult createCommandbuffer(uint32_t        image_index,
-                                 uint32_t        uniform_count,
-                                 UniformHandle * p_uniforms);
+    ErrorCode createCommandbuffer(uint32_t        image_index,
+                                  uint32_t        uniform_count,
+                                  UniformHandle * p_uniforms);
 
     void copyBuffer(VkBuffer     srcBuffer,
                     VkDeviceSize srcOffset,
@@ -964,7 +989,7 @@ private:
 
 std::vector<char> readFile(std::string const & filename)
 {
-    LOG_TRACE("Reading file {}", filename);
+    LOG_DEBUG("Reading file {}", filename);
     std::ifstream file(filename, std::ios::ate | std::ios::binary);
 
     if (!file.is_open())
@@ -986,6 +1011,42 @@ std::vector<char> readFile(std::string const & filename)
 
 namespace gfx
 {
+char const * error_string(VkResult error_code)
+{
+    switch (error_code)
+    {
+#define STR(r)   \
+    case VK_##r: \
+        return #r
+        STR(NOT_READY);
+        STR(TIMEOUT);
+        STR(EVENT_SET);
+        STR(EVENT_RESET);
+        STR(INCOMPLETE);
+        STR(ERROR_OUT_OF_HOST_MEMORY);
+        STR(ERROR_OUT_OF_DEVICE_MEMORY);
+        STR(ERROR_INITIALIZATION_FAILED);
+        STR(ERROR_DEVICE_LOST);
+        STR(ERROR_MEMORY_MAP_FAILED);
+        STR(ERROR_LAYER_NOT_PRESENT);
+        STR(ERROR_EXTENSION_NOT_PRESENT);
+        STR(ERROR_FEATURE_NOT_PRESENT);
+        STR(ERROR_INCOMPATIBLE_DRIVER);
+        STR(ERROR_TOO_MANY_OBJECTS);
+        STR(ERROR_FORMAT_NOT_SUPPORTED);
+        STR(ERROR_SURFACE_LOST_KHR);
+        STR(ERROR_NATIVE_WINDOW_IN_USE_KHR);
+        STR(SUBOPTIMAL_KHR);
+        STR(ERROR_OUT_OF_DATE_KHR);
+        STR(ERROR_INCOMPATIBLE_DISPLAY_KHR);
+        STR(ERROR_VALIDATION_FAILED_EXT);
+        STR(ERROR_INVALID_SHADER_NV);
+#undef STR
+    default:
+        return "UNKNOWN_ERROR";
+    }
+}
+
 //
 //  RAPIDJSON INIT FUNCTIONS
 //
@@ -1095,9 +1156,12 @@ bool operator!=(RenderpassConfig const & lhs, RenderpassConfig const & rhs)
     return !(lhs == rhs);
 }
 
-VkResult Memory::map(VkDevice logical_device, VkDeviceSize offset, VkDeviceSize size, void ** data)
+ErrorCode Memory::map(VkDevice logical_device, VkDeviceSize offset, VkDeviceSize size, void ** data)
 {
-    return vkMapMemory(logical_device, vk_memory, offset, size, 0, data);
+    VK_CHECK_RESULT(vkMapMemory(logical_device, vk_memory, offset, size, 0, data),
+                    "Unable to map VkDeviceMemory");
+
+    return ErrorCode::NONE;
 }
 
 void Memory::destroy(VkDevice logical_device)
@@ -1127,6 +1191,7 @@ std::optional<uint32_t> Memory::findMemoryType(VkPhysicalDevice      physical_de
         }
     }
 
+    LOG_WARN("Couldn't find VkDeviceMemory satisfying VkMemoryPropertyFlags");
     return std::nullopt;
 }
 
@@ -1144,28 +1209,35 @@ void Memory::getMemoryRequirements(VkDevice               logical_device,
     vkGetImageMemoryRequirements(logical_device, image, &requirements);
 }
 
-VkResult Memory::bindMemory(VkDevice logical_device, VkBuffer buffer)
+ErrorCode Memory::bindMemory(VkDevice logical_device, VkBuffer buffer)
 {
-    return vkBindBufferMemory(logical_device, buffer, vk_memory, 0);
+    VK_CHECK_RESULT(vkBindBufferMemory(logical_device, buffer, vk_memory, 0),
+                    "Unable to bind VkDeviceMemory to VkBuffer");
+
+    return ErrorCode::NONE;
 }
 
-VkResult Memory::bindMemory(VkDevice logical_device, VkImage image)
+ErrorCode Memory::bindMemory(VkDevice logical_device, VkImage image)
 {
-    return vkBindImageMemory(logical_device, image, vk_memory, 0);
+    VK_CHECK_RESULT(vkBindImageMemory(logical_device, image, vk_memory, 0),
+                    "Unable to bind VkDeviceMemory to VkImage");
+
+    return ErrorCode::NONE;
 }
 
-VkResult Image::create(VkPhysicalDevice      physical_device,
-                       VkDevice              logical_device,
-                       uint32_t              width,
-                       uint32_t              height,
-                       uint32_t              mipLevels,
-                       VkSampleCountFlagBits numSamples,
-                       VkFormat              format,
-                       VkImageTiling         tiling,
-                       VkImageUsageFlags     usage,
-                       VkMemoryPropertyFlags properties,
-                       VkImageAspectFlags    aspectFlags)
+ErrorCode Image::create(VkPhysicalDevice      physical_device,
+                        VkDevice              logical_device,
+                        uint32_t              width,
+                        uint32_t              height,
+                        uint32_t              mipLevels,
+                        VkSampleCountFlagBits numSamples,
+                        VkFormat              format,
+                        VkImageTiling         tiling,
+                        VkImageUsageFlags     usage,
+                        VkMemoryPropertyFlags properties,
+                        VkImageAspectFlags    aspectFlags)
 {
+    LOG_DEBUG("Creating VkImage and VkImageView");
     auto imageInfo = VkImageCreateInfo{.sType         = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
                                        .imageType     = VK_IMAGE_TYPE_2D,
                                        .extent.width  = width,
@@ -1180,11 +1252,15 @@ VkResult Image::create(VkPhysicalDevice      physical_device,
                                        .sharingMode   = VK_SHARING_MODE_EXCLUSIVE,
                                        .samples       = numSamples};
 
-    auto result = vkCreateImage(logical_device, &imageInfo, nullptr, &vk_image);
-    assert(result == VK_SUCCESS);
+    VK_CHECK_RESULT(vkCreateImage(logical_device, &imageInfo, nullptr, &vk_image),
+                    "Unable to create VkImage");
 
-    result = allocateAndBind(physical_device, logical_device, properties, vk_image);
-    assert(result == VK_SUCCESS);
+    ErrorCode error = allocateAndBind(physical_device, logical_device, properties, vk_image);
+    if (error != ErrorCode::NONE)
+    {
+        LOG_ERROR("Couldn't bind device memory to VkImage {}", static_cast<void *>(vk_image));
+        return error;
+    }
 
     auto viewInfo = VkImageViewCreateInfo{.sType    = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
                                           .image    = vk_image,
@@ -1196,7 +1272,10 @@ VkResult Image::create(VkPhysicalDevice      physical_device,
                                           .subresourceRange.baseArrayLayer = 0,
                                           .subresourceRange.layerCount     = 1};
 
-    return vkCreateImageView(logical_device, &viewInfo, nullptr, &vk_image_view);
+    VK_CHECK_RESULT(vkCreateImageView(logical_device, &viewInfo, nullptr, &vk_image_view),
+                    "Unable to create VkImageView");
+
+    return ErrorCode::NONE;
 }
 
 void Image::destroy(VkDevice logical_device)
@@ -1218,32 +1297,33 @@ VkImage Image::image_handle()
     return vk_image;
 }
 
-VkResult Sampler::create(VkPhysicalDevice      physical_device,
-                         VkDevice              logical_device,
-                         uint32_t              width,
-                         uint32_t              height,
-                         uint32_t              mipLevels,
-                         VkSampleCountFlagBits numSamples,
-                         VkFormat              format,
-                         VkImageTiling         tiling,
-                         VkImageUsageFlags     usage,
-                         VkMemoryPropertyFlags properties,
-                         VkImageAspectFlags    aspectFlags)
+ErrorCode Sampler::create(VkPhysicalDevice      physical_device,
+                          VkDevice              logical_device,
+                          uint32_t              width,
+                          uint32_t              height,
+                          uint32_t              mipLevels,
+                          VkSampleCountFlagBits numSamples,
+                          VkFormat              format,
+                          VkImageTiling         tiling,
+                          VkImageUsageFlags     usage,
+                          VkMemoryPropertyFlags properties,
+                          VkImageAspectFlags    aspectFlags)
 {
-    auto result = static_cast<Image &>(*this).create(physical_device,
-                                                     logical_device,
-                                                     width,
-                                                     height,
-                                                     mipLevels,
-                                                     numSamples,
-                                                     format,
-                                                     tiling,
-                                                     usage,
-                                                     properties,
-                                                     aspectFlags);
-    if (result != VK_SUCCESS)
+    LOG_DEBUG("Creating VkSampler");
+    auto error = static_cast<Image &>(*this).create(physical_device,
+                                                    logical_device,
+                                                    width,
+                                                    height,
+                                                    mipLevels,
+                                                    numSamples,
+                                                    format,
+                                                    tiling,
+                                                    usage,
+                                                    properties,
+                                                    aspectFlags);
+    if (error != ErrorCode::NONE)
     {
-        return result;
+        return error;
     }
 
     auto samplerInfo = VkSamplerCreateInfo{.sType        = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
@@ -1263,15 +1343,10 @@ VkResult Sampler::create(VkPhysicalDevice      physical_device,
                                            .minLod     = 0.0f,
                                            .maxLod     = 1};
 
-    result = vkCreateSampler(logical_device, &samplerInfo, nullptr, &vk_sampler);
+    VK_CHECK_RESULT(vkCreateSampler(logical_device, &samplerInfo, nullptr, &vk_sampler),
+                    "Unable to create VkSampler");
 
-    if (result != VK_SUCCESS)
-    {
-        LOG_ERROR("Failed to create texture sampler!");
-        return result;
-    }
-
-    return VK_SUCCESS;
+    return ErrorCode::NONE;
 }
 
 void Sampler::destroy(VkDevice logical_device)
@@ -1286,32 +1361,21 @@ VkSampler Sampler::sampler_handle()
     return vk_sampler;
 }
 
-VkResult Buffer::create(VkPhysicalDevice      physical_device,
-                        VkDevice              logical_device,
-                        VkDeviceSize          size,
-                        VkBufferUsageFlags    usage,
-                        VkMemoryPropertyFlags properties)
+ErrorCode Buffer::create(VkPhysicalDevice      physical_device,
+                         VkDevice              logical_device,
+                         VkDeviceSize          size,
+                         VkBufferUsageFlags    usage,
+                         VkMemoryPropertyFlags properties)
 {
     auto bufferInfo = VkBufferCreateInfo{.sType       = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
                                          .size        = size,
                                          .usage       = usage,
                                          .sharingMode = VK_SHARING_MODE_EXCLUSIVE};
 
-    auto result = vkCreateBuffer(logical_device, &bufferInfo, nullptr, &vk_buffer);
-    if (result != VK_SUCCESS)
-    {
-        return result;
-    }
+    VK_CHECK_RESULT(vkCreateBuffer(logical_device, &bufferInfo, nullptr, &vk_buffer),
+                    "Unable to create VkBuffer");
 
-    result = allocateAndBind(physical_device, logical_device, properties, vk_buffer);
-
-    assert(result == VK_SUCCESS);
-    if (result != VK_SUCCESS)
-    {
-        return result;
-    }
-
-    return VK_SUCCESS;
+    return allocateAndBind(physical_device, logical_device, properties, vk_buffer);
 }
 
 void Buffer::destroy(VkDevice logical_device)
@@ -1329,7 +1393,11 @@ VkBuffer Buffer::buffer_handle()
 MappedBuffer::MappedBuffer(VkDevice logical_device, Buffer buffer, VkDeviceSize size)
 : offset{0}, memory_size{size}, vk_buffer{buffer.buffer_handle()}
 {
-    buffer.map(logical_device, 0, size, &data);
+    if (buffer.map(logical_device, 0, size, &data) != ErrorCode::NONE)
+    {
+        memory_size = 0;
+        vk_buffer   = VK_NULL_HANDLE;
+    }
 }
 
 size_t MappedBuffer::copy(size_t size, void const * src_data)
@@ -1449,11 +1517,11 @@ void DynamicBufferCollection::updateUniform(UniformHandle handle,
 
     auto old_buffer_slot = (uniform.offset / 256) + (uniform.descriptor_set * 8);
     free_uniform_buffer_slots.release(old_buffer_slot);
-    LOG_DEBUG("Release {}", old_buffer_slot);
+    LOG_TRACE("Release {}", old_buffer_slot);
 
     // get new buffer slot
     auto uniform_buffer_slot = free_uniform_buffer_slots.acquire();
-    LOG_DEBUG("Acquire {}", uniform_buffer_slot);
+    LOG_TRACE("Acquire {}", uniform_buffer_slot);
     if (uniform_buffer_slot < 0)
     {
         return;
@@ -2165,7 +2233,7 @@ void RenderConfig::init()
     }
     else
     {
-        LOG_INFO("Parsed file {} in RenderConfig", config_filename);
+        LOG_DEBUG("Parsed file {} in RenderConfig", config_filename);
     }
 
     assert(document.IsObject());
@@ -2456,17 +2524,17 @@ bool Device::init(RenderConfig & render_config)
     // clang-format on
     getRequiredExtensions();
 
-    if (createInstance(render_config.window_name) != VK_SUCCESS)
+    if (createInstance(render_config.window_name) != ErrorCode::NONE)
     {
         return false;
     }
 
-    if (use_validation && createDebugMessenger() != VK_SUCCESS)
+    if (use_validation && createDebugMessenger() != ErrorCode::NONE)
     {
         return false;
     }
 
-    if (createSurface() != VK_SUCCESS)
+    if (createSurface() != ErrorCode::NONE)
     {
         return false;
     }
@@ -2476,19 +2544,19 @@ bool Device::init(RenderConfig & render_config)
         return false;
     }
 
-    if (createLogicalDevice() != VK_SUCCESS)
+    if (createLogicalDevice() != ErrorCode::NONE)
     {
         return false;
     }
 
-    if (createSwapChain() != VK_SUCCESS)
+    if (createSwapChain() != ErrorCode::NONE)
     {
         return false;
     }
 
     getSwapChainImages();
 
-    if (createSwapChainImageViews() != VK_SUCCESS)
+    if (createSwapChainImageViews() != ErrorCode::NONE)
     {
         return false;
     }
@@ -2529,34 +2597,6 @@ void Device::quit()
     }
 }
 
-VkResult Device::createBuffer(VkDeviceSize          size,
-                              VkBufferUsageFlags    usage,
-                              VkMemoryPropertyFlags properties,
-                              VkBuffer &            buffer,
-                              Memory &              bufferMemory)
-{
-    auto bufferInfo = VkBufferCreateInfo{.sType       = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
-                                         .size        = size,
-                                         .usage       = usage,
-                                         .sharingMode = VK_SHARING_MODE_EXCLUSIVE};
-
-    auto result = vkCreateBuffer(logical_device, &bufferInfo, nullptr, &buffer);
-    if (result != VK_SUCCESS)
-    {
-        return result;
-    }
-
-    result = bufferMemory.allocateAndBind(
-        physical_device,
-        logical_device,
-        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-        buffer);
-
-    assert(result == VK_SUCCESS);
-
-    return VK_SUCCESS;
-}
-
 void Device::checkValidationLayerSupport()
 {
     uint32_t layerCount{0};
@@ -2578,9 +2618,11 @@ void Device::checkValidationLayerSupport()
         }
 
         validation_supported = false;
+        LOG_DEBUG("Vulkan validation layer {} not supported");
         break;
     }
 
+    LOG_DEBUG("All required Vulkan validation layers are supported");
     validation_supported = true;
 }
 
@@ -2601,7 +2643,7 @@ void Device::getRequiredExtensions()
 }
 
 // INSTANCE
-VkResult Device::createInstance(char const * window_name)
+ErrorCode Device::createInstance(char const * window_name)
 {
     // clang-format off
     #ifdef NDEBUG
@@ -2638,7 +2680,10 @@ VkResult Device::createInstance(char const * window_name)
     }
 
     // create instance
-    return vkCreateInstance(&createInfo, nullptr, &instance);
+    VK_CHECK_RESULT(vkCreateInstance(&createInfo, nullptr, &instance),
+                    "Unable to create VkInstance");
+
+    return ErrorCode::NONE;
 }
 
 // VALIDATION LAYER DEBUG MESSAGER
@@ -2668,7 +2713,7 @@ VKAPI_ATTR VkBool32 VKAPI_CALL
     return VK_FALSE;
 }
 
-VkResult Device::createDebugMessenger()
+ErrorCode Device::createDebugMessenger()
 {
     auto createInfo = VkDebugUtilsMessengerCreateInfoEXT{
         .sType           = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT,
@@ -2685,7 +2730,7 @@ VkResult Device::createDebugMessenger()
     return createDebugUtilsMessengerEXT(&createInfo, nullptr, &debug_messager);
 }
 
-VkResult Device::createDebugUtilsMessengerEXT(
+ErrorCode Device::createDebugUtilsMessengerEXT(
     const VkDebugUtilsMessengerCreateInfoEXT * pCreateInfo,
     const VkAllocationCallbacks *              pAllocator,
     VkDebugUtilsMessengerEXT *                 pDebugMessenger)
@@ -2694,12 +2739,17 @@ VkResult Device::createDebugUtilsMessengerEXT(
         instance, "vkCreateDebugUtilsMessengerEXT");
     if (func != nullptr)
     {
-        return func(instance, pCreateInfo, pAllocator, pDebugMessenger);
+        VK_CHECK_RESULT(func(instance, pCreateInfo, pAllocator, pDebugMessenger),
+                        "Unable to create VkDebugUtilsMessengerEXT");
+
+        return ErrorCode::NONE;
     }
     else
     {
-        return VK_ERROR_EXTENSION_NOT_PRESENT;
+        LOG_WARN("Vulkan DebugUtilsMessengerEXT extension is not present");
     }
+
+    return ErrorCode::NONE;
 }
 
 void Device::cleanupDebugUtilsMessengerEXT(VkDebugUtilsMessengerEXT      debugMessenger,
@@ -2714,9 +2764,12 @@ void Device::cleanupDebugUtilsMessengerEXT(VkDebugUtilsMessengerEXT      debugMe
 }
 
 // SURFACE
-VkResult Device::createSurface()
+ErrorCode Device::createSurface()
 {
-    return glfwCreateWindowSurface(instance, window, nullptr, &surface);
+    VK_CHECK_RESULT(glfwCreateWindowSurface(instance, window, nullptr, &surface),
+                    "Unable to create VkSurfaceKHR");
+
+    return ErrorCode::NONE;
 }
 
 bool Device::pickPhysicalDevice()
@@ -2915,7 +2968,7 @@ void Device::getMaxUsableSampleCount()
 }
 
 // LOGICAL DEVICE
-VkResult Device::createLogicalDevice()
+ErrorCode Device::createLogicalDevice()
 {
     // create queue info for graphics and present queues
     std::vector<VkDeviceQueueCreateInfo> queueCreateInfos;
@@ -2961,19 +3014,28 @@ VkResult Device::createLogicalDevice()
         createInfo.ppEnabledLayerNames = validation_layers.data();
     }
 
-    return vkCreateDevice(physical_device, &createInfo, nullptr, &logical_device);
+    VK_CHECK_RESULT(vkCreateDevice(physical_device, &createInfo, nullptr, &logical_device),
+                    "Unable to create VkDevice");
+
+    return ErrorCode::NONE;
 }
 
 // SWAPCHAIN
-VkResult Device::createSwapChain()
+ErrorCode Device::createSwapChain()
 {
-    VkSurfaceFormatKHR surfaceFormat = chooseSwapSurfaceFormat(physical_device_info.formats);
-    VkPresentModeKHR   presentMode   = chooseSwapPresentMode(physical_device_info.presentModes);
-    VkExtent2D         extent        = chooseSwapExtent(physical_device_info.capabilities);
+    VkSurfaceFormatKHR surfaceFormat    = chooseSwapSurfaceFormat(physical_device_info.formats);
+    VkPresentModeKHR   presentMode      = chooseSwapPresentMode(physical_device_info.presentModes);
+    VkExtent2D         extent           = chooseSwapExtent(physical_device_info.capabilities);
+    auto               opt_depth_format = findDepthFormat();
 
     swapchain_image_format = surfaceFormat.format;
     swapchain_extent       = extent;
-    depth_format           = findDepthFormat();
+    if (!opt_depth_format)
+    {
+        LOG_ERROR("Unable to find proper depth format");
+        return ErrorCode::VULKAN_ERROR;
+    }
+    depth_format = opt_depth_format.value();
 
     // imagecount is greater than min image count and less than or equal to maximage count
     uint32_t imageCount = physical_device_info.capabilities.minImageCount + 1;
@@ -3016,7 +3078,10 @@ VkResult Device::createSwapChain()
         createInfo.pQueueFamilyIndices   = nullptr; // Optional
     }
 
-    return vkCreateSwapchainKHR(logical_device, &createInfo, nullptr, &swapchain);
+    VK_CHECK_RESULT(vkCreateSwapchainKHR(logical_device, &createInfo, nullptr, &swapchain),
+                    "Unable to create the VkSwapchainKHR");
+
+    return ErrorCode::NONE;
 }
 
 VkSurfaceFormatKHR Device::chooseSwapSurfaceFormat(
@@ -3085,12 +3150,13 @@ VkExtent2D Device::chooseSwapExtent(VkSurfaceCapabilitiesKHR const & capabilitie
 void Device::getSwapChainImages()
 {
     vkGetSwapchainImagesKHR(logical_device, swapchain, &swapchain_image_count, nullptr);
+    assert(swapchain_image_count > 0);
     swapchain_images.resize(swapchain_image_count);
     vkGetSwapchainImagesKHR(
         logical_device, swapchain, &swapchain_image_count, swapchain_images.data());
 }
 
-VkResult Device::createSwapChainImageViews()
+ErrorCode Device::createSwapChainImageViews()
 {
     swapchain_image_views.resize(swapchain_images.size());
 
@@ -3107,25 +3173,20 @@ VkResult Device::createSwapChainImageViews()
         viewInfo.subresourceRange.baseArrayLayer = 0;
         viewInfo.subresourceRange.layerCount     = 1;
 
-        auto imageViewResult = vkCreateImageView(
-            logical_device, &viewInfo, nullptr, &swapchain_image_views[i]);
-
-        if (imageViewResult != VK_SUCCESS)
-        {
-            return imageViewResult;
-        }
+        VK_CHECK_RESULT(
+            vkCreateImageView(logical_device, &viewInfo, nullptr, &swapchain_image_views[i]),
+            "Unable to create VkImageView for Swapchain image");
     }
 
-    return VK_SUCCESS;
+    return ErrorCode::NONE;
 }
 
-VkFormat Device::findDepthFormat()
+std::optional<VkFormat> Device::findDepthFormat()
 {
     return findSupportedFormat(
-               {VK_FORMAT_D32_SFLOAT, VK_FORMAT_D32_SFLOAT_S8_UINT, VK_FORMAT_D24_UNORM_S8_UINT},
-               VK_IMAGE_TILING_OPTIMAL,
-               VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT)
-        .value();
+        {VK_FORMAT_D32_SFLOAT, VK_FORMAT_D32_SFLOAT_S8_UINT, VK_FORMAT_D24_UNORM_S8_UINT},
+        VK_IMAGE_TILING_OPTIMAL,
+        VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT);
 }
 
 std::optional<VkFormat> Device::findSupportedFormat(const std::vector<VkFormat> & candidates,
@@ -3192,7 +3253,7 @@ bool ImageResources::init(RenderConfig & render_config, Device & device)
     attachment_configs = std::move(render_config.attachment_configs);
     attachment_handles.resize(attachment_configs.size());
 
-    return createAttachments(device) == VK_SUCCESS;
+    return createAttachments(device) == ErrorCode::NONE;
 }
 
 void ImageResources::quit(Device & device)
@@ -3234,8 +3295,18 @@ std::optional<TextureHandle> ImageResources::create_texture(VkPhysicalDevice    
                        usage,
                        properties,
                        aspectFlags)
-        != VK_SUCCESS)
+        != ErrorCode::NONE)
     {
+        LOG_DEBUG("Failed Sampler creation: {} {} {} {}",
+                  static_cast<void *>(sampler.sampler_handle()),
+                  static_cast<void *>(sampler.view_handle()),
+                  static_cast<void *>(sampler.image_handle()),
+                  static_cast<void *>(sampler.memory_handle()));
+
+        sampler.destroy(logical_device);
+
+        delete_texture(handle);
+
         return std::nullopt;
     }
 
@@ -3254,7 +3325,7 @@ std::optional<Sampler> ImageResources::get_texture(TextureHandle handle)
     return std::nullopt;
 }
 
-void ImageResources::delete_texture(Device & render_device, TextureHandle handle)
+void ImageResources::delete_texture(TextureHandle handle)
 {
     auto sampler_iter = samplers.find(handle);
 
@@ -3264,7 +3335,7 @@ void ImageResources::delete_texture(Device & render_device, TextureHandle handle
     }
 }
 
-VkResult ImageResources::createAttachments(Device & device)
+ErrorCode ImageResources::createAttachments(Device & device)
 {
     for (size_t i = 0; i < attachment_configs.size(); ++i)
     {
@@ -3306,21 +3377,27 @@ VkResult ImageResources::createAttachments(Device & device)
             samples = VK_SAMPLE_COUNT_1_BIT;
         }
 
-        attachment_handles[i] = create_texture(device.physical_device,
-                                               device.logical_device,
-                                               device.swapchain_extent.width,
-                                               device.swapchain_extent.height,
-                                               1,
-                                               samples,
-                                               format,
-                                               VK_IMAGE_TILING_OPTIMAL,
-                                               VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT | usage,
-                                               VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-                                               aspect)
-                                    .value();
+        auto opt_handle = create_texture(device.physical_device,
+                                         device.logical_device,
+                                         device.swapchain_extent.width,
+                                         device.swapchain_extent.height,
+                                         1,
+                                         samples,
+                                         format,
+                                         VK_IMAGE_TILING_OPTIMAL,
+                                         VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT | usage,
+                                         VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+                                         aspect);
+
+        if (!opt_handle)
+        {
+            return ErrorCode::API_ERROR;
+        }
+
+        attachment_handles[i] = opt_handle.value();
     }
 
-    return VK_SUCCESS;
+    return ErrorCode::NONE;
 }
 
 bool RenderPassResources::init(RenderConfig &   render_config,
@@ -3331,7 +3408,7 @@ bool RenderPassResources::init(RenderConfig &   render_config,
     render_passes.resize(render_pass_configs.size());
     framebuffers.resize(render_pass_configs.size());
 
-    return createRenderPasses(device, image_resources) == VK_SUCCESS;
+    return createRenderPasses(device, image_resources) == ErrorCode::NONE;
 }
 
 void RenderPassResources::quit(Device & device)
@@ -3350,7 +3427,7 @@ void RenderPassResources::quit(Device & device)
     }
 }
 
-VkResult RenderPassResources::createRenderPasses(Device & device, ImageResources & image_resources)
+ErrorCode RenderPassResources::createRenderPasses(Device & device, ImageResources & image_resources)
 {
     for (size_t rp_i = 0; rp_i < render_passes.size(); ++rp_i)
     {
@@ -3408,26 +3485,27 @@ VkResult RenderPassResources::createRenderPasses(Device & device, ImageResources
                 render_pass_config.subpass_dependencies.size()),
             .pDependencies = render_pass_config.subpass_dependencies.data()};
 
-        auto result = vkCreateRenderPass(
-            device.logical_device, &renderPassInfo, nullptr, &render_pass);
-        if (result != VK_SUCCESS)
-        {
-            return result;
-        }
+        VK_CHECK_RESULT(
+            vkCreateRenderPass(device.logical_device, &renderPassInfo, nullptr, &render_pass),
+            "Unable to create VkRenderPass");
 
-        createFramebuffer(
+        auto error = createFramebuffer(
             device, image_resources, render_pass_config, render_pass, framebuffers[rp_i]);
+        if (error != ErrorCode::NONE)
+        {
+            return error;
+        }
     }
 
-    return VK_SUCCESS;
+    return ErrorCode::NONE;
 }
 
 // FRAMEBUFFER
-VkResult RenderPassResources::createFramebuffer(Device &                     device,
-                                                ImageResources &             image_resources,
-                                                RenderpassConfig const &     config,
-                                                VkRenderPass const &         render_pass,
-                                                std::vector<VkFramebuffer> & framebuffers)
+ErrorCode RenderPassResources::createFramebuffer(Device &                     device,
+                                                 ImageResources &             image_resources,
+                                                 RenderpassConfig const &     config,
+                                                 VkRenderPass const &         render_pass,
+                                                 std::vector<VkFramebuffer> & framebuffers)
 {
     auto const & framebuffer_config = config.framebuffer_config;
     framebuffers.resize(device.swapchain_image_count);
@@ -3448,11 +3526,16 @@ VkResult RenderPassResources::createFramebuffer(Device &                     dev
             }
             else
             {
-                Sampler attachment = image_resources
-                                         .get_texture(
-                                             image_resources.attachment_handles[attachment_handle])
-                                         .value();
-                fb_attachments.push_back(attachment.view_handle());
+                auto opt_texture_handle = image_resources.get_texture(
+                    image_resources.attachment_handles[attachment_handle]);
+
+                if (!opt_texture_handle)
+                {
+                    LOG_ERROR("Unable to get TextureHandle for attachment to VkFramebuffer");
+                    return ErrorCode::API_ERROR;
+                }
+
+                fb_attachments.push_back(opt_texture_handle.value().view_handle());
             }
         }
 
@@ -3465,15 +3548,12 @@ VkResult RenderPassResources::createFramebuffer(Device &                     dev
             .height          = device.swapchain_extent.height,
             .layers          = 1};
 
-        auto result = vkCreateFramebuffer(
-            device.logical_device, &framebufferInfo, nullptr, &framebuffer);
-        if (result != VK_SUCCESS)
-        {
-            return result;
-        }
+        VK_CHECK_RESULT(
+            vkCreateFramebuffer(device.logical_device, &framebufferInfo, nullptr, &framebuffer),
+            "Unable to create VkFramebuffer");
     }
 
-    return VK_SUCCESS;
+    return ErrorCode::NONE;
 }
 
 bool UniformResources::init(RenderConfig &    render_config,
@@ -3485,7 +3565,7 @@ bool UniformResources::init(RenderConfig &    render_config,
     pools.resize(uniform_layout_infos.size());
     uniform_collections.resize(uniform_layout_infos.size());
 
-    return createUniformLayouts(device, buffers) == VK_SUCCESS;
+    return createUniformLayouts(device, buffers) == ErrorCode::NONE;
 }
 
 void UniformResources::quit(Device & device)
@@ -3507,7 +3587,7 @@ void UniformResources::quit(Device & device)
     }
 }
 
-VkResult UniformResources::createUniformLayouts(Device & device, BufferResources & buffers)
+ErrorCode UniformResources::createUniformLayouts(Device & device, BufferResources & buffers)
 {
     for (size_t ul_i = 0; ul_i < uniform_layout_infos.size(); ++ul_i)
     {
@@ -3521,12 +3601,9 @@ VkResult UniformResources::createUniformLayouts(Device & device, BufferResources
             .bindingCount = 1,
             .pBindings    = &uniform_layout_info};
 
-        auto result = vkCreateDescriptorSetLayout(
-            device.logical_device, &layoutInfo, nullptr, &uniform_layout);
-        if (result != VK_SUCCESS)
-        {
-            return result;
-        }
+        VK_CHECK_RESULT(vkCreateDescriptorSetLayout(
+                            device.logical_device, &layoutInfo, nullptr, &uniform_layout),
+                        "Unable to create VkDescriptorSetLayout");
 
         auto poolsize = VkDescriptorPoolSize{.type            = uniform_layout_info.descriptorType,
                                              .descriptorCount = 1};
@@ -3537,11 +3614,8 @@ VkResult UniformResources::createUniformLayouts(Device & device, BufferResources
             .pPoolSizes    = &poolsize,
             .maxSets       = 1};
 
-        result = vkCreateDescriptorPool(device.logical_device, &poolInfo, nullptr, &pool);
-        if (result != VK_SUCCESS)
-        {
-            return result;
-        }
+        VK_CHECK_RESULT(vkCreateDescriptorPool(device.logical_device, &poolInfo, nullptr, &pool),
+                        "Unable to create VkDescriptorPool");
 
         if (uniform_layout_info.descriptorType == VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC
             || uniform_layout_info.descriptorType == VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC)
@@ -3558,18 +3632,28 @@ VkResult UniformResources::createUniformLayouts(Device & device, BufferResources
             {
                 LOG_DEBUG("Creating buffer for uniforms");
 
-                Buffer uniform_buffer
-                    = buffers
-                          .get_buffer(buffers
-                                          .create_buffer(device,
-                                                         memory_size,
-                                                         VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
-                                                         VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT
-                                                             | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT)
-                                          .value())
-                          .value();
+                auto opt_uniform_buffer_handle = buffers.create_buffer(
+                    device,
+                    memory_size,
+                    VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+                    VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
 
-                uniform_buffers.emplace_back(device.logical_device, uniform_buffer, memory_size);
+                if (!opt_uniform_buffer_handle)
+                {
+                    LOG_ERROR("create_buffer returned nullopt when creating a uniform buffer");
+                    return ErrorCode::API_ERROR;
+                }
+
+                auto opt_uniform_buffer = buffers.get_buffer(opt_uniform_buffer_handle.value());
+
+                if (!opt_uniform_buffer)
+                {
+                    LOG_ERROR("get_buffer returned nullopt when getting a uniform buffer");
+                    return ErrorCode::API_ERROR;
+                }
+
+                uniform_buffers.emplace_back(
+                    device.logical_device, opt_uniform_buffer.value(), memory_size);
             }
 
             // ALLOCATE DESCRIPTORSETS GUY
@@ -3586,12 +3670,9 @@ VkResult UniformResources::createUniformLayouts(Device & device, BufferResources
                 .descriptorSetCount = static_cast<uint32_t>(descriptor_sets.size()),
                 .pSetLayouts        = layouts.data()};
 
-            result = vkAllocateDescriptorSets(
-                device.logical_device, &allocInfo, descriptor_sets.data());
-            if (result != VK_SUCCESS)
-            {
-                return result;
-            }
+            VK_CHECK_RESULT(
+                vkAllocateDescriptorSets(device.logical_device, &allocInfo, descriptor_sets.data()),
+                "Unable to allocate VkDescriptorSets");
 
             for (size_t ds_i = 0; ds_i < descriptor_sets.size(); ++ds_i)
             {
@@ -3645,18 +3726,15 @@ VkResult UniformResources::createUniformLayouts(Device & device, BufferResources
                 .descriptorSetCount = static_cast<uint32_t>(descriptor_sets.size()),
                 .pSetLayouts        = layouts.data()};
 
-            result = vkAllocateDescriptorSets(
-                device.logical_device, &allocInfo, descriptor_sets.data());
-            if (result != VK_SUCCESS)
-            {
-                return result;
-            }
+            VK_CHECK_RESULT(
+                vkAllocateDescriptorSets(device.logical_device, &allocInfo, descriptor_sets.data()),
+                "Unable to allocate VkDescriptorSets");
 
             uniform_collection = SamplerCollection{.descriptor_sets = descriptor_sets};
         }
     }
 
-    return VK_SUCCESS;
+    return ErrorCode::NONE;
 }
 
 bool PipelineResources::init(RenderConfig &              render_config,
@@ -3666,7 +3744,7 @@ bool PipelineResources::init(RenderConfig &              render_config,
 {
     shader_names = std::move(render_config.shader_names);
     shaders.resize(shader_names.size());
-    if (createShaders(device) != VK_SUCCESS)
+    if (createShaders(device) != ErrorCode::NONE)
     {
         return false;
     }
@@ -3678,7 +3756,7 @@ bool PipelineResources::init(RenderConfig &              render_config,
     pipeline_configs  = std::move(render_config.pipeline_configs);
     pipelines.resize(pipeline_configs.size());
 
-    return createGraphicsPipeline(device, render_passes, uniforms) == VK_SUCCESS;
+    return createGraphicsPipeline(device, render_passes, uniforms) == ErrorCode::NONE;
 }
 
 void PipelineResources::quit(Device & device)
@@ -3695,41 +3773,44 @@ void PipelineResources::quit(Device & device)
     }
 }
 
-VkResult PipelineResources::createShaderModule(Device &                  device,
-                                               std::vector<char> const & code,
-                                               VkShaderModule &          shaderModule)
+ErrorCode PipelineResources::createShaderModule(Device &                  device,
+                                                std::vector<char> const & code,
+                                                VkShaderModule &          shaderModule)
 {
     auto createInfo = VkShaderModuleCreateInfo{
         .sType    = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
         .codeSize = code.size(),
         .pCode    = reinterpret_cast<const uint32_t *>(code.data())};
 
-    return vkCreateShaderModule(device.logical_device, &createInfo, nullptr, &shaderModule);
+    VK_CHECK_RESULT(
+        vkCreateShaderModule(device.logical_device, &createInfo, nullptr, &shaderModule),
+        "Unable to create VkShaderModule");
+
+    return ErrorCode::NONE;
 }
 
-VkResult PipelineResources::createShaders(Device & device)
+ErrorCode PipelineResources::createShaders(Device & device)
 {
-    VkResult result;
-
     for (size_t i = 0; i < shaders.size(); ++i)
     {
         auto & shader = shaders[i];
 
         auto shaderCode = readFile(shader_names[i]);
 
-        result = createShaderModule(device, shaderCode, shader);
-        if (result != VK_SUCCESS)
+        auto error = createShaderModule(device, shaderCode, shader);
+
+        if (error != ErrorCode::NONE)
         {
-            return result;
+            return error;
         }
     }
 
-    return result;
+    return ErrorCode::NONE;
 }
 
-VkResult PipelineResources::createGraphicsPipeline(Device &                    device,
-                                                   RenderPassResources const & render_passes,
-                                                   UniformResources const &    uniforms)
+ErrorCode PipelineResources::createGraphicsPipeline(Device &                    device,
+                                                    RenderPassResources const & render_passes,
+                                                    UniformResources const &    uniforms)
 {
     for (size_t i = 0; i < pipelines.size(); ++i)
     {
@@ -3880,12 +3961,10 @@ VkResult PipelineResources::createGraphicsPipeline(Device &                    d
             .pushConstantRangeCount = static_cast<uint32_t>(pushConstantRanges.size()),
             .pPushConstantRanges    = pushConstantRanges.data()};
 
-        auto result = vkCreatePipelineLayout(
-            device.logical_device, &pipelineLayoutInfo, nullptr, &pipeline.vk_pipeline_layout);
-        if (result != VK_SUCCESS)
-        {
-            return result;
-        }
+        VK_CHECK_RESULT(
+            vkCreatePipelineLayout(
+                device.logical_device, &pipelineLayoutInfo, nullptr, &pipeline.vk_pipeline_layout),
+            "Unable to create VkPipelineLayout");
 
         auto pipelineInfo = VkGraphicsPipelineCreateInfo{
             .sType               = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO,
@@ -3906,20 +3985,16 @@ VkResult PipelineResources::createGraphicsPipeline(Device &                    d
             .basePipelineIndex   = -1              // Optional
         };
 
-        result = vkCreateGraphicsPipelines(device.logical_device,
-                                           VK_NULL_HANDLE,
-                                           1,
-                                           &pipelineInfo,
-                                           nullptr,
-                                           &pipeline.vk_pipeline);
-
-        if (result != VK_SUCCESS)
-        {
-            return result;
-        }
+        VK_CHECK_RESULT(vkCreateGraphicsPipelines(device.logical_device,
+                                                  VK_NULL_HANDLE,
+                                                  1,
+                                                  &pipelineInfo,
+                                                  nullptr,
+                                                  &pipeline.vk_pipeline),
+                        "Unable to create VkPipeline");
     }
 
-    return VK_SUCCESS;
+    return ErrorCode::NONE;
 }
 
 bool CommandResources::init(RenderConfig & render_config, Device & device)
@@ -3935,12 +4010,12 @@ bool CommandResources::init(RenderConfig & render_config, Device & device)
 
     getQueues(device);
 
-    if (createCommandPool(device) != VK_SUCCESS)
+    if (createCommandPool(device) != ErrorCode::NONE)
     {
         return false;
     }
 
-    return createCommandbuffers(device) == VK_SUCCESS;
+    return createCommandbuffers(device) == ErrorCode::NONE;
 }
 
 void CommandResources::quit(Device & device)
@@ -3966,17 +4041,20 @@ void CommandResources::getQueues(Device & device)
         device.logical_device, device.physical_device_info.transfer_queue, 0, &transfer_queue);
 }
 
-VkResult CommandResources::createCommandPool(Device & device)
+ErrorCode CommandResources::createCommandPool(Device & device)
 {
     auto poolInfo = VkCommandPoolCreateInfo{
         .sType            = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
         .queueFamilyIndex = static_cast<uint32_t>(device.physical_device_info.graphics_queue),
         .flags            = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT};
 
-    return vkCreateCommandPool(device.logical_device, &poolInfo, nullptr, &command_pool);
+    VK_CHECK_RESULT(vkCreateCommandPool(device.logical_device, &poolInfo, nullptr, &command_pool),
+                    "Unable to create VkCommandPool");
+
+    return ErrorCode::NONE;
 }
 
-VkResult CommandResources::createCommandbuffers(Device & device)
+ErrorCode CommandResources::createCommandbuffers(Device & device)
 {
     int32_t const MAX_BUFFERED_RESOURCES = 3;
 
@@ -3988,12 +4066,9 @@ VkResult CommandResources::createCommandbuffers(Device & device)
         .level              = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
         .commandBufferCount = (uint32_t)draw_commandbuffers.size()};
 
-    auto result = vkAllocateCommandBuffers(
-        device.logical_device, &allocInfo, draw_commandbuffers.data());
-    if (result != VK_SUCCESS)
-    {
-        return result;
-    }
+    VK_CHECK_RESULT(
+        vkAllocateCommandBuffers(device.logical_device, &allocInfo, draw_commandbuffers.data()),
+        "Unable to allocate VkCommandBuffer");
 
     transfer_commandbuffers.resize(MAX_BUFFERED_RESOURCES);
 
@@ -4003,8 +4078,11 @@ VkResult CommandResources::createCommandbuffers(Device & device)
         .level              = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
         .commandBufferCount = (uint32_t)transfer_commandbuffers.size()};
 
-    return vkAllocateCommandBuffers(
-        device.logical_device, &allocInfo, transfer_commandbuffers.data());
+    VK_CHECK_RESULT(
+        vkAllocateCommandBuffers(device.logical_device, &allocInfo, transfer_commandbuffers.data()),
+        "Unable to allocate VkCommandBuffer");
+
+    return ErrorCode::NONE;
 }
 
 bool BufferResources::init(RenderConfig & render_config, Device & device, FrameResources & frames)
@@ -4013,13 +4091,13 @@ bool BufferResources::init(RenderConfig & render_config, Device & device, FrameR
                                      frames,
                                      render_config.dynamic_vertices_count,
                                      render_config.dynamic_indices_count)
-        != VK_SUCCESS)
+        != ErrorCode::NONE)
     {
         return false;
     }
 
     if (createStagingObjectResources(device, frames, render_config.staging_buffer_size)
-        != VK_SUCCESS)
+        != ErrorCode::NONE)
     {
         return false;
     }
@@ -4037,10 +4115,10 @@ void BufferResources::quit(Device & device)
     buffers.clear();
 }
 
-VkResult BufferResources::createDynamicObjectResources(Device &         device,
-                                                       FrameResources & frames,
-                                                       size_t           dynamic_vertices_count,
-                                                       size_t           dynamic_indices_count)
+ErrorCode BufferResources::createDynamicObjectResources(Device &         device,
+                                                        FrameResources & frames,
+                                                        size_t           dynamic_vertices_count,
+                                                        size_t           dynamic_indices_count)
 {
     dynamic_mapped_vertices.reserve(frames.MAX_BUFFERED_RESOURCES);
     dynamic_mapped_indices.reserve(frames.MAX_BUFFERED_RESOURCES);
@@ -4052,54 +4130,64 @@ VkResult BufferResources::createDynamicObjectResources(Device &         device,
     {
         LOG_DEBUG("Creating mapped vertices buffer for resource {}", i);
 
-        Buffer vertices_buffer = get_buffer(
-                                     create_buffer(device,
-                                                   vertices_memory_size,
-                                                   VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
-                                                   VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT
-                                                       | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT)
-                                         .value())
-                                     .value();
-
-        dynamic_mapped_vertices.emplace_back(
-            device.logical_device, vertices_buffer, vertices_memory_size);
-
-        LOG_DEBUG("Creating mapped vertices buffer for resource {}", i);
-
-        Buffer indices_buffer = get_buffer(create_buffer(device,
-                                                         indices_memory_size,
-                                                         VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
-                                                         VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT
-                                                             | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT)
-                                               .value())
-                                    .value();
-
-        dynamic_mapped_indices.emplace_back(
-            device.logical_device, indices_buffer, indices_memory_size);
-
-        /*
-        dynamic_mapped_vertices[i].create(
-            device.physical_device,
-            device.logical_device,
+        auto opt_vertex_buffer_handle = create_buffer(
+            device,
             vertices_memory_size,
             VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
             VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+        if (!opt_vertex_buffer_handle)
+        {
+            LOG_ERROR("create_buffer returned nullopt when creating a vertex buffer for dynamic "
+                      "vertex buffer");
+            return ErrorCode::API_ERROR;
+        }
 
-        dynamic_mapped_indices[i].create(
-            device.physical_device,
-            device.logical_device,
+        auto opt_vertex_buffer = get_buffer(opt_vertex_buffer_handle.value());
+
+        if (!opt_vertex_buffer)
+        {
+            LOG_ERROR("get_buffer returned nullopt when getting a vertex buffer for dynamic vertex "
+                      "buffer");
+            return ErrorCode::API_ERROR;
+        }
+
+        dynamic_mapped_vertices.emplace_back(
+            device.logical_device, opt_vertex_buffer.value(), vertices_memory_size);
+
+        LOG_DEBUG("Creating mapped vertices buffer for resource {}", i);
+
+        auto opt_index_buffer_handle = create_buffer(
+            device,
             indices_memory_size,
             VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
             VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
-        */
+
+        if (!opt_index_buffer_handle)
+        {
+            LOG_ERROR("create_buffer returned nullopt when creating an index buffer for dynamic "
+                      "index buffer");
+            return ErrorCode::API_ERROR;
+        }
+
+        auto opt_index_buffer = get_buffer(opt_index_buffer_handle.value());
+
+        if (!opt_index_buffer)
+        {
+            LOG_ERROR("get_buffer returned nullopt when getting an index buffer for dynamic index "
+                      "buffer");
+            return ErrorCode::API_ERROR;
+        }
+
+        dynamic_mapped_indices.emplace_back(
+            device.logical_device, opt_index_buffer.value(), indices_memory_size);
     }
 
-    return VK_SUCCESS;
+    return ErrorCode::NONE;
 }
 
-VkResult BufferResources::createStagingObjectResources(Device &         device,
-                                                       FrameResources & frames,
-                                                       size_t           staging_buffer_size)
+ErrorCode BufferResources::createStagingObjectResources(Device &         device,
+                                                        FrameResources & frames,
+                                                        size_t           staging_buffer_size)
 {
     staging_buffer.reserve(frames.MAX_BUFFERED_RESOURCES);
 
@@ -4107,29 +4195,30 @@ VkResult BufferResources::createStagingObjectResources(Device &         device,
     {
         LOG_DEBUG("Creating staged buffer for resource {}", i);
 
-        Buffer single_staging_buffer = get_buffer(
-                                           create_buffer(device,
-                                                         staging_buffer_size,
-                                                         VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-                                                         VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT
-                                                             | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT)
-                                               .value())
-                                           .value();
-
-        staging_buffer.emplace_back(
-            device.logical_device, single_staging_buffer, staging_buffer_size);
-
-        /*
-        staging_buffer[i].create(
-            device.physical_device,
-            device.logical_device,
+        auto opt_staging_buffer_handle = create_buffer(
+            device,
             staging_buffer_size,
             VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
             VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
-        */
+        if (!opt_staging_buffer_handle)
+        {
+            LOG_ERROR("create_buffer returned nullopt when creating a staging buffer");
+            return ErrorCode::API_ERROR;
+        }
+
+        auto opt_staging_buffer = get_buffer(opt_staging_buffer_handle.value());
+
+        if (!opt_staging_buffer)
+        {
+            LOG_ERROR("get_buffer returned nullopt when getting a staging buffer");
+            return ErrorCode::API_ERROR;
+        }
+
+        staging_buffer.emplace_back(
+            device.logical_device, opt_staging_buffer.value(), staging_buffer_size);
     }
 
-    return VK_SUCCESS;
+    return ErrorCode::NONE;
 }
 
 std::optional<BufferHandle> BufferResources::create_buffer(Device &              render_device,
@@ -4143,9 +4232,10 @@ std::optional<BufferHandle> BufferResources::create_buffer(Device &             
 
     if (buffer.create(
             render_device.physical_device, render_device.logical_device, size, usage, properties)
-        != VK_SUCCESS)
+        != ErrorCode::NONE)
     {
-        LOG_ERROR("Couldn't create buffer");
+        LOG_ERROR("Couldn't create buffer, cleaning up..");
+        buffer.destroy(render_device.logical_device);
         return std::nullopt;
     }
 
@@ -4182,12 +4272,12 @@ void BufferResources::delete_buffer(Device & render_device, BufferHandle handle)
 }; // namespace module
 
 Renderer::Renderer(GLFWwindow * window_ptr): render_device{window_ptr}
-{
-    LOG_INFO("In Renderer Constructor");
-}
+{}
 
 bool Renderer::init(RenderConfig & render_config)
 {
+    LOG_INFO("Initializing Renderer");
+
     if (!render_device.init(render_config))
     {
         LOG_ERROR("Failed to initialize RenderDevice in Renderer");
@@ -4241,6 +4331,7 @@ bool Renderer::init(RenderConfig & render_config)
 
 void Renderer::quit()
 {
+    LOG_INFO("Quitting Renderer");
     commands.quit(render_device);
     pipelines.quit(render_device);
     uniforms.quit(render_device);
@@ -4253,11 +4344,13 @@ void Renderer::quit()
 
 void Renderer::wait_for_idle()
 {
+    LOG_INFO("Waiting for Graphics Card to become Idle");
     vkDeviceWaitIdle(render_device.logical_device);
 }
 
 bool Renderer::draw_frame(uint32_t uniform_count, UniformHandle * p_uniforms)
 {
+    LOG_INFO("Drawing frame");
     vkWaitForFences(render_device.logical_device,
                     1,
                     &frames.in_flight_fences[frames.currentFrame],
@@ -4390,13 +4483,14 @@ bool Renderer::draw_frame(uint32_t uniform_count, UniformHandle * p_uniforms)
     return true;
 }
 
-void Renderer::draw(PipelineHandle    pipeline,
-                    glm::mat4 const & transform,
-                    size_t            vertices_size,
-                    void *            vertices,
-                    uint32_t          index_count,
-                    uint32_t *        indices)
+ErrorCode Renderer::draw(PipelineHandle    pipeline,
+                         glm::mat4 const & transform,
+                         size_t            vertices_size,
+                         void *            vertices,
+                         uint32_t          index_count,
+                         uint32_t *        indices)
 {
+    LOG_INFO("Queuing draw call");
     auto & mapped_vertices = buffers.dynamic_mapped_vertices[frames.currentResource];
     auto & mapped_indices  = buffers.dynamic_mapped_indices[frames.currentResource];
 
@@ -4414,20 +4508,39 @@ void Renderer::draw(PipelineHandle    pipeline,
     command->indexbuffer         = mapped_indices.buffer_handle();
     command->indexbuffer_offset  = index_offset;
     command->indexbuffer_count   = index_count;
+
+    return ErrorCode::NONE;
 }
 
-void Renderer::draw(PipelineHandle    pipeline,
-                    glm::mat4 const & transform,
-                    BufferHandle      vertexbuffer_handle,
-                    VkDeviceSize      vertexbuffer_offset,
-                    BufferHandle      indexbuffer_handle,
-                    VkDeviceSize      indexbuffer_offset,
-                    VkDeviceSize      indexbuffer_count)
+ErrorCode Renderer::draw(PipelineHandle    pipeline,
+                         glm::mat4 const & transform,
+                         BufferHandle      vertexbuffer_handle,
+                         VkDeviceSize      vertexbuffer_offset,
+                         BufferHandle      indexbuffer_handle,
+                         VkDeviceSize      indexbuffer_offset,
+                         VkDeviceSize      indexbuffer_count)
 {
+    LOG_INFO("Queuing draw call");
     auto & bucket = commands.draw_buckets[frames.currentResource];
 
-    Buffer vertexbuffer = buffers.get_buffer(vertexbuffer_handle).value(); //
-    Buffer indexbuffer  = buffers.get_buffer(indexbuffer_handle).value();  //
+    auto opt_vertex_buffer = buffers.get_buffer(vertexbuffer_handle);
+
+    if (!opt_vertex_buffer)
+    {
+        LOG_ERROR("Unable to get Vertex Buffer for draw call, ignoring call..");
+        return ErrorCode::API_ERROR;
+    }
+
+    auto opt_index_buffer = buffers.get_buffer(indexbuffer_handle);
+
+    if (!opt_index_buffer)
+    {
+        LOG_ERROR("Unable to get Index Buffer for draw call, ignoring call..");
+        return ErrorCode::API_ERROR;
+    }
+
+    Buffer vertexbuffer = opt_vertex_buffer.value();
+    Buffer indexbuffer  = opt_index_buffer.value();
 
     Draw * command               = bucket.AddCommand<Draw>(0, sizeof(glm::mat4));
     command->commandbuffer       = commands.draw_commandbuffers[frames.currentResource];
@@ -4438,12 +4551,15 @@ void Renderer::draw(PipelineHandle    pipeline,
     command->indexbuffer         = indexbuffer.buffer_handle();
     command->indexbuffer_offset  = indexbuffer_offset;
     command->indexbuffer_count   = indexbuffer_count;
+
+    return ErrorCode::NONE;
 }
 
 std::optional<UniformHandle> Renderer::new_uniform(UniformLayoutHandle layout_handle,
                                                    VkDeviceSize        size,
                                                    void *              data_ptr)
 {
+    LOG_INFO("Creating a new Uniform");
     auto & uniform_collection = uniforms.uniform_collections[layout_handle];
 
     auto & dynamic_buffer_collection = std::get<DynamicBufferCollection>(uniform_collection);
@@ -4461,6 +4577,15 @@ std::optional<UniformHandle> Renderer::new_uniform(UniformLayoutHandle layout_ha
 std::optional<UniformHandle> Renderer::new_uniform(UniformLayoutHandle layout_handle,
                                                    TextureHandle       texture_handle)
 {
+    LOG_INFO("Creating a new Uniform");
+    auto opt_sampler = images.get_texture(texture_handle);
+
+    if (!opt_sampler)
+    {
+        LOG_ERROR("Unable to get Sampler for new_uniform call, ignoring call");
+        return std::nullopt;
+    }
+
     auto sampler = images.get_texture(texture_handle).value();
 
     auto & uniform_collection = uniforms.uniform_collections[layout_handle];
@@ -4502,6 +4627,7 @@ std::optional<VkDeviceSize> Renderer::getDynamicOffset(UniformHandle handle)
 
 void Renderer::delete_uniforms(size_t uniform_count, UniformHandle * uniform_handles)
 {
+    LOG_INFO("Deleting Uniforms");
     auto & bucket = commands.delete_buckets[frames.currentResource];
 
     DeleteUniforms * delete_command = bucket.AddCommand<DeleteUniforms>(
@@ -4520,13 +4646,23 @@ std::optional<BufferHandle> Renderer::create_buffer(VkDeviceSize          size,
                                                     VkBufferUsageFlags    usage,
                                                     VkMemoryPropertyFlags properties)
 {
-    LOG_TRACE("Entering create_buffer");
+    LOG_INFO("Creating Buffer");
 
     return buffers.create_buffer(render_device, size, usage, properties);
 }
 
 void Renderer::update_buffer(BufferHandle buffer_handle, VkDeviceSize size, void * data)
 {
+    LOG_INFO("Updating Buffer");
+
+    auto opt_buffer = buffers.get_buffer(buffer_handle);
+
+    if (!opt_buffer)
+    {
+        LOG_ERROR("Unable to get buffer for update_buffer call, ignoring call");
+        return;
+    }
+
     Buffer buffer = buffers.get_buffer(buffer_handle).value();
 
     auto & mapped_buffer = buffers.staging_buffer[frames.currentResource];
@@ -4546,6 +4682,8 @@ void Renderer::update_buffer(BufferHandle buffer_handle, VkDeviceSize size, void
 
 void Renderer::delete_buffers(size_t buffer_count, BufferHandle * buffer_handles)
 {
+    LOG_INFO("Deleting Buffers");
+
     auto & bucket = commands.delete_buckets[frames.currentResource];
 
     size_t buffer_size = buffer_count * sizeof(VkBuffer);
@@ -4564,7 +4702,19 @@ void Renderer::delete_buffers(size_t buffer_count, BufferHandle * buffer_handles
 
     for (size_t i = 0; i < buffer_count; ++i)
     {
-        auto buffer = buffers.get_buffer(buffer_handles[i]).value();
+        auto opt_buffer = buffers.get_buffer(buffer_handles[i]);
+        if (!opt_buffer)
+        {
+            LOG_ERROR("Unable to get buffer for delete_buffers call, ignoring buffer {}",
+                      buffer_handles[i]);
+
+            *(buffer_iter++) = VK_NULL_HANDLE;
+            *(memory_iter++) = VK_NULL_HANDLE;
+
+            continue;
+        }
+
+        auto buffer = opt_buffer.value();
         buffers.delete_buffer(render_device, buffer_handles[i]);
 
         LOG_DEBUG("Queuing buffer {} {} for delete",
@@ -4578,6 +4728,7 @@ void Renderer::delete_buffers(size_t buffer_count, BufferHandle * buffer_handles
 
 std::optional<TextureHandle> Renderer::create_texture(char const * texture_path)
 {
+    LOG_INFO("Creating Texture");
     int       texWidth, texHeight, texChannels;
     stbi_uc * pixels = stbi_load(texture_path, &texWidth, &texHeight, &texChannels, STBI_rgb_alpha);
 
@@ -4597,22 +4748,36 @@ std::optional<TextureHandle> Renderer::create_texture(char const * texture_path)
 
     stbi_image_free(pixels);
 
-    TextureHandle texture_handle = images
-                                       .create_texture(render_device.physical_device,
-                                                       render_device.logical_device,
-                                                       texWidth,
-                                                       texHeight,
-                                                       1,
-                                                       VK_SAMPLE_COUNT_1_BIT,
-                                                       VK_FORMAT_R8G8B8A8_UNORM,
-                                                       VK_IMAGE_TILING_OPTIMAL,
-                                                       VK_IMAGE_USAGE_TRANSFER_DST_BIT
-                                                           | VK_IMAGE_USAGE_SAMPLED_BIT,
-                                                       VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-                                                       VK_IMAGE_ASPECT_COLOR_BIT)
-                                       .value();
+    auto opt_texture_handle = images.create_texture(
+        render_device.physical_device,
+        render_device.logical_device,
+        texWidth,
+        texHeight,
+        1,
+        VK_SAMPLE_COUNT_1_BIT,
+        VK_FORMAT_R8G8B8A8_UNORM,
+        VK_IMAGE_TILING_OPTIMAL,
+        VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
+        VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+        VK_IMAGE_ASPECT_COLOR_BIT);
 
-    Sampler texture = images.get_texture(texture_handle).value();
+    if (!opt_texture_handle)
+    {
+        LOG_ERROR("Unable to create texture");
+        return std::nullopt;
+    }
+
+    TextureHandle texture_handle = opt_texture_handle.value();
+
+    auto opt_texture = images.get_texture(texture_handle);
+
+    if (!opt_texture)
+    {
+        LOG_ERROR("Unable to get newly created texture");
+        return std::nullopt;
+    }
+
+    Sampler texture = opt_texture.value();
 
     auto & bucket = commands.transfer_buckets[frames.currentResource];
 
@@ -4654,6 +4819,8 @@ std::optional<TextureHandle> Renderer::create_texture(char const * texture_path)
 
 void Renderer::delete_textures(size_t texture_count, TextureHandle * texture_handles)
 {
+    LOG_INFO("Deleting Textures");
+
     auto & bucket = commands.delete_buckets[frames.currentResource];
 
     size_t sampler_offset = 0;
@@ -4687,8 +4854,21 @@ void Renderer::delete_textures(size_t texture_count, TextureHandle * texture_han
 
     for (size_t i = 0; i < texture_count; ++i)
     {
-        auto sampler = images.get_texture(texture_handles[i]).value();
-        images.delete_texture(render_device, texture_handles[i]);
+        auto opt_sampler = images.get_texture(texture_handles[i]);
+        if (!opt_sampler)
+        {
+            LOG_ERROR("Unable to get texture for delete_textures call, ignoring texture {}",
+                      texture_handles[i]);
+
+            *(sampler_iter++) = VK_NULL_HANDLE;
+            *(view_iter++)    = VK_NULL_HANDLE;
+            *(image_iter++)   = VK_NULL_HANDLE;
+            *(memory_iter++)  = VK_NULL_HANDLE;
+
+            continue;
+        }
+        auto sampler = opt_sampler.value();
+        images.delete_texture(texture_handles[i]);
 
         *(sampler_iter++) = sampler.sampler_handle();
         *(view_iter++)    = sampler.view_handle();
@@ -4697,9 +4877,9 @@ void Renderer::delete_textures(size_t texture_count, TextureHandle * texture_han
     }
 }
 
-VkResult Renderer::createCommandbuffer(uint32_t        image_index,
-                                       uint32_t        uniform_count,
-                                       UniformHandle * p_uniforms)
+ErrorCode Renderer::createCommandbuffer(uint32_t        image_index,
+                                        uint32_t        uniform_count,
+                                        UniformHandle * p_uniforms)
 {
     auto & mapped_vertices = buffers.dynamic_mapped_vertices[frames.currentResource];
     auto & mapped_indices  = buffers.dynamic_mapped_indices[frames.currentResource];
@@ -4711,12 +4891,9 @@ VkResult Renderer::createCommandbuffer(uint32_t        image_index,
                                               .flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,
                                               .pInheritanceInfo = nullptr};
 
-    auto result = vkBeginCommandBuffer(commands.draw_commandbuffers[frames.currentResource],
-                                       &beginInfo);
-    if (result != VK_SUCCESS)
-    {
-        return result;
-    }
+    VK_CHECK_RESULT(
+        vkBeginCommandBuffer(commands.draw_commandbuffers[frames.currentResource], &beginInfo),
+        "Unable to begin VkCommandBuffer recording");
 
     // memory barrier for copy commands
     auto barrier = VkMemoryBarrier{.sType         = VK_STRUCTURE_TYPE_MEMORY_BARRIER,
@@ -4794,13 +4971,9 @@ VkResult Renderer::createCommandbuffer(uint32_t        image_index,
 
     vkCmdEndRenderPass(commandbuffer);
 
-    result = vkEndCommandBuffer(commandbuffer);
-    if (result != VK_SUCCESS)
-    {
-        return result;
-    }
+    VK_CHECK_RESULT(vkEndCommandBuffer(commandbuffer), "Unable to end VkCommandBuffer recording");
 
-    return VK_SUCCESS;
+    return ErrorCode::NONE;
 }
 
 void Renderer::copyBuffer(VkBuffer     srcBuffer,
