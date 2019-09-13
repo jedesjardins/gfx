@@ -75,7 +75,8 @@ enum class ErrorCode
 {
     NONE,
     VULKAN_ERROR,
-    API_ERROR
+    API_ERROR,
+    JSON_ERROR
 };
 
 char const * error_string(VkResult error_code);
@@ -86,6 +87,7 @@ char const * error_string(VkResult error_code);
 
 using CommandbufferHandle   = size_t;
 using RenderpassHandle      = size_t;
+using SubpassHandle         = size_t;
 using AttachmentHandle      = size_t;
 using FramebufferHandle     = size_t;
 using UniformLayoutHandle   = size_t;
@@ -327,10 +329,10 @@ struct AttachmentConfig
 
 struct FramebufferConfig
 {
-    std::vector<AttachmentHandle> attachments;
-    uint32_t                      width;
-    uint32_t                      height;
-    uint32_t                      depth;
+    std::unordered_map<std::string, size_t> attachments;
+    uint32_t                                width;
+    uint32_t                                height;
+    uint32_t                                depth;
 
     void init(rapidjson::Value & document);
 };
@@ -338,10 +340,11 @@ struct FramebufferConfig
 struct SubpassInfo
 {
     std::vector<VkAttachmentReference> color_attachments;
-    VkAttachmentReference              color_resolve_attachment;
-    VkAttachmentReference              depth_stencil_attachment;
 
-    void init(rapidjson::Value & document);
+    VkAttachmentReference color_resolve_attachment;
+    VkAttachmentReference depth_stencil_attachment;
+
+    void init(rapidjson::Value & document, FramebufferConfig & framebuffer);
 
     friend bool operator==(SubpassInfo const & lhs, SubpassInfo const & rhs);
     friend bool operator!=(SubpassInfo const & lhs, SubpassInfo const & rhs);
@@ -349,10 +352,11 @@ struct SubpassInfo
 
 struct RenderpassConfig
 {
-    FramebufferConfig                    framebuffer_config;
-    std::vector<VkAttachmentDescription> descriptions;
-    std::vector<SubpassInfo>             subpasses;
-    std::vector<VkSubpassDependency>     subpass_dependencies;
+    FramebufferConfig                                        framebuffer_config;
+    std::unordered_map<std::string, VkAttachmentDescription> descriptions;
+    std::unordered_map<std::string, SubpassHandle>           subpass_handles;
+    std::vector<SubpassInfo>                                 subpasses;
+    std::vector<VkSubpassDependency>                         subpass_dependencies;
 
     void init(rapidjson::Value & document);
 
@@ -362,19 +366,19 @@ struct RenderpassConfig
 
 struct PipelineConfig
 {
-    ShaderHandle vertex_shader;
-    ShaderHandle fragment_shader;
+    std::string vertex_shader_name;
+    std::string fragment_shader_name;
 
-    std::vector<VertexBindingHandle>   vertex_bindings;
-    std::vector<VertexAttributeHandle> vertex_attributes;
+    std::vector<std::string> vertex_binding_names;
+    std::vector<std::string> vertex_attribute_names;
 
-    std::vector<UniformLayoutHandle> uniform_layouts;
-    std::vector<PushConstantHandle>  push_constants;
+    std::vector<std::string> uniform_layout_names;
+    std::vector<std::string> push_constant_names;
 
-    RenderpassHandle renderpass;
-    uint32_t         subpass;
+    std::string renderpass;
+    std::string subpass;
 
-    void init(rapidjson::Value & document);
+    void init(rapidjson::Value & document, std::unordered_map<std::string, std::string> const &);
 };
 
 struct Pipeline
@@ -395,21 +399,21 @@ struct RenderConfig
 
     size_t staging_buffer_size;
 
-    std::vector<RenderpassConfig> renderpass_configs;
+    std::unordered_map<std::string, RenderpassConfig> renderpass_configs;
 
-    std::vector<AttachmentConfig> attachment_configs;
+    std::unordered_map<std::string, AttachmentConfig> attachment_configs;
 
-    std::vector<VkDescriptorSetLayoutBinding> uniform_layout_infos;
+    std::unordered_map<std::string, VkDescriptorSetLayoutBinding> uniform_layout_infos;
 
-    std::vector<VkPushConstantRange> push_constants;
+    std::unordered_map<std::string, VkPushConstantRange> push_constants;
 
-    std::vector<VkVertexInputBindingDescription> vertex_bindings;
+    std::unordered_map<std::string, VkVertexInputBindingDescription> vertex_bindings;
 
-    std::vector<VkVertexInputAttributeDescription> vertex_attributes;
+    std::unordered_map<std::string, VkVertexInputAttributeDescription> vertex_attributes;
 
-    std::vector<std::string> shader_names;
+    std::unordered_map<std::string, std::string> shader_names;
 
-    std::vector<PipelineConfig> pipeline_configs;
+    std::unordered_map<std::string, PipelineConfig> pipeline_configs;
 
     void init();
 };
@@ -692,9 +696,6 @@ public:
 struct ImageResources
 {
 public:
-    std::vector<AttachmentConfig> attachment_configs;
-    std::vector<TextureHandle>    attachment_handles;
-
     bool init(RenderConfig & render_config, Device & device);
     void quit(Device & device);
 
@@ -714,9 +715,18 @@ public:
 
     void delete_texture(TextureHandle handle);
 
+    std::optional<AttachmentConfig> get_config(AttachmentHandle);
+
+    std::optional<TextureHandle> get_texture_handle(AttachmentHandle);
+
+    std::optional<AttachmentHandle> get_attachment_handle(std::string const & name);
+
 private:
-    TextureHandle                              next_sampler_handle{0};
-    std::unordered_map<TextureHandle, Sampler> samplers;
+    std::unordered_map<std::string, AttachmentHandle> attachment_handles;
+    std::vector<AttachmentConfig>                     attachment_configs;
+    std::vector<TextureHandle>                        attachments;
+    TextureHandle                                     next_sampler_handle{0};
+    std::unordered_map<TextureHandle, Sampler>        samplers;
 
     ErrorCode createAttachments(Device & device);
 }; // struct ImageResources
@@ -724,9 +734,10 @@ private:
 struct RenderPassResources
 {
 public:
-    std::vector<RenderpassConfig>           render_pass_configs;
-    std::vector<VkRenderPass>               render_passes;
-    std::vector<std::vector<VkFramebuffer>> framebuffers;
+    std::unordered_map<std::string, RenderpassHandle> render_pass_handles;
+    std::vector<RenderpassConfig>                     render_pass_configs;
+    std::vector<VkRenderPass>                         render_passes;
+    std::vector<std::vector<VkFramebuffer>>           framebuffers;
 
     bool init(RenderConfig & render_config, Device & device, ImageResources & image_resources);
     void quit(Device & device);
@@ -783,6 +794,8 @@ private:
 struct UniformResources
 {
 public:
+    std::unordered_map<std::string, UniformLayoutHandle> uniform_layout_handles;
+
     std::vector<VkDescriptorSetLayoutBinding> uniform_layout_infos;
     std::vector<VkDescriptorSetLayout>        uniform_layouts;
     std::vector<VkDescriptorPool>             pools;
@@ -798,19 +811,27 @@ private:
 struct PipelineResources
 {
 public:
-    std::vector<std::string>    shader_names;
-    std::vector<VkShaderModule> shaders;
+    std::unordered_map<std::string, ShaderHandle> shader_handles;
+    std::vector<std::string>                      shader_files;
+    std::vector<VkShaderModule>                   shaders;
 
-    std::vector<VkPushConstantRange>               push_constants;
-    std::vector<VkVertexInputBindingDescription>   vertex_bindings;
-    std::vector<VkVertexInputAttributeDescription> vertex_attributes;
-    std::vector<PipelineConfig>                    pipeline_configs;
-    std::vector<Pipeline>                          pipelines;
+    std::unordered_map<std::string, PushConstantHandle> push_constant_handles;
+    std::vector<VkPushConstantRange>                    push_constants;
 
-    bool init(RenderConfig &              render_config,
-              Device &                    device,
-              RenderPassResources const & render_passes,
-              UniformResources const &    uniforms);
+    std::unordered_map<std::string, VertexBindingHandle> vertex_binding_handles;
+    std::vector<VkVertexInputBindingDescription>         vertex_bindings;
+
+    std::unordered_map<std::string, VertexAttributeHandle> vertex_attribute_handles;
+    std::vector<VkVertexInputAttributeDescription>         vertex_attributes;
+
+    std::unordered_map<std::string, PipelineHandle> pipeline_handles;
+    std::vector<PipelineConfig>                     pipeline_configs;
+    std::vector<Pipeline>                           pipelines;
+
+    bool init(RenderConfig &        render_config,
+              Device &              device,
+              RenderPassResources & render_passes,
+              UniformResources &    uniforms);
     void quit(Device & device);
 
 private:
@@ -820,9 +841,9 @@ private:
 
     ErrorCode createShaders(Device & device);
 
-    ErrorCode createGraphicsPipeline(Device &                    device,
-                                     RenderPassResources const & render_passes,
-                                     UniformResources const &    uniforms);
+    ErrorCode createGraphicsPipeline(Device &              device,
+                                     RenderPassResources & render_passes,
+                                     UniformResources &    uniforms);
 }; // struct PipelineResources
 
 /*
@@ -893,6 +914,9 @@ public:
                    BufferHandle      indexbuffer_handle,
                    VkDeviceSize      indexbuffer_offset,
                    VkDeviceSize      indexbuffer_count);
+
+    std::optional<UniformLayoutHandle> get_uniform_layout_handle(std::string layout_name);
+    std::optional<PipelineHandle>      get_pipeline_handle(std::string pipeline_name);
 
     /*
     template <typename... Args>
@@ -1849,15 +1873,22 @@ VkAttachmentDescription initAttachmentDescription(rapidjson::Value const & docum
     return description;
 }
 
-VkAttachmentReference initAttachmentReference(rapidjson::Value & document)
+VkAttachmentReference initAttachmentReference(rapidjson::Value &  document,
+                                              FramebufferConfig & framebuffer)
 {
     assert(document.IsObject());
 
     VkAttachmentReference reference{};
 
+    assert(document.HasMember("attachment_name"));
+    assert(document["attachment_name"].IsString());
+    reference.attachment = framebuffer.attachments[document["attachment_name"].GetString()];
+
+    /*
     assert(document.HasMember("attachment_index"));
     assert(document["attachment_index"].IsInt());
     reference.attachment = document["attachment_index"].GetInt();
+    */
 
     assert(document.HasMember("layout"));
     assert(document["layout"].IsString());
@@ -2085,7 +2116,7 @@ void AttachmentConfig::init(rapidjson::Value & document)
     }
 }
 
-void SubpassInfo::init(rapidjson::Value & document)
+void SubpassInfo::init(rapidjson::Value & document, FramebufferConfig & framebuffer)
 {
     assert(document.IsObject());
 
@@ -2094,19 +2125,20 @@ void SubpassInfo::init(rapidjson::Value & document)
         assert(document["color_attachments"].IsArray());
         for (auto & ca: document["color_attachments"].GetArray())
         {
-            VkAttachmentReference reference = initAttachmentReference(ca);
-            color_attachments.push_back(reference);
+            color_attachments.push_back(initAttachmentReference(ca, framebuffer));
         }
     }
 
     if (document.HasMember("resolve_attachment"))
     {
-        color_resolve_attachment = initAttachmentReference(document["resolve_attachment"]);
+        color_resolve_attachment = initAttachmentReference(document["resolve_attachment"],
+                                                           framebuffer);
     }
 
     if (document.HasMember("depth_stencil_attachment"))
     {
-        depth_stencil_attachment = initAttachmentReference(document["depth_stencil_attachment"]);
+        depth_stencil_attachment = initAttachmentReference(document["depth_stencil_attachment"],
+                                                           framebuffer);
     }
 }
 
@@ -2123,7 +2155,11 @@ void RenderpassConfig::init(rapidjson::Value & document)
     assert(json_framebuffer["attachments"].IsArray());
     for (auto & ad: json_framebuffer["attachments"].GetArray())
     {
-        descriptions.push_back(initAttachmentDescription(ad));
+        assert(ad.IsObject());
+        assert(ad.HasMember("attachment_name"));
+        assert(ad["attachment_name"].IsString());
+
+        descriptions[ad["attachment_name"].GetString()] = initAttachmentDescription(ad);
     }
 
     assert(document.HasMember("subpasses"));
@@ -2131,9 +2167,16 @@ void RenderpassConfig::init(rapidjson::Value & document)
 
     for (auto & sp: document["subpasses"].GetArray())
     {
-        SubpassInfo info{};
-        info.init(sp);
+        assert(sp.IsObject());
+        assert(sp.HasMember("name"));
+        assert(sp["name"].IsString());
 
+        SubpassHandle handle = subpasses.size();
+
+        SubpassInfo info{};
+        info.init(sp, framebuffer_config);
+
+        subpass_handles[sp["name"].GetString()] = handle;
         subpasses.push_back(info);
     }
 
@@ -2153,68 +2196,69 @@ void FramebufferConfig::init(rapidjson::Value & document)
     assert(document.HasMember("attachments"));
     assert(document["attachments"].IsArray());
 
+    size_t i{0};
     for (auto const & attachment: document["attachments"].GetArray())
     {
         assert(attachment.IsObject());
-        auto const & att_obj = attachment.GetObject();
+        assert(attachment.HasMember("attachment_name"));
+        assert(attachment["attachment_name"].IsString());
 
-        assert(att_obj.HasMember("attachment"));
-        assert(att_obj["attachment"].IsInt());
-        attachments.push_back(att_obj["attachment"].GetInt());
+        attachments[attachment["attachment_name"].GetString()] = i++;
     }
 }
 
-void PipelineConfig::init(rapidjson::Value & document)
+void PipelineConfig::init(rapidjson::Value &                                   document,
+                          std::unordered_map<std::string, std::string> const & shader_names)
 {
     assert(document.IsObject());
 
-    assert(document.HasMember("vertex_shader"));
-    assert(document["vertex_shader"].IsInt());
-    vertex_shader = document["vertex_shader"].GetInt();
+    assert(document.HasMember("vertex_shader_name"));
+    assert(document["vertex_shader_name"].IsString());
+    vertex_shader_name = document["vertex_shader_name"].GetString();
 
-    assert(document.HasMember("fragment_shader"));
-    assert(document["fragment_shader"].IsInt());
-    fragment_shader = document["fragment_shader"].GetInt();
+    assert(document.HasMember("fragment_shader_name"));
+    assert(document["fragment_shader_name"].IsString());
+    fragment_shader_name = document["fragment_shader_name"].GetString();
 
     assert(document.HasMember("vertex_bindings"));
     assert(document["vertex_bindings"].IsArray());
     for (auto const & vbi: document["vertex_bindings"].GetArray())
     {
-        assert(vbi.IsInt());
-        vertex_bindings.push_back(vbi.GetInt());
+        assert(vbi.IsString());
+        vertex_binding_names.push_back(vbi.GetString());
     }
 
     assert(document.HasMember("vertex_attributes"));
     assert(document["vertex_attributes"].IsArray());
     for (auto const & vai: document["vertex_attributes"].GetArray())
     {
-        assert(vai.IsInt());
-        vertex_attributes.push_back(vai.GetInt());
+        assert(vai.IsString());
+        vertex_attribute_names.push_back(vai.GetString());
     }
 
     assert(document.HasMember("uniform_layouts"));
     assert(document["uniform_layouts"].IsArray());
     for (auto const & uli: document["uniform_layouts"].GetArray())
     {
-        assert(uli.IsInt());
-        uniform_layouts.push_back(uli.GetInt());
+        assert(uli.IsString());
+        uniform_layout_names.push_back(uli.GetString());
     }
 
     assert(document.HasMember("push_constants"));
     assert(document["push_constants"].IsArray());
     for (auto const & pci: document["push_constants"].GetArray())
     {
-        assert(pci.IsInt());
-        push_constants.push_back(pci.GetInt());
+        assert(pci.IsString());
+        push_constant_names.push_back(pci.GetString());
     }
 
     assert(document.HasMember("renderpass"));
-    assert(document["renderpass"].IsInt());
-    renderpass = document["renderpass"].GetInt();
+    assert(document["renderpass"].IsString());
+    renderpass = document["renderpass"].GetString();
 
     assert(document.HasMember("subpass"));
-    assert(document["subpass"].IsInt());
-    subpass = document["subpass"].GetInt();
+    assert(document["subpass"].IsString());
+    subpass = document["subpass"].GetString();
 }
 
 void RenderConfig::init()
@@ -2262,9 +2306,11 @@ void RenderConfig::init()
 
     for (auto & a: document["attachments"].GetArray())
     {
-        AttachmentConfig attachment_config{};
-        attachment_config.init(a);
-        attachment_configs.push_back(attachment_config);
+        assert(a.IsObject());
+        assert(a.HasMember("name"));
+        assert(a["name"].IsString());
+
+        attachment_configs[a["name"].GetString()].init(a);
     }
 
     assert(document.HasMember("renderpasses"));
@@ -2272,9 +2318,11 @@ void RenderConfig::init()
 
     for (auto & rp: document["renderpasses"].GetArray())
     {
-        RenderpassConfig renderpass_config{};
-        renderpass_config.init(rp);
-        renderpass_configs.push_back(renderpass_config);
+        assert(rp.IsObject());
+        assert(rp.HasMember("name"));
+        assert(rp["name"].IsString());
+
+        renderpass_configs[rp["name"].GetString()].init(rp);
     }
 
     assert(document.HasMember("shaders"));
@@ -2282,8 +2330,14 @@ void RenderConfig::init()
 
     for (auto & s: document["shaders"].GetArray())
     {
-        assert(s.IsString());
-        shader_names.push_back(s.GetString());
+        assert(s.IsObject());
+        assert(s.HasMember("name"));
+        assert(s["name"].IsString());
+
+        assert(s.HasMember("file"));
+        assert(s["file"].IsString());
+
+        shader_names[s["name"].GetString()] = s["file"].GetString();
     }
 
     assert(document.HasMember("uniform_layouts"));
@@ -2291,7 +2345,11 @@ void RenderConfig::init()
 
     for (auto & ul: document["uniform_layouts"].GetArray())
     {
-        uniform_layout_infos.push_back(initVkDescriptorSetLayoutBinding(ul));
+        assert(ul.IsObject());
+        assert(ul.HasMember("name"));
+        assert(ul["name"].IsString());
+
+        uniform_layout_infos[ul["name"].GetString()] = initVkDescriptorSetLayoutBinding(ul);
     }
 
     assert(document.HasMember("push_constants"));
@@ -2299,8 +2357,11 @@ void RenderConfig::init()
 
     for (auto & pc: document["push_constants"].GetArray())
     {
-        VkPushConstantRange push_constant = initVkPushConstantRange(pc);
-        push_constants.push_back(push_constant);
+        assert(pc.IsObject());
+        assert(pc.HasMember("name"));
+        assert(pc["name"].IsString());
+
+        push_constants[pc["name"].GetString()] = initVkPushConstantRange(pc);
     }
 
     assert(document.HasMember("vertex_bindings"));
@@ -2308,8 +2369,11 @@ void RenderConfig::init()
 
     for (auto & vb: document["vertex_bindings"].GetArray())
     {
-        VkVertexInputBindingDescription vertex_binding = initVkVertexInputBindingDescription(vb);
-        vertex_bindings.push_back(vertex_binding);
+        assert(vb.IsObject());
+        assert(vb.HasMember("name"));
+        assert(vb["name"].IsString());
+
+        vertex_bindings[vb["name"].GetString()] = initVkVertexInputBindingDescription(vb);
     }
 
     assert(document.HasMember("vertex_attributes"));
@@ -2317,9 +2381,11 @@ void RenderConfig::init()
 
     for (auto & va: document["vertex_attributes"].GetArray())
     {
-        VkVertexInputAttributeDescription vertex_attribute = initVkVertexInputAttributeDescription(
-            va);
-        vertex_attributes.push_back(vertex_attribute);
+        assert(va.IsObject());
+        assert(va.HasMember("name"));
+        assert(va["name"].IsString());
+
+        vertex_attributes[va["name"].GetString()] = initVkVertexInputAttributeDescription(va);
     }
 
     assert(document.HasMember("pipelines"));
@@ -2327,9 +2393,11 @@ void RenderConfig::init()
 
     for (auto & p: document["pipelines"].GetArray())
     {
-        PipelineConfig pipeline_config{};
-        pipeline_config.init(p);
-        pipeline_configs.push_back(pipeline_config);
+        assert(p.IsObject());
+        assert(p.HasMember("name"));
+        assert(p["name"].IsString());
+
+        pipeline_configs[p["name"].GetString()].init(p, shader_names);
     }
 }
 
@@ -3250,8 +3318,19 @@ void FrameResources::quit(VkDevice device)
 
 bool ImageResources::init(RenderConfig & render_config, Device & device)
 {
-    attachment_configs = std::move(render_config.attachment_configs);
-    attachment_handles.resize(attachment_configs.size());
+    // attachment_configs = std::move(render_config.attachment_configs);
+    // attachment_handles.resize(attachment_configs.size());
+
+    for (auto & config_iter: render_config.attachment_configs)
+    {
+        AttachmentHandle handle = attachment_configs.size();
+        attachment_configs.push_back(config_iter.second);
+        attachment_handles[config_iter.first] = handle;
+
+        LOG_DEBUG("Added Attachment Handle {} for Layout {}", handle, config_iter.first);
+    }
+
+    attachments.resize(attachment_configs.size());
 
     return createAttachments(device) == ErrorCode::NONE;
 }
@@ -3335,6 +3414,38 @@ void ImageResources::delete_texture(TextureHandle handle)
     }
 }
 
+std::optional<AttachmentConfig> ImageResources::get_config(AttachmentHandle handle)
+{
+    if (handle >= attachment_configs.size())
+    {
+        return std::nullopt;
+    }
+
+    return attachment_configs[handle];
+}
+
+std::optional<TextureHandle> ImageResources::get_texture_handle(AttachmentHandle handle)
+{
+    if (handle >= attachments.size())
+    {
+        return std::nullopt;
+    }
+
+    return attachments[handle];
+}
+
+std::optional<AttachmentHandle> ImageResources::get_attachment_handle(std::string const & name)
+{
+    auto iter = attachment_handles.find(name);
+    if (iter == attachment_handles.end())
+    {
+        LOG_DEBUG("Didn't find AttachmentHandle for Attachment {}", name);
+        return std::nullopt;
+    }
+
+    return iter->second;
+}
+
 ErrorCode ImageResources::createAttachments(Device & device)
 {
     for (size_t i = 0; i < attachment_configs.size(); ++i)
@@ -3394,7 +3505,7 @@ ErrorCode ImageResources::createAttachments(Device & device)
             return ErrorCode::API_ERROR;
         }
 
-        attachment_handles[i] = opt_handle.value();
+        attachments[i] = opt_handle.value();
     }
 
     return ErrorCode::NONE;
@@ -3404,7 +3515,15 @@ bool RenderPassResources::init(RenderConfig &   render_config,
                                Device &         device,
                                ImageResources & image_resources)
 {
-    render_pass_configs = std::move(render_config.renderpass_configs);
+    for (auto & iter: render_config.renderpass_configs)
+    {
+        RenderpassHandle handle         = render_pass_configs.size();
+        render_pass_handles[iter.first] = render_pass_configs.size();
+        render_pass_configs.push_back(iter.second);
+
+        LOG_DEBUG("Added Renderpass Handle {} for Renderpass {}", handle, iter.first);
+    }
+
     render_passes.resize(render_pass_configs.size());
     framebuffers.resize(render_pass_configs.size());
 
@@ -3434,11 +3553,23 @@ ErrorCode RenderPassResources::createRenderPasses(Device & device, ImageResource
         auto & render_pass_config = render_pass_configs[rp_i];
         auto & render_pass        = render_passes[rp_i];
 
-        for (size_t ad_i = 0; ad_i < render_pass_config.descriptions.size(); ++ad_i)
+        std::vector<VkAttachmentDescription> sorted_descriptions{
+            render_pass_config.descriptions.size()};
+
+        for (auto & iter: render_pass_config.descriptions)
         {
-            auto & description       = render_pass_config.descriptions[ad_i];
-            auto   attachment_handle = render_pass_config.framebuffer_config.attachments[ad_i];
-            auto const & attachment_config = image_resources.attachment_configs[attachment_handle];
+            auto & attachment_name = iter.first;
+            auto & description     = iter.second;
+            auto   attachment_index
+                = render_pass_config.framebuffer_config.attachments[attachment_name];
+
+            auto opt_attachment_handle = image_resources.get_attachment_handle(attachment_name);
+            assert(opt_attachment_handle.has_value());
+            auto attachment_handle = opt_attachment_handle.value();
+
+            auto opt_attachment_config = image_resources.get_config(attachment_handle);
+            assert(opt_attachment_config.has_value());
+            auto attachment_config = opt_attachment_config.value();
 
             if (attachment_config.format == Format::USE_COLOR)
             {
@@ -3457,6 +3588,8 @@ ErrorCode RenderPassResources::createRenderPasses(Device & device, ImageResource
             {
                 description.samples = VK_SAMPLE_COUNT_1_BIT;
             }
+
+            sorted_descriptions[attachment_index] = description;
         }
 
         std::vector<VkSubpassDescription> subpasses;
@@ -3476,7 +3609,7 @@ ErrorCode RenderPassResources::createRenderPasses(Device & device, ImageResource
         auto renderPassInfo = VkRenderPassCreateInfo{
             .sType           = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO,
             .attachmentCount = static_cast<uint32_t>(render_pass_config.descriptions.size()),
-            .pAttachments    = render_pass_config.descriptions.data(),
+            .pAttachments    = sorted_descriptions.data(),
 
             .subpassCount = static_cast<uint32_t>(subpasses.size()),
             .pSubpasses   = subpasses.data(),
@@ -3514,28 +3647,44 @@ ErrorCode RenderPassResources::createFramebuffer(Device &                     de
     {
         auto & framebuffer = framebuffers[i];
 
-        auto fb_attachments = std::vector<VkImageView>{};
+        auto fb_attachments = std::vector<VkImageView>{framebuffer_config.attachments.size()};
 
-        for (auto attachment_handle: framebuffer_config.attachments)
+        for (auto iter: framebuffer_config.attachments)
         {
-            auto const & attachment_config = image_resources.attachment_configs[attachment_handle];
+            auto attachment_name  = iter.first;
+            auto attachment_index = iter.second;
+
+            auto attachment_handle = image_resources.get_attachment_handle(attachment_name).value();
+            auto opt_attachment_config = image_resources.get_config(attachment_handle);
+            if (!opt_attachment_config)
+            {
+                return ErrorCode::JSON_ERROR;
+            }
+
+            auto attachment_config = opt_attachment_config.value();
 
             if (attachment_config.is_swapchain_image)
             {
-                fb_attachments.push_back(device.swapchain_image_views[i]);
+                fb_attachments[attachment_index] = device.swapchain_image_views[i];
             }
             else
             {
-                auto opt_texture_handle = image_resources.get_texture(
-                    image_resources.attachment_handles[attachment_handle]);
+                auto opt_attachment_handle = image_resources.get_texture_handle(attachment_handle);
+                if (!opt_attachment_handle)
+                {
+                    LOG_ERROR("Couldn't get texture_handle for AttachmentHandle");
+                    return ErrorCode::JSON_ERROR;
+                }
 
+                auto opt_texture_handle = image_resources.get_texture(
+                    opt_attachment_handle.value());
                 if (!opt_texture_handle)
                 {
                     LOG_ERROR("Unable to get TextureHandle for attachment to VkFramebuffer");
                     return ErrorCode::API_ERROR;
                 }
 
-                fb_attachments.push_back(opt_texture_handle.value().view_handle());
+                fb_attachments[attachment_index] = opt_texture_handle.value().view_handle();
             }
         }
 
@@ -3560,7 +3709,17 @@ bool UniformResources::init(RenderConfig &    render_config,
                             Device &          device,
                             BufferResources & buffers)
 {
-    uniform_layout_infos = std::move(render_config.uniform_layout_infos);
+    uniform_layout_infos.reserve(render_config.uniform_layout_infos.size());
+    for (auto iter: render_config.uniform_layout_infos)
+    {
+        UniformLayoutHandle handle = uniform_layout_infos.size();
+
+        uniform_layout_handles[iter.first] = handle;
+        uniform_layout_infos.push_back(iter.second);
+
+        LOG_DEBUG("Added Uniform Layout Handle {} for Layout {}", handle, iter.first);
+    }
+
     uniform_layouts.resize(uniform_layout_infos.size());
     pools.resize(uniform_layout_infos.size());
     uniform_collections.resize(uniform_layout_infos.size());
@@ -3737,23 +3896,74 @@ ErrorCode UniformResources::createUniformLayouts(Device & device, BufferResource
     return ErrorCode::NONE;
 }
 
-bool PipelineResources::init(RenderConfig &              render_config,
-                             Device &                    device,
-                             RenderPassResources const & render_passes,
-                             UniformResources const &    uniforms)
+bool PipelineResources::init(RenderConfig &        render_config,
+                             Device &              device,
+                             RenderPassResources & render_passes,
+                             UniformResources &    uniforms)
 {
-    shader_names = std::move(render_config.shader_names);
-    shaders.resize(shader_names.size());
+    shader_files.reserve(render_config.shader_names.size());
+    shader_files.reserve(render_config.shader_names.size());
+    for (auto & iter: render_config.shader_names)
+    {
+        auto shader_handle = shader_files.size();
+
+        shader_handles[iter.first] = shader_handle;
+        shader_files.push_back(iter.second);
+        shaders.push_back(VK_NULL_HANDLE);
+
+        LOG_DEBUG("Added Shader Handle {} for shader {}, file: {}",
+                  shader_handle,
+                  iter.first,
+                  iter.second);
+    }
+
     if (createShaders(device) != ErrorCode::NONE)
     {
         return false;
     }
 
-    // graphics pipelines (also push constants, and vertex_bindings/attributes)
-    push_constants    = std::move(render_config.push_constants);
-    vertex_bindings   = std::move(render_config.vertex_bindings);
-    vertex_attributes = std::move(render_config.vertex_attributes);
-    pipeline_configs  = std::move(render_config.pipeline_configs);
+    push_constants.reserve(render_config.push_constants.size());
+    for (auto & iter: render_config.push_constants)
+    {
+        auto push_constant_handle         = push_constants.size();
+        push_constant_handles[iter.first] = push_constant_handle;
+        push_constants.push_back(iter.second);
+
+        LOG_DEBUG("Added Push Constant Handle {} for Binding {}", push_constant_handle, iter.first);
+    }
+
+    // vertex bindings
+    vertex_bindings.reserve(render_config.vertex_bindings.size());
+    for (auto & iter: render_config.vertex_bindings)
+    {
+        auto binding_handle                = vertex_bindings.size();
+        vertex_binding_handles[iter.first] = binding_handle;
+        vertex_bindings.push_back(iter.second);
+
+        LOG_DEBUG("Added Vertex Binding Handle {} for Binding {}", binding_handle, iter.first);
+    }
+
+    // vertex attributes
+    vertex_attributes.reserve(render_config.vertex_attributes.size());
+    for (auto & iter: render_config.vertex_attributes)
+    {
+        auto attribute_handle                = vertex_attributes.size();
+        vertex_attribute_handles[iter.first] = attribute_handle;
+        vertex_attributes.push_back(iter.second);
+
+        LOG_DEBUG(
+            "Added Vertex Attribute Handle {} for Attribute {}", attribute_handle, iter.first);
+    }
+
+    pipeline_configs.reserve(render_config.pipeline_configs.size());
+    for (auto & iter: render_config.pipeline_configs)
+    {
+        auto pipeline_handle         = pipeline_configs.size();
+        pipeline_handles[iter.first] = pipeline_handle;
+        pipeline_configs.push_back(iter.second);
+
+        LOG_DEBUG("Added Pipeline Handle {} for Pipeline {}", pipeline_handle, iter.first);
+    }
     pipelines.resize(pipeline_configs.size());
 
     return createGraphicsPipeline(device, render_passes, uniforms) == ErrorCode::NONE;
@@ -3795,7 +4005,7 @@ ErrorCode PipelineResources::createShaders(Device & device)
     {
         auto & shader = shaders[i];
 
-        auto shaderCode = readFile(shader_names[i]);
+        auto shaderCode = readFile(shader_files[i]);
 
         auto error = createShaderModule(device, shaderCode, shader);
 
@@ -3808,39 +4018,43 @@ ErrorCode PipelineResources::createShaders(Device & device)
     return ErrorCode::NONE;
 }
 
-ErrorCode PipelineResources::createGraphicsPipeline(Device &                    device,
-                                                    RenderPassResources const & render_passes,
-                                                    UniformResources const &    uniforms)
+ErrorCode PipelineResources::createGraphicsPipeline(Device &              device,
+                                                    RenderPassResources & render_passes,
+                                                    UniformResources &    uniforms)
 {
     for (size_t i = 0; i < pipelines.size(); ++i)
     {
         auto & pipeline        = pipelines[i];
         auto & pipeline_config = pipeline_configs[i];
 
+        LOG_DEBUG("Pipeline {} uses fragment shader {}, handle {}",
+                  i,
+                  pipeline_config.fragment_shader_name,
+                  shader_handles[pipeline_config.fragment_shader_name]);
         auto vertShaderStageInfo = VkPipelineShaderStageCreateInfo{
             .sType  = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
             .stage  = VK_SHADER_STAGE_VERTEX_BIT,
-            .module = shaders[pipeline_config.vertex_shader],
+            .module = shaders[shader_handles[pipeline_config.vertex_shader_name]],
             .pName  = "main"};
 
         auto fragShaderStageInfo = VkPipelineShaderStageCreateInfo{
             .sType  = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
             .stage  = VK_SHADER_STAGE_FRAGMENT_BIT,
-            .module = shaders[pipeline_config.fragment_shader],
+            .module = shaders[shader_handles[pipeline_config.fragment_shader_name]],
             .pName  = "main"};
 
         VkPipelineShaderStageCreateInfo shaderStages[] = {vertShaderStageInfo, fragShaderStageInfo};
 
         auto bindings = std::vector<VkVertexInputBindingDescription>{};
-        for (auto const & binding: pipeline_config.vertex_bindings)
+        for (auto const & binding_name: pipeline_config.vertex_binding_names)
         {
-            bindings.push_back(vertex_bindings[binding]);
+            bindings.push_back(vertex_bindings[vertex_binding_handles[binding_name]]);
         }
 
         auto attributes = std::vector<VkVertexInputAttributeDescription>{};
-        for (auto const & attribute: pipeline_config.vertex_attributes)
+        for (auto const & attribute_name: pipeline_config.vertex_attribute_names)
         {
-            attributes.push_back(vertex_attributes[attribute]);
+            attributes.push_back(vertex_attributes[vertex_attribute_handles[attribute_name]]);
         }
 
         auto vertexInputInfo = VkPipelineVertexInputStateCreateInfo{
@@ -3942,16 +4156,19 @@ ErrorCode PipelineResources::createGraphicsPipeline(Device &                    
         */
 
         auto pushConstantRanges = std::vector<VkPushConstantRange>{};
-        for (auto const & push_constant: pipeline_config.push_constants)
+        for (auto const & push_constant_name: pipeline_config.push_constant_names)
         {
-            pushConstantRanges.push_back(push_constants[push_constant]);
+            auto handle = push_constant_handles[push_constant_name];
+
+            pushConstantRanges.push_back(push_constants[handle]);
         }
 
         std::vector<VkDescriptorSetLayout> layouts;
 
-        for (auto & layout_handle: pipeline_config.uniform_layouts)
+        for (auto & layout_name: pipeline_config.uniform_layout_names)
         {
-            layouts.push_back(uniforms.uniform_layouts[layout_handle]);
+            layouts.push_back(
+                uniforms.uniform_layouts[uniforms.uniform_layout_handles[layout_name]]);
         }
 
         auto pipelineLayoutInfo = VkPipelineLayoutCreateInfo{
@@ -3966,6 +4183,10 @@ ErrorCode PipelineResources::createGraphicsPipeline(Device &                    
                 device.logical_device, &pipelineLayoutInfo, nullptr, &pipeline.vk_pipeline_layout),
             "Unable to create VkPipelineLayout");
 
+        auto   render_pass_handle = render_passes.render_pass_handles[pipeline_config.renderpass];
+        auto & render_pass_config = render_passes.render_pass_configs[render_pass_handle];
+        auto   subpass_handle     = render_pass_config.subpass_handles[pipeline_config.subpass];
+
         auto pipelineInfo = VkGraphicsPipelineCreateInfo{
             .sType               = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO,
             .stageCount          = 2,
@@ -3979,8 +4200,8 @@ ErrorCode PipelineResources::createGraphicsPipeline(Device &                    
             .pColorBlendState    = &colorBlending,
             .pDynamicState       = nullptr, // Optional
             .layout              = pipeline.vk_pipeline_layout,
-            .renderPass          = render_passes.render_passes[pipeline_config.renderpass],
-            .subpass             = pipeline_config.subpass,
+            .renderPass          = render_passes.render_passes[render_pass_handle],
+            .subpass             = static_cast<uint32_t>(subpass_handle),
             .basePipelineHandle  = VK_NULL_HANDLE, // Optional
             .basePipelineIndex   = -1              // Optional
         };
@@ -4128,7 +4349,7 @@ ErrorCode BufferResources::createDynamicObjectResources(Device &         device,
 
     for (uint32_t i = 0; i < frames.MAX_BUFFERED_RESOURCES; ++i)
     {
-        LOG_DEBUG("Creating mapped vertices buffer for resource {}", i);
+        LOG_DEBUG("Creating mapped vertices buffer for resource frame {}", i);
 
         auto opt_vertex_buffer_handle = create_buffer(
             device,
@@ -4154,7 +4375,7 @@ ErrorCode BufferResources::createDynamicObjectResources(Device &         device,
         dynamic_mapped_vertices.emplace_back(
             device.logical_device, opt_vertex_buffer.value(), vertices_memory_size);
 
-        LOG_DEBUG("Creating mapped vertices buffer for resource {}", i);
+        LOG_DEBUG("Creating mapped vertices buffer for resource frame {}", i);
 
         auto opt_index_buffer_handle = create_buffer(
             device,
@@ -4555,12 +4776,40 @@ ErrorCode Renderer::draw(PipelineHandle    pipeline,
     return ErrorCode::NONE;
 }
 
+std::optional<UniformLayoutHandle> Renderer::get_uniform_layout_handle(std::string layout_name)
+{
+    auto handle_iter = uniforms.uniform_layout_handles.find(layout_name);
+    if (handle_iter == uniforms.uniform_layout_handles.end())
+    {
+        return std::nullopt;
+    }
+
+    return handle_iter->second;
+}
+
+std::optional<PipelineHandle> Renderer::get_pipeline_handle(std::string pipeline_name)
+{
+    auto handle_iter = pipelines.pipeline_handles.find(pipeline_name);
+    if (handle_iter == pipelines.pipeline_handles.end())
+    {
+        return std::nullopt;
+    }
+
+    return handle_iter->second;
+}
+
 std::optional<UniformHandle> Renderer::new_uniform(UniformLayoutHandle layout_handle,
                                                    VkDeviceSize        size,
                                                    void *              data_ptr)
 {
     LOG_INFO("Creating a new Uniform");
     auto & uniform_collection = uniforms.uniform_collections[layout_handle];
+
+    if (!std::holds_alternative<DynamicBufferCollection>(uniform_collection))
+    {
+        LOG_WARN("UniformLayout {} doesn't hold Dynamic Uniform Buffer resources", layout_handle);
+        return std::nullopt;
+    }
 
     auto & dynamic_buffer_collection = std::get<DynamicBufferCollection>(uniform_collection);
 
@@ -4589,6 +4838,12 @@ std::optional<UniformHandle> Renderer::new_uniform(UniformLayoutHandle layout_ha
     auto sampler = images.get_texture(texture_handle).value();
 
     auto & uniform_collection = uniforms.uniform_collections[layout_handle];
+
+    if (!std::holds_alternative<SamplerCollection>(uniform_collection))
+    {
+        LOG_WARN("UniformLayout {} doesn't hold Sampler Uniform resources", layout_handle);
+        return std::nullopt;
+    }
 
     auto & sampler_collection = std::get<SamplerCollection>(uniform_collection);
 

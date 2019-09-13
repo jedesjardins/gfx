@@ -2,10 +2,6 @@
 #include <vulkan/vulkan.h>
 #include <GLFW/glfw3.h>
 
-#include <variant>
-#include <iostream>
-#include <numeric>
-
 #define JED_LOG_IMPLEMENTATION
 #include "log/logger.hpp"
 #undef JED_LOG_IMPLEMENTATION
@@ -21,6 +17,11 @@
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
 #undef STB_IMAGE_IMPLEMENTATION
+
+#include <variant>
+#include <iostream>
+#include <numeric>
+#include <thread>
 
 struct Vertex
 {
@@ -79,6 +80,22 @@ struct Material
     glm::mat4           transform{1.0f};
 };
 
+std::optional<Material> make_material(gfx::Renderer & render_device,
+                                      std::string     pipeline_name,
+                                      glm::mat4       transform)
+{
+    auto opt_pipeline_handle = render_device.get_pipeline_handle(pipeline_name);
+
+    if (!opt_pipeline_handle)
+    {
+        return std::nullopt;
+    }
+
+    LOG_DEBUG("PipelineHandle for {} is {}", pipeline_name, opt_pipeline_handle.value());
+
+    return Material{opt_pipeline_handle.value(), transform};
+}
+
 struct StaticVertexData // can be edited with a
 {
     gfx::BufferHandle vertexbuffer;
@@ -104,12 +121,15 @@ enum class ObjectType
 class Object
 {
 public:
-    Object(gfx::Renderer & render_device,
-           ObjectType      type,
-           uint32_t        vertex_count,
-           Vertex *        vertices,
-           uint32_t        index_count,
-           uint32_t *      indices)
+    Object(gfx::Renderer &     render_device,
+           ObjectType          type,
+           uint32_t            vertex_count,
+           Vertex *            vertices,
+           uint32_t            index_count,
+           uint32_t *          indices,
+           std::string const & pipeline_name,
+           glm::mat4           transform = glm::mat4{1.0f})
+    : material{make_material(render_device, pipeline_name, transform).value()}
     {
         if (type == ObjectType::STATIC)
         {
@@ -347,7 +367,8 @@ int main()
                          obj1_vertices.size(),
                          obj1_vertices.data(),
                          obj_indices.size(),
-                         obj_indices.data());
+                         obj_indices.data(),
+                         "colored_texture_shader");
 
     objects[0].getMaterial().transform = glm::scale(glm::mat4{1.f}, glm::vec3{.5f, .5f, .5f});
 
@@ -356,31 +377,56 @@ int main()
                          obj2_vertices.size(),
                          obj2_vertices.data(),
                          obj_indices.size(),
-                         obj_indices.data());
+                         obj_indices.data(),
+                         "simple_texture_shader");
 
     objects.emplace_back(render_device,
                          ObjectType::STREAMED,
                          obj3_vertices.size(),
                          obj3_vertices.data(),
                          obj_indices.size(),
-                         obj_indices.data());
+                         obj_indices.data(),
+                         "colored_texture_shader");
 
     objects.emplace_back(render_device,
                          ObjectType::STREAMED,
                          obj4_vertices.size(),
                          obj4_vertices.data(),
                          obj_indices.size(),
-                         obj_indices.data());
+                         obj_indices.data(),
+                         "colored_texture_shader");
 
     uint32_t frame_number = 0;
 
+    // Camera View Uniform
     glm::mat4 view = glm::scale(glm::mat4(1.0), glm::vec3(1.f, -1.f, 1.f));
 
-    auto opt_view_handle = render_device.new_uniform(0, sizeof(glm::mat4), glm::value_ptr(view));
+    auto opt_layout_handle = render_device.get_uniform_layout_handle("ul_camera_matrix");
+    if (!opt_layout_handle)
+    {
+        LOG_ERROR("Couldn't get UniformLayoutHandle for \"ul_camera_matrix\" UniformLayout");
+        return 0;
+    }
+
+    auto opt_view_handle = render_device.new_uniform(
+        opt_layout_handle.value(), sizeof(glm::mat4), glm::value_ptr(view));
+    if (!opt_view_handle)
+    {
+        LOG_ERROR("Couldn't create uniform for camera view");
+        return 0;
+    }
     gfx::UniformHandle view_handle = opt_view_handle.value();
 
-    auto               opt_sampler_handle = render_device.new_uniform(1, texture);
-    gfx::UniformHandle sampler_handle     = opt_sampler_handle.value();
+    // Texture Sampler Uniform
+    opt_layout_handle = render_device.get_uniform_layout_handle("ul_texture");
+    if (!opt_layout_handle)
+    {
+        LOG_ERROR("Couldn't get UniformLayoutHandle for \"ul_texture\" UniformLayout");
+        return 0;
+    }
+
+    auto opt_sampler_handle = render_device.new_uniform(opt_layout_handle.value(), texture);
+    gfx::UniformHandle sampler_handle = opt_sampler_handle.value();
 
     auto clock = RawClock{};
 
@@ -390,6 +436,8 @@ int main()
     uint32_t            frameIndex{0};
 
     bool draw_success{true};
+
+    LOG_INFO("Starting loop");
 
     while (!glfwWindowShouldClose(window) && draw_success)
     {
