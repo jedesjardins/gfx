@@ -221,23 +221,25 @@ public:
             auto & static_data = std::get<StaticVertexData>(vertex_data);
 
             render_device.draw(material.pipeline,
-                               material.transform,
                                static_data.vertexbuffer,
                                0,
                                static_data.indexbuffer,
                                0,
-                               static_data.index_count);
+                               static_data.index_count,
+                               sizeof(glm::mat4),
+                               glm::value_ptr(material.transform));
         }
         else if (std::holds_alternative<StreamedVertexData>(vertex_data))
         {
             auto & streamed_data = std::get<StreamedVertexData>(vertex_data);
 
             render_device.draw(material.pipeline,
-                               material.transform,
                                streamed_data.vertex_count * sizeof(Vertex),
                                streamed_data.vertices,
                                streamed_data.index_count,
-                               streamed_data.indices);
+                               streamed_data.indices,
+                               sizeof(glm::mat4),
+                               glm::value_ptr(material.transform));
         }
     }
 
@@ -370,15 +372,14 @@ int main()
                          obj_indices.data(),
                          "colored_texture_shader");
 
-    objects[0].getMaterial().transform = glm::scale(glm::mat4{1.f}, glm::vec3{.5f, .5f, .5f});
-
     objects.emplace_back(render_device,
                          ObjectType::STATIC,
                          obj2_vertices.size(),
                          obj2_vertices.data(),
                          obj_indices.size(),
                          obj_indices.data(),
-                         "simple_texture_shader");
+                         "simple_texture_shader",
+                         glm::scale(glm::mat4{1.f}, glm::vec3{.5f, .5f, .5f}));
 
     objects.emplace_back(render_device,
                          ObjectType::STREAMED,
