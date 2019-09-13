@@ -214,7 +214,7 @@ public:
         render_device.delete_buffers(2, buffers);
     }
 
-    void draw(gfx::Renderer & render_device)
+    void draw(gfx::Renderer & render_device, size_t uniform_count, gfx::UniformHandle * uniforms)
     {
         if (std::holds_alternative<StaticVertexData>(vertex_data))
         {
@@ -227,7 +227,8 @@ public:
                                0,
                                static_data.index_count,
                                sizeof(glm::mat4),
-                               glm::value_ptr(material.transform));
+                               glm::value_ptr(material.transform),
+                               uniform_count, uniforms);
         }
         else if (std::holds_alternative<StreamedVertexData>(vertex_data))
         {
@@ -239,7 +240,8 @@ public:
                                streamed_data.index_count,
                                streamed_data.indices,
                                sizeof(glm::mat4),
-                               glm::value_ptr(material.transform));
+                               glm::value_ptr(material.transform),
+                               uniform_count, uniforms);
         }
     }
 
@@ -429,6 +431,8 @@ int main()
     auto opt_sampler_handle = render_device.new_uniform(opt_layout_handle.value(), texture);
     gfx::UniformHandle sampler_handle = opt_sampler_handle.value();
 
+    std::array<gfx::UniformHandle, 2> uniforms{view_handle, sampler_handle};
+
     auto clock = RawClock{};
 
     clock.Clear();
@@ -465,12 +469,10 @@ int main()
 
         for (uint32_t i = 0; i < objects.size(); ++i)
         {
-            objects[i].draw(render_device);
+            objects[i].draw(render_device, uniforms.size(), uniforms.data());
         }
 
-        std::array<gfx::UniformHandle, 2> uniforms = {view_handle, sampler_handle};
-
-        draw_success = render_device.draw_frame(2, uniforms.data());
+        draw_success = render_device.submit_frame();
 
         frame_times[++frameIndex % frame_times.size()] = clock.Restart();
 
