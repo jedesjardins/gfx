@@ -65,7 +65,7 @@
 					],
 					"resolve_attachment":
 					{
-						"attachment_index": "a_screen_color",
+						"attachment_name": "a_screen_color",
 						"layout": "COLOR_ATTACHMENT_OPTIMAL"
 					},
 					"depth_stencil_attachment":
@@ -100,6 +100,10 @@
 		{
 			"name": "s_fragment_shader",
 			"file": "shaders/frag.spv"
+		},
+		{
+			"name": "s_simple_fragment_shader",
+			"file": "shaders/simple-frag.spv"
 		}
 	],
 	"uniform_layouts":
@@ -157,8 +161,20 @@
 	"pipelines":
 	[
 		{
-			"vertex_shader": "s_vertex_shader",
-			"fragment_shader": "s_fragment_shader",
+			"name": "colored_texture_shader",
+			"vertex_shader_name": "s_vertex_shader",
+			"fragment_shader_name": "s_fragment_shader",
+			"vertex_bindings": ["vb_pos_color"],
+			"vertex_attributes": ["va_color", "va_pos"],
+			"uniform_layouts": ["ul_camera_matrix", "ul_texture"],
+			"push_constants": ["pc_model_matrix"],
+			"renderpass": "rp_main_render_pass",
+			"subpass": "sp_first_subpass"
+		},
+		{
+			"name": "simple_texture_shader",
+			"vertex_shader_name": "s_vertex_shader",
+			"fragment_shader_name": "s_simple_fragment_shader",
 			"vertex_bindings": ["vb_pos_color"],
 			"vertex_attributes": ["va_color", "va_pos"],
 			"uniform_layouts": ["ul_camera_matrix", "ul_texture"],
