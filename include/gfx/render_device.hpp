@@ -401,6 +401,8 @@ struct RenderConfig
 
     std::unordered_map<std::string, RenderpassConfig> renderpass_configs;
 
+    std::vector<std::string> renderpass_order;
+
     std::unordered_map<std::string, AttachmentConfig> attachment_configs;
 
     std::unordered_map<std::string, VkDescriptorSetLayoutBinding> uniform_layout_infos;
@@ -734,6 +736,11 @@ private:
 struct RenderPassResources
 {
 public:
+    std::vector<RenderpassHandle> renderpass_order;
+
+    std::unordered_map<RenderpassHandle, std::vector<std::vector<PipelineHandle>>>
+        per_renderpass_subpass_pipelines;
+
     std::unordered_map<std::string, RenderpassHandle> render_pass_handles;
     std::vector<RenderpassConfig>                     render_pass_configs;
     std::vector<VkRenderPass>                         render_passes;
@@ -827,6 +834,7 @@ public:
     std::unordered_map<std::string, PipelineHandle> pipeline_handles;
     std::vector<PipelineConfig>                     pipeline_configs;
     std::vector<Pipeline>                           pipelines;
+    std::vector<cmd::CommandBucket<int>>            draw_buckets;
 
     bool init(RenderConfig &        render_config,
               Device &              device,
@@ -859,7 +867,6 @@ public:
     std::vector<VkCommandBuffer> draw_commandbuffers;
     std::vector<VkCommandBuffer> transfer_commandbuffers;
 
-    std::vector<cmd::CommandBucket<int>> draw_buckets;
     std::vector<cmd::CommandBucket<int>> transfer_buckets;
     std::vector<cmd::CommandBucket<int>> delete_buckets;
 
@@ -2325,6 +2332,14 @@ void RenderConfig::init()
         renderpass_configs[rp["name"].GetString()].init(rp);
     }
 
+    assert(document.HasMember("renderpass_order"));
+    assert(document["renderpass_order"].IsArray());
+    for (auto & renderpass_name: document["renderpass_order"].GetArray())
+    {
+        assert(renderpass_name.IsString());
+        renderpass_order.push_back(renderpass_name.GetString());
+    }
+
     assert(document.HasMember("shaders"));
     assert(document["shaders"].IsArray());
 
@@ -3524,6 +3539,16 @@ bool RenderPassResources::init(RenderConfig &   render_config,
         LOG_DEBUG("Added Renderpass Handle {} for Renderpass {}", handle, iter.first);
     }
 
+    for (auto & iter: render_config.renderpass_order)
+    {
+        LOG_DEBUG("Added Renderpass {} to draw ordering", iter);
+        auto rp_handle = render_pass_handles[iter];
+        auto sp_count  = render_pass_configs[rp_handle].subpasses.size();
+
+        renderpass_order.push_back(rp_handle);
+        per_renderpass_subpass_pipelines[rp_handle].resize(sp_count);
+    }
+
     render_passes.resize(render_pass_configs.size());
     framebuffers.resize(render_pass_configs.size());
 
@@ -3956,11 +3981,14 @@ bool PipelineResources::init(RenderConfig &        render_config,
     }
 
     pipeline_configs.reserve(render_config.pipeline_configs.size());
+    draw_buckets.reserve(render_config.pipeline_configs.size());
     for (auto & iter: render_config.pipeline_configs)
     {
         auto pipeline_handle         = pipeline_configs.size();
         pipeline_handles[iter.first] = pipeline_handle;
         pipeline_configs.push_back(iter.second);
+        // TODO: This should be a number dependant on the render_config
+        draw_buckets.emplace_back(4);
 
         LOG_DEBUG("Added Pipeline Handle {} for Pipeline {}", pipeline_handle, iter.first);
     }
@@ -4024,8 +4052,9 @@ ErrorCode PipelineResources::createGraphicsPipeline(Device &              device
 {
     for (size_t i = 0; i < pipelines.size(); ++i)
     {
-        auto & pipeline        = pipelines[i];
-        auto & pipeline_config = pipeline_configs[i];
+        PipelineHandle pipeline_handle = i;
+        auto &         pipeline        = pipelines[pipeline_handle];
+        auto &         pipeline_config = pipeline_configs[pipeline_handle];
 
         LOG_DEBUG("Pipeline {} uses fragment shader {}, handle {}",
                   i,
@@ -4187,6 +4216,16 @@ ErrorCode PipelineResources::createGraphicsPipeline(Device &              device
         auto & render_pass_config = render_passes.render_pass_configs[render_pass_handle];
         auto   subpass_handle     = render_pass_config.subpass_handles[pipeline_config.subpass];
 
+        // push this pipeline handle into the map of commandbuckets
+
+        LOG_DEBUG("Adding Pipeline {} to Renderpass {} at Subpass {}",
+                  pipeline_handle,
+                  render_pass_handle,
+                  subpass_handle);
+
+        render_passes.per_renderpass_subpass_pipelines[render_pass_handle][subpass_handle]
+            .push_back(pipeline_handle);
+
         auto pipelineInfo = VkGraphicsPipelineCreateInfo{
             .sType               = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO,
             .stageCount          = 2,
@@ -4224,7 +4263,6 @@ bool CommandResources::init(RenderConfig & render_config, Device & device)
 
     for (uint32_t i = 0; i < MAX_BUFFERED_RESOURCES; ++i)
     {
-        draw_buckets.emplace_back(4);
         transfer_buckets.emplace_back(9);
         delete_buckets.emplace_back(5);
     }
@@ -4241,11 +4279,10 @@ bool CommandResources::init(RenderConfig & render_config, Device & device)
 
 void CommandResources::quit(Device & device)
 {
-    for (uint32_t i = 0; i < draw_buckets.size(); ++i)
+    for (uint32_t i = 0; i < delete_buckets.size(); ++i)
     {
         delete_buckets[i].Submit();
         delete_buckets[i].Clear();
-        draw_buckets[i].Clear();
         transfer_buckets[i].Clear();
     }
 
@@ -4697,7 +4734,6 @@ bool Renderer::draw_frame(uint32_t uniform_count, UniformHandle * p_uniforms)
     buffers.dynamic_mapped_indices[frames.currentResource].reset();
     buffers.staging_buffer[frames.currentResource].reset();
 
-    commands.draw_buckets[frames.currentResource].Clear();
     commands.transfer_buckets[frames.currentResource].Clear();
     commands.delete_buckets[frames.currentResource].Submit();
 
@@ -4718,7 +4754,7 @@ ErrorCode Renderer::draw(PipelineHandle    pipeline,
     VkDeviceSize vertex_offset = mapped_vertices.copy(vertices_size, vertices);
     VkDeviceSize index_offset  = mapped_indices.copy(sizeof(uint32_t) * index_count, indices);
 
-    auto & bucket = commands.draw_buckets[frames.currentResource];
+    auto & bucket = pipelines.draw_buckets[pipeline];
 
     Draw * command               = bucket.AddCommand<Draw>(0, sizeof(glm::mat4));
     command->commandbuffer       = commands.draw_commandbuffers[frames.currentResource];
@@ -4742,7 +4778,7 @@ ErrorCode Renderer::draw(PipelineHandle    pipeline,
                          VkDeviceSize      indexbuffer_count)
 {
     LOG_INFO("Queuing draw call");
-    auto & bucket = commands.draw_buckets[frames.currentResource];
+    auto & bucket = pipelines.draw_buckets[pipeline];
 
     auto opt_vertex_buffer = buffers.get_buffer(vertexbuffer_handle);
 
@@ -5140,7 +5176,6 @@ ErrorCode Renderer::createCommandbuffer(uint32_t        image_index,
     auto & mapped_indices  = buffers.dynamic_mapped_indices[frames.currentResource];
 
     auto   commandbuffer = commands.draw_commandbuffers[frames.currentResource];
-    auto & draw_bucket   = commands.draw_buckets[frames.currentResource];
 
     auto beginInfo = VkCommandBufferBeginInfo{.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
                                               .flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,
@@ -5166,65 +5201,85 @@ ErrorCode Renderer::createCommandbuffer(uint32_t        image_index,
                          0,
                          nullptr);
 
-    auto clearValues = std::array<VkClearValue, 2>{VkClearValue{.color = {0.0f, 0.0f, 0.0f, 1.0f}},
-                                                   VkClearValue{.depthStencil = {1.0f, 0}}};
-
-    auto renderPassInfo = VkRenderPassBeginInfo{
-        .sType      = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
-        .renderPass = render_passes.render_passes[0],
-        .framebuffer
-        = render_passes
-              .framebuffers[0][image_index], // framebuffers[resource_index][0].vk_framebuffer,
-        .renderArea.offset = {0, 0},
-        .renderArea.extent = render_device.swapchain_extent,
-        .clearValueCount   = static_cast<uint32_t>(clearValues.size()),
-        .pClearValues      = clearValues.data()};
-
-    vkCmdBeginRenderPass(commandbuffer, &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
-
-    vkCmdBindPipeline(
-        commandbuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelines.pipelines[0].vk_pipeline);
-
-    std::vector<VkDescriptorSet> descriptorsets;
-    std::vector<uint32_t>        dynamic_offsets;
-
-    for (size_t i = 0; i < uniform_count; ++i)
+    for (RenderpassHandle const & rp_handle: render_passes.renderpass_order)
     {
-        auto uniform_handle = p_uniforms[i];
-        auto opt_uniform    = getUniform(uniform_handle);
+        LOG_TRACE("Drawing Renderpass {}", rp_handle);
 
-        if (opt_uniform.has_value())
+        auto clearValues = std::array<VkClearValue, 2>{
+            VkClearValue{.color = {0.0f, 0.0f, 0.0f, 1.0f}},
+            VkClearValue{.depthStencil = {1.0f, 0}}};
+
+        auto renderPassInfo = VkRenderPassBeginInfo{
+            .sType             = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
+            .renderPass        = render_passes.render_passes[rp_handle],
+            .framebuffer       = render_passes.framebuffers[rp_handle][image_index],
+            .renderArea.offset = {0, 0},
+            .renderArea.extent = render_device.swapchain_extent,
+            .clearValueCount   = static_cast<uint32_t>(clearValues.size()),
+            .pClearValues      = clearValues.data()};
+
+        vkCmdBeginRenderPass(commandbuffer, &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
+
+        auto & subpasses = render_passes.per_renderpass_subpass_pipelines[rp_handle];
+
+        for (SubpassHandle sp_handle = 0; sp_handle < subpasses.size(); ++sp_handle)
         {
-            descriptorsets.push_back(opt_uniform.value());
-        }
-        else
-        {
-            LOG_ERROR("No Descriptor Set returned for Uniform {} {}",
-                      uniform_handle.uniform_layout_id,
-                      uniform_handle.uniform_id);
-            continue;
+            auto & subpass_pipelines = subpasses[sp_handle];
+
+            for (auto pipeline_handle: subpass_pipelines)
+            {
+                vkCmdBindPipeline(commandbuffer,
+                                  VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                  pipelines.pipelines[pipeline_handle].vk_pipeline);
+
+                std::vector<VkDescriptorSet> descriptorsets;
+                std::vector<uint32_t>        dynamic_offsets;
+
+                for (size_t i = 0; i < uniform_count; ++i)
+                {
+                    auto uniform_handle = p_uniforms[i];
+                    auto opt_uniform    = getUniform(uniform_handle);
+
+                    if (opt_uniform.has_value())
+                    {
+                        descriptorsets.push_back(opt_uniform.value());
+                    }
+                    else
+                    {
+                        LOG_ERROR("No Descriptor Set returned for Uniform {} {}",
+                                  uniform_handle.uniform_layout_id,
+                                  uniform_handle.uniform_id);
+                        continue;
+                    }
+
+                    auto opt_offset = getDynamicOffset(uniform_handle);
+
+                    if (opt_offset.has_value())
+                    {
+                        dynamic_offsets.push_back(opt_offset.value());
+                    }
+                }
+
+                vkCmdBindDescriptorSets(commandbuffer,
+                                        VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                        pipelines.pipelines[pipeline_handle].vk_pipeline_layout,
+                                        0,
+                                        static_cast<uint32_t>(descriptorsets.size()),
+                                        descriptorsets.data(),
+                                        static_cast<uint32_t>(dynamic_offsets.size()),
+                                        dynamic_offsets.data());
+
+                pipelines.draw_buckets[pipeline_handle].Submit();
+                pipelines.draw_buckets[pipeline_handle].Clear();
+            }
+            if (sp_handle != subpasses.size() - 1)
+            {
+                vkCmdNextSubpass(commandbuffer, VK_SUBPASS_CONTENTS_INLINE);
+            }
         }
 
-        auto opt_offset = getDynamicOffset(uniform_handle);
-
-        if (opt_offset.has_value())
-        {
-            dynamic_offsets.push_back(opt_offset.value());
-        }
+        vkCmdEndRenderPass(commandbuffer);
     }
-
-    vkCmdBindDescriptorSets(commandbuffer,
-                            VK_PIPELINE_BIND_POINT_GRAPHICS,
-                            pipelines.pipelines[0].vk_pipeline_layout,
-                            0,
-                            static_cast<uint32_t>(descriptorsets.size()),
-                            descriptorsets.data(),
-                            static_cast<uint32_t>(dynamic_offsets.size()),
-                            dynamic_offsets.data());
-
-    draw_bucket.Submit();
-
-    vkCmdEndRenderPass(commandbuffer);
 
     VK_CHECK_RESULT(vkEndCommandBuffer(commandbuffer), "Unable to end VkCommandBuffer recording");
 

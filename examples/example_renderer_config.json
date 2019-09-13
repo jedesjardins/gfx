@@ -91,6 +91,9 @@
 			]
 		}
 	],
+	"renderpass_order": [
+		"rp_main_render_pass"
+	],
 	"shaders":
 	[
 		{
