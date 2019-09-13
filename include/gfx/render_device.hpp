@@ -395,9 +395,9 @@ struct RenderConfig
 
     char const * window_name;
 
-    size_t dynamic_vertices_count;
+    size_t dynamic_vertex_buffer_size;
 
-    size_t dynamic_indices_count;
+    size_t dynamic_index_buffer_size;
 
     size_t staging_buffer_size;
 
@@ -2299,15 +2299,15 @@ void RenderConfig::init()
     assert(document["window_name"].IsString());
     window_name = document["window_name"].GetString();
 
-    assert(document.HasMember("dynamic_vertices_count"));
-    assert(document["dynamic_vertices_count"].IsNumber());
-    assert(document["dynamic_vertices_count"].IsInt());
-    dynamic_vertices_count = document["dynamic_vertices_count"].GetInt();
+    assert(document.HasMember("dynamic_vertex_buffer_size"));
+    assert(document["dynamic_vertex_buffer_size"].IsNumber());
+    assert(document["dynamic_vertex_buffer_size"].IsInt());
+    dynamic_vertex_buffer_size = document["dynamic_vertex_buffer_size"].GetInt();
 
-    assert(document.HasMember("dynamic_indices_count"));
-    assert(document["dynamic_indices_count"].IsNumber());
-    assert(document["dynamic_indices_count"].IsInt());
-    dynamic_indices_count = document["dynamic_indices_count"].GetInt();
+    assert(document.HasMember("dynamic_index_buffer_size"));
+    assert(document["dynamic_index_buffer_size"].IsNumber());
+    assert(document["dynamic_index_buffer_size"].IsInt());
+    dynamic_index_buffer_size = document["dynamic_index_buffer_size"].GetInt();
 
     assert(document.HasMember("staging_buffer_size"));
     assert(document["staging_buffer_size"].IsNumber());
@@ -4352,8 +4352,8 @@ bool BufferResources::init(RenderConfig & render_config, Device & device, FrameR
 {
     if (createDynamicObjectResources(device,
                                      frames,
-                                     render_config.dynamic_vertices_count,
-                                     render_config.dynamic_indices_count)
+                                     render_config.dynamic_vertex_buffer_size,
+                                     render_config.dynamic_index_buffer_size)
         != ErrorCode::NONE)
     {
         return false;
@@ -4380,14 +4380,14 @@ void BufferResources::quit(Device & device)
 
 ErrorCode BufferResources::createDynamicObjectResources(Device &         device,
                                                         FrameResources & frames,
-                                                        size_t           dynamic_vertices_count,
-                                                        size_t           dynamic_indices_count)
+                                                        size_t           dynamic_vertex_buffer_size,
+                                                        size_t           dynamic_index_buffer_size)
 {
     dynamic_mapped_vertices.reserve(frames.MAX_BUFFERED_RESOURCES);
     dynamic_mapped_indices.reserve(frames.MAX_BUFFERED_RESOURCES);
 
-    VkDeviceSize vertices_memory_size = 32 * dynamic_vertices_count;
-    VkDeviceSize indices_memory_size  = sizeof(uint32_t) * dynamic_indices_count;
+    VkDeviceSize vertices_memory_size = dynamic_vertex_buffer_size;
+    VkDeviceSize indices_memory_size  = dynamic_index_buffer_size;
 
     for (uint32_t i = 0; i < frames.MAX_BUFFERED_RESOURCES; ++i)
     {
