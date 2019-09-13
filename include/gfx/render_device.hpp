@@ -378,6 +378,8 @@ struct PipelineConfig
     std::string renderpass;
     std::string subpass;
 
+    size_t max_draw_calls;
+
     void init(rapidjson::Value & document, std::unordered_map<std::string, std::string> const &);
 };
 
@@ -2266,6 +2268,10 @@ void PipelineConfig::init(rapidjson::Value &                                   d
     assert(document.HasMember("subpass"));
     assert(document["subpass"].IsString());
     subpass = document["subpass"].GetString();
+
+    assert(document.HasMember("max_drawn_objects"));
+    assert(document["max_drawn_objects"].IsUint());
+    max_draw_calls = document["max_drawn_objects"].GetUint();
 }
 
 void RenderConfig::init()
@@ -3987,8 +3993,7 @@ bool PipelineResources::init(RenderConfig &        render_config,
         auto pipeline_handle         = pipeline_configs.size();
         pipeline_handles[iter.first] = pipeline_handle;
         pipeline_configs.push_back(iter.second);
-        // TODO: This should be a number dependant on the render_config
-        draw_buckets.emplace_back(4);
+        draw_buckets.emplace_back(iter.second.max_draw_calls);
 
         LOG_DEBUG("Added Pipeline Handle {} for Pipeline {}", pipeline_handle, iter.first);
     }
