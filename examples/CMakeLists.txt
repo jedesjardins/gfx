@@ -23,6 +23,7 @@ endif()
 set(SOURCES_SINGLE_FILE
 	# list test files here
 	variable_vertex_buffers.cpp
+	pong.cpp
 )
 
 # get base names of each file (strips off .cpp)
