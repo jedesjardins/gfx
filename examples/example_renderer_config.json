@@ -3,6 +3,8 @@
 	"dynamic_vertex_buffer_size": 1024,
 	"dynamic_index_buffer_size": 1024,
 	"staging_buffer_size": 1024,
+	"max_updated_objects": 7,
+	"max_deleted_objects": 4,
 	"attachments":
 	[
 		{

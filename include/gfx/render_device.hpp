@@ -395,6 +395,10 @@ struct RenderConfig
 
     size_t staging_buffer_size;
 
+    size_t max_transfer_count;
+
+    size_t max_delete_count;
+
     std::unordered_map<std::string, RenderpassConfig> renderpass_configs;
 
     std::vector<std::string> renderpass_order;
@@ -2329,6 +2333,16 @@ void RenderConfig::init()
     assert(document["staging_buffer_size"].IsNumber());
     assert(document["staging_buffer_size"].IsInt());
     staging_buffer_size = document["staging_buffer_size"].GetInt();
+
+    assert(document.HasMember("max_updated_objects"));
+    assert(document["max_updated_objects"].IsUint());
+    max_transfer_count = document["max_updated_objects"].GetUint();
+
+    assert(document.HasMember("max_deleted_objects"));
+    assert(document["max_deleted_objects"].IsUint());
+    max_delete_count = document["max_deleted_objects"].GetUint();
+
+    assert(document.HasMember("max_deleted_objects"));
 
     assert(document.HasMember("attachments"));
     assert(document["attachments"].IsArray());
@@ -4291,10 +4305,13 @@ bool CommandResources::init(RenderConfig & render_config, Device & device)
 {
     int32_t const MAX_BUFFERED_RESOURCES = 3;
 
+    size_t max_transfer_count = render_config.max_transfer_count;
+    size_t max_delete_count = render_config.max_delete_count;
+
     for (uint32_t i = 0; i < MAX_BUFFERED_RESOURCES; ++i)
     {
-        transfer_buckets.emplace_back(15);
-        delete_buckets.emplace_back(5);
+        transfer_buckets.emplace_back(max_transfer_count);
+        delete_buckets.emplace_back(max_delete_count);
     }
 
     getQueues(device);
