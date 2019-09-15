@@ -1,18 +1,12 @@
 #ifndef JED_GFX_RENDER_DEVICE_HPP
 #define JED_GFX_RENDER_DEVICE_HPP
 
-#define GLM_FORCE_RADIANS
-#define GLM_FORCE_DEPTH_ZERO_TO_ONE
-#include <glm/glm.hpp>
-#include <glm/gtc/type_ptr.hpp>
-
 #include <vulkan/vulkan.h>
 #include <GLFW/glfw3.h>
 
 #include <vector>
 #include <array>
 #include <set>
-#include <iostream>
 #include <fstream>
 #include <variant>
 #include <optional>
@@ -36,7 +30,7 @@
 #define LOG_INFO(...)
 #endif
 
-#ifndef LOG_INFO
+#ifndef LOG_WARN
 #define LOG_WARN(...)
 #endif
 
@@ -4299,7 +4293,7 @@ bool CommandResources::init(RenderConfig & render_config, Device & device)
 
     for (uint32_t i = 0; i < MAX_BUFFERED_RESOURCES; ++i)
     {
-        transfer_buckets.emplace_back(9);
+        transfer_buckets.emplace_back(15);
         delete_buckets.emplace_back(5);
     }
 
@@ -4644,7 +4638,7 @@ void Renderer::wait_for_idle()
 
 bool Renderer::submit_frame()
 {
-    LOG_INFO("Drawing frame");
+    LOG_DEBUG("Drawing frame");
     vkWaitForFences(render_device.logical_device,
                     1,
                     &frames.in_flight_fences[frames.currentFrame],
@@ -4787,7 +4781,7 @@ ErrorCode Renderer::draw(PipelineHandle  pipeline,
                          UniformHandle * p_uniforms)
 {
     assert(push_constant_size < 128);
-    LOG_INFO("Queuing draw call");
+    LOG_DEBUG("Queuing draw call");
 
     auto & mapped_vertices = buffers.dynamic_mapped_vertices[frames.currentResource];
     auto & mapped_indices  = buffers.dynamic_mapped_indices[frames.currentResource];
@@ -4823,7 +4817,7 @@ ErrorCode Renderer::draw(PipelineHandle  pipeline,
                          UniformHandle * p_uniforms)
 {
     assert(push_constant_size < 128);
-    LOG_INFO("Queuing draw call");
+    LOG_DEBUG("Queuing draw call");
 
     // get bucket
     auto & bucket = pipelines.draw_buckets[pipeline];

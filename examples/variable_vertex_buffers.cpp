@@ -18,6 +18,11 @@
 #include "stb_image.h"
 #undef STB_IMAGE_IMPLEMENTATION
 
+#define GLM_FORCE_RADIANS
+#define GLM_FORCE_DEPTH_ZERO_TO_ONE
+#include <glm/glm.hpp>
+#include <glm/gtc/type_ptr.hpp>
+
 #include <variant>
 #include <iostream>
 #include <numeric>
