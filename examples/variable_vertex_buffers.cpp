@@ -18,6 +18,11 @@
 #include "stb_image.h"
 #undef STB_IMAGE_IMPLEMENTATION
 
+#define GLM_FORCE_RADIANS
+#define GLM_FORCE_DEPTH_ZERO_TO_ONE
+#include <glm/glm.hpp>
+#include <glm/gtc/type_ptr.hpp>
+
 #include <variant>
 #include <iostream>
 #include <numeric>
@@ -214,30 +219,34 @@ public:
         render_device.delete_buffers(2, buffers);
     }
 
-    void draw(gfx::Renderer & render_device)
+    void draw(gfx::Renderer & render_device, size_t uniform_count, gfx::UniformHandle * uniforms)
     {
         if (std::holds_alternative<StaticVertexData>(vertex_data))
         {
             auto & static_data = std::get<StaticVertexData>(vertex_data);
 
             render_device.draw(material.pipeline,
-                               material.transform,
                                static_data.vertexbuffer,
                                0,
                                static_data.indexbuffer,
                                0,
-                               static_data.index_count);
+                               static_data.index_count,
+                               sizeof(glm::mat4),
+                               glm::value_ptr(material.transform),
+                               uniform_count, uniforms);
         }
         else if (std::holds_alternative<StreamedVertexData>(vertex_data))
         {
             auto & streamed_data = std::get<StreamedVertexData>(vertex_data);
 
             render_device.draw(material.pipeline,
-                               material.transform,
                                streamed_data.vertex_count * sizeof(Vertex),
                                streamed_data.vertices,
                                streamed_data.index_count,
-                               streamed_data.indices);
+                               streamed_data.indices,
+                               sizeof(glm::mat4),
+                               glm::value_ptr(material.transform),
+                               uniform_count, uniforms);
         }
     }
 
@@ -370,15 +379,14 @@ int main()
                          obj_indices.data(),
                          "colored_texture_shader");
 
-    objects[0].getMaterial().transform = glm::scale(glm::mat4{1.f}, glm::vec3{.5f, .5f, .5f});
-
     objects.emplace_back(render_device,
                          ObjectType::STATIC,
                          obj2_vertices.size(),
                          obj2_vertices.data(),
                          obj_indices.size(),
                          obj_indices.data(),
-                         "simple_texture_shader");
+                         "simple_texture_shader",
+                         glm::scale(glm::mat4{1.f}, glm::vec3{.5f, .5f, .5f}));
 
     objects.emplace_back(render_device,
                          ObjectType::STREAMED,
@@ -428,6 +436,8 @@ int main()
     auto opt_sampler_handle = render_device.new_uniform(opt_layout_handle.value(), texture);
     gfx::UniformHandle sampler_handle = opt_sampler_handle.value();
 
+    std::array<gfx::UniformHandle, 2> uniforms{view_handle, sampler_handle};
+
     auto clock = RawClock{};
 
     clock.Clear();
@@ -464,12 +474,10 @@ int main()
 
         for (uint32_t i = 0; i < objects.size(); ++i)
         {
-            objects[i].draw(render_device);
+            objects[i].draw(render_device, uniforms.size(), uniforms.data());
         }
 
-        std::array<gfx::UniformHandle, 2> uniforms = {view_handle, sampler_handle};
-
-        draw_success = render_device.draw_frame(2, uniforms.data());
+        draw_success = render_device.submit_frame();
 
         frame_times[++frameIndex % frame_times.size()] = clock.Restart();
 

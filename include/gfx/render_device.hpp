@@ -1,18 +1,12 @@
 #ifndef JED_GFX_RENDER_DEVICE_HPP
 #define JED_GFX_RENDER_DEVICE_HPP
 
-#define GLM_FORCE_RADIANS
-#define GLM_FORCE_DEPTH_ZERO_TO_ONE
-#include <glm/glm.hpp>
-#include <glm/gtc/type_ptr.hpp>
-
 #include <vulkan/vulkan.h>
 #include <GLFW/glfw3.h>
 
 #include <vector>
 #include <array>
 #include <set>
-#include <iostream>
 #include <fstream>
 #include <variant>
 #include <optional>
@@ -36,7 +30,7 @@
 #define LOG_INFO(...)
 #endif
 
-#ifndef LOG_INFO
+#ifndef LOG_WARN
 #define LOG_WARN(...)
 #endif
 
@@ -430,14 +424,19 @@ struct Draw
 {
     static cmd::BackendDispatchFunction const DISPATCH_FUNCTION;
 
-    VkCommandBuffer  commandbuffer;
-    VkBuffer         vertexbuffer;
-    VkDeviceSize     vertexbuffer_offset;
-    VkBuffer         indexbuffer;
-    VkDeviceSize     indexbuffer_offset;
-    VkDeviceSize     indexbuffer_count;
-    VkPipelineLayout pipeline_layout;
-    glm::mat4        transform;
+    VkCommandBuffer   commandbuffer;
+    VkPipelineLayout  pipeline_layout;
+    VkBuffer          vertexbuffer;
+    VkDeviceSize      vertexbuffer_offset;
+    VkBuffer          indexbuffer;
+    VkDeviceSize      indexbuffer_offset;
+    VkDeviceSize      indexbuffer_count;
+    VkDeviceSize      push_constant_size;
+    void *            push_constant_data;
+    VkDeviceSize      descriptor_set_count;
+    VkDescriptorSet * descriptor_sets;
+    VkDeviceSize      dynamic_offset_count;
+    uint32_t *        dynamic_offsets;
 };
 static_assert(std::is_pod<Draw>::value == true, "Draw must be a POD.");
 
@@ -907,27 +906,34 @@ public:
 
     void wait_for_idle();
 
-    bool draw_frame(uint32_t uniform_count, UniformHandle * p_uniforms);
+    bool submit_frame();
 
-    ErrorCode draw(PipelineHandle    pipeline,
-                   glm::mat4 const & transform,
-                   size_t            vertices_size,
-                   void *            vertices,
-                   uint32_t          index_count,
-                   uint32_t *        indices);
+    ErrorCode draw(PipelineHandle  pipeline,
+                   size_t          vertices_size,
+                   void *          vertices,
+                   uint32_t        index_count,
+                   uint32_t *      indices,
+                   size_t          push_constant_size,
+                   void *          push_constant_data,
+                   size_t          uniform_count,
+                   UniformHandle * p_uniforms);
 
-    ErrorCode draw(PipelineHandle    pipeline,
-                   glm::mat4 const & transform,
-                   BufferHandle      vertexbuffer_handle,
-                   VkDeviceSize      vertexbuffer_offset,
-                   BufferHandle      indexbuffer_handle,
-                   VkDeviceSize      indexbuffer_offset,
-                   VkDeviceSize      indexbuffer_count);
+    ErrorCode draw(PipelineHandle  pipeline,
+                   BufferHandle    vertexbuffer_handle,
+                   VkDeviceSize    vertexbuffer_offset,
+                   BufferHandle    indexbuffer_handle,
+                   VkDeviceSize    indexbuffer_offset,
+                   VkDeviceSize    indexbuffer_count,
+                   size_t          push_constant_size,
+                   void *          push_constant_data,
+                   size_t          uniform_count,
+                   UniformHandle * p_uniforms);
 
     std::optional<UniformLayoutHandle> get_uniform_layout_handle(std::string layout_name);
     std::optional<PipelineHandle>      get_pipeline_handle(std::string pipeline_name);
 
     /*
+    // TODO: figure out how to do this better
     template <typename... Args>
     std::optional<UniformHandle> newUniform(UniformLayoutHandle layout_handle, Args &&... args)
     {
@@ -990,13 +996,23 @@ public:
     void delete_textures(size_t sampler_count, TextureHandle * sampler_handles);
 
 private:
+    ErrorCode make_draw_command(cmd::CommandBucket<int> & bucket,
+                                VkPipelineLayout          layout,
+                                VkBuffer                  vertex_buffer,
+                                VkDeviceSize              vertex_buffer_offset,
+                                VkBuffer                  index_buffer,
+                                VkDeviceSize              Index_buffer_offset,
+                                VkDeviceSize              index_buffer_count,
+                                size_t                    push_constant_size,
+                                void *                    push_constant_data,
+                                size_t                    uniform_count,
+                                UniformHandle *           p_uniforms);
+
     std::optional<VkDescriptorSet> getUniform(UniformHandle handle);
 
     std::optional<VkDeviceSize> getDynamicOffset(UniformHandle handle);
 
-    ErrorCode createCommandbuffer(uint32_t        image_index,
-                                  uint32_t        uniform_count,
-                                  UniformHandle * p_uniforms);
+    ErrorCode createCommandbuffer(uint32_t image_index);
 
     void copyBuffer(VkBuffer     srcBuffer,
                     VkDeviceSize srcOffset,
@@ -2434,8 +2450,17 @@ void draw(void const * data)
                        realdata->pipeline_layout,
                        VK_SHADER_STAGE_VERTEX_BIT,
                        0,
-                       sizeof(glm::mat4),
-                       glm::value_ptr(realdata->transform));
+                       realdata->push_constant_size,
+                       realdata->push_constant_data);
+
+    vkCmdBindDescriptorSets(realdata->commandbuffer,
+                            VK_PIPELINE_BIND_POINT_GRAPHICS,
+                            realdata->pipeline_layout,
+                            0,
+                            realdata->descriptor_set_count,
+                            realdata->descriptor_sets,
+                            realdata->dynamic_offset_count,
+                            realdata->dynamic_offsets);
 
     vkCmdBindVertexBuffers(
         realdata->commandbuffer, 0, 1, &realdata->vertexbuffer, &realdata->vertexbuffer_offset);
@@ -4268,7 +4293,7 @@ bool CommandResources::init(RenderConfig & render_config, Device & device)
 
     for (uint32_t i = 0; i < MAX_BUFFERED_RESOURCES; ++i)
     {
-        transfer_buckets.emplace_back(9);
+        transfer_buckets.emplace_back(15);
         delete_buckets.emplace_back(5);
     }
 
@@ -4611,9 +4636,9 @@ void Renderer::wait_for_idle()
     vkDeviceWaitIdle(render_device.logical_device);
 }
 
-bool Renderer::draw_frame(uint32_t uniform_count, UniformHandle * p_uniforms)
+bool Renderer::submit_frame()
 {
-    LOG_INFO("Drawing frame");
+    LOG_DEBUG("Drawing frame");
     vkWaitForFences(render_device.logical_device,
                     1,
                     &frames.in_flight_fences[frames.currentFrame],
@@ -4679,7 +4704,7 @@ bool Renderer::draw_frame(uint32_t uniform_count, UniformHandle * p_uniforms)
 
     VkSemaphore signalSemaphores[] = {frames.render_finished_semaphores[frames.currentFrame]};
 
-    createCommandbuffer(frames.currentImage, uniform_count, p_uniforms);
+    createCommandbuffer(frames.currentImage);
 
     auto submitInfo = VkSubmitInfo{
         .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
@@ -4745,46 +4770,59 @@ bool Renderer::draw_frame(uint32_t uniform_count, UniformHandle * p_uniforms)
     return true;
 }
 
-ErrorCode Renderer::draw(PipelineHandle    pipeline,
-                         glm::mat4 const & transform,
-                         size_t            vertices_size,
-                         void *            vertices,
-                         uint32_t          index_count,
-                         uint32_t *        indices)
+ErrorCode Renderer::draw(PipelineHandle  pipeline,
+                         size_t          vertices_size,
+                         void *          vertices,
+                         uint32_t        index_buffer_count,
+                         uint32_t *      indices,
+                         size_t          push_constant_size,
+                         void *          push_constant_data,
+                         size_t          uniform_count,
+                         UniformHandle * p_uniforms)
 {
-    LOG_INFO("Queuing draw call");
+    assert(push_constant_size < 128);
+    LOG_DEBUG("Queuing draw call");
+
     auto & mapped_vertices = buffers.dynamic_mapped_vertices[frames.currentResource];
     auto & mapped_indices  = buffers.dynamic_mapped_indices[frames.currentResource];
 
-    VkDeviceSize vertex_offset = mapped_vertices.copy(vertices_size, vertices);
-    VkDeviceSize index_offset  = mapped_indices.copy(sizeof(uint32_t) * index_count, indices);
+    VkDeviceSize vertex_buffer_offset = mapped_vertices.copy(vertices_size, vertices);
+    VkDeviceSize index_buffer_offset  = mapped_indices.copy(sizeof(uint32_t) * index_buffer_count,
+                                                           indices);
 
     auto & bucket = pipelines.draw_buckets[pipeline];
 
-    Draw * command               = bucket.AddCommand<Draw>(0, sizeof(glm::mat4));
-    command->commandbuffer       = commands.draw_commandbuffers[frames.currentResource];
-    command->pipeline_layout     = pipelines.pipelines[pipeline].vk_pipeline_layout;
-    command->transform           = transform;
-    command->vertexbuffer        = mapped_vertices.buffer_handle();
-    command->vertexbuffer_offset = vertex_offset;
-    command->indexbuffer         = mapped_indices.buffer_handle();
-    command->indexbuffer_offset  = index_offset;
-    command->indexbuffer_count   = index_count;
-
-    return ErrorCode::NONE;
+    return make_draw_command(bucket,
+                             pipelines.pipelines[pipeline].vk_pipeline_layout,
+                             mapped_vertices.buffer_handle(),
+                             vertex_buffer_offset,
+                             mapped_indices.buffer_handle(),
+                             index_buffer_offset,
+                             index_buffer_count,
+                             push_constant_size,
+                             push_constant_data,
+                             uniform_count,
+                             p_uniforms);
 }
 
-ErrorCode Renderer::draw(PipelineHandle    pipeline,
-                         glm::mat4 const & transform,
-                         BufferHandle      vertexbuffer_handle,
-                         VkDeviceSize      vertexbuffer_offset,
-                         BufferHandle      indexbuffer_handle,
-                         VkDeviceSize      indexbuffer_offset,
-                         VkDeviceSize      indexbuffer_count)
+ErrorCode Renderer::draw(PipelineHandle  pipeline,
+                         BufferHandle    vertexbuffer_handle,
+                         VkDeviceSize    vertexbuffer_offset,
+                         BufferHandle    indexbuffer_handle,
+                         VkDeviceSize    indexbuffer_offset,
+                         VkDeviceSize    indexbuffer_count,
+                         size_t          push_constant_size,
+                         void *          push_constant_data,
+                         size_t          uniform_count,
+                         UniformHandle * p_uniforms)
 {
-    LOG_INFO("Queuing draw call");
+    assert(push_constant_size < 128);
+    LOG_DEBUG("Queuing draw call");
+
+    // get bucket
     auto & bucket = pipelines.draw_buckets[pipeline];
 
+    // get buffers
     auto opt_vertex_buffer = buffers.get_buffer(vertexbuffer_handle);
 
     if (!opt_vertex_buffer)
@@ -4804,15 +4842,92 @@ ErrorCode Renderer::draw(PipelineHandle    pipeline,
     Buffer vertexbuffer = opt_vertex_buffer.value();
     Buffer indexbuffer  = opt_index_buffer.value();
 
-    Draw * command               = bucket.AddCommand<Draw>(0, sizeof(glm::mat4));
-    command->commandbuffer       = commands.draw_commandbuffers[frames.currentResource];
-    command->pipeline_layout     = pipelines.pipelines[pipeline].vk_pipeline_layout;
-    command->transform           = transform;
-    command->vertexbuffer        = vertexbuffer.buffer_handle();
-    command->vertexbuffer_offset = vertexbuffer_offset;
-    command->indexbuffer         = indexbuffer.buffer_handle();
-    command->indexbuffer_offset  = indexbuffer_offset;
-    command->indexbuffer_count   = indexbuffer_count;
+    return make_draw_command(bucket,
+                             pipelines.pipelines[pipeline].vk_pipeline_layout,
+                             vertexbuffer.buffer_handle(),
+                             vertexbuffer_offset,
+                             indexbuffer.buffer_handle(),
+                             indexbuffer_offset,
+                             indexbuffer_count,
+                             push_constant_size,
+                             push_constant_data,
+                             uniform_count,
+                             p_uniforms);
+}
+
+ErrorCode Renderer::make_draw_command(cmd::CommandBucket<int> & bucket,
+                                      VkPipelineLayout          pipeline_layout,
+                                      VkBuffer                  vertex_buffer,
+                                      VkDeviceSize              vertex_buffer_offset,
+                                      VkBuffer                  index_buffer,
+                                      VkDeviceSize              index_buffer_offset,
+                                      VkDeviceSize              index_buffer_count,
+                                      size_t                    push_constant_size,
+                                      void *                    push_constant_data,
+                                      size_t                    uniform_count,
+                                      UniformHandle *           p_uniforms
+
+)
+{
+    std::vector<VkDescriptorSet> descriptorsets;
+    std::vector<uint32_t>        dynamic_offsets;
+
+    descriptorsets.reserve(uniform_count);
+
+    for (size_t i = 0; i < uniform_count; ++i)
+    {
+        auto uniform_handle = p_uniforms[i];
+        auto opt_uniform    = getUniform(uniform_handle);
+
+        if (opt_uniform.has_value())
+        {
+            descriptorsets.push_back(opt_uniform.value());
+        }
+        else
+        {
+            LOG_ERROR("No Descriptor Set returned for Uniform {} {}",
+                      uniform_handle.uniform_layout_id,
+                      uniform_handle.uniform_id);
+            return ErrorCode::API_ERROR;
+        }
+
+        auto opt_offset = getDynamicOffset(uniform_handle);
+
+        if (opt_offset.has_value())
+        {
+            dynamic_offsets.push_back(opt_offset.value());
+        }
+    }
+
+    size_t descriptor_sets_size = sizeof(VkDescriptorSet) * descriptorsets.size();
+    size_t dynamic_offsets_size = sizeof(uint32_t) * dynamic_offsets.size();
+
+    Draw * command = bucket.AddCommand<Draw>(
+        0, push_constant_size + descriptor_sets_size + dynamic_offsets_size);
+
+    char * command_memory = cmd::commandPacket::GetAuxiliaryMemory(command);
+
+    memcpy(command_memory, push_constant_data, push_constant_size);
+    memcpy(command_memory + push_constant_size, descriptorsets.data(), descriptor_sets_size);
+    memcpy(command_memory + push_constant_size + descriptor_sets_size,
+           dynamic_offsets.data(),
+           dynamic_offsets_size);
+
+    command->commandbuffer        = commands.draw_commandbuffers[frames.currentResource];
+    command->pipeline_layout      = pipeline_layout;
+    command->vertexbuffer         = vertex_buffer;
+    command->vertexbuffer_offset  = vertex_buffer_offset;
+    command->indexbuffer          = index_buffer;
+    command->indexbuffer_offset   = index_buffer_offset;
+    command->indexbuffer_count    = index_buffer_count;
+    command->push_constant_size   = push_constant_size;
+    command->push_constant_data   = reinterpret_cast<void *>(command_memory);
+    command->descriptor_set_count = descriptorsets.size();
+    command->descriptor_sets      = reinterpret_cast<VkDescriptorSet *>(command_memory
+                                                                   + push_constant_size);
+    command->dynamic_offset_count = dynamic_offsets.size();
+    command->dynamic_offsets      = reinterpret_cast<uint32_t *>(command_memory + push_constant_size
+                                                            + descriptor_sets_size);
 
     return ErrorCode::NONE;
 }
@@ -5173,14 +5288,12 @@ void Renderer::delete_textures(size_t texture_count, TextureHandle * texture_han
     }
 }
 
-ErrorCode Renderer::createCommandbuffer(uint32_t        image_index,
-                                        uint32_t        uniform_count,
-                                        UniformHandle * p_uniforms)
+ErrorCode Renderer::createCommandbuffer(uint32_t image_index)
 {
     auto & mapped_vertices = buffers.dynamic_mapped_vertices[frames.currentResource];
     auto & mapped_indices  = buffers.dynamic_mapped_indices[frames.currentResource];
 
-    auto   commandbuffer = commands.draw_commandbuffers[frames.currentResource];
+    auto commandbuffer = commands.draw_commandbuffers[frames.currentResource];
 
     auto beginInfo = VkCommandBufferBeginInfo{.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
                                               .flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,
@@ -5236,43 +5349,6 @@ ErrorCode Renderer::createCommandbuffer(uint32_t        image_index,
                 vkCmdBindPipeline(commandbuffer,
                                   VK_PIPELINE_BIND_POINT_GRAPHICS,
                                   pipelines.pipelines[pipeline_handle].vk_pipeline);
-
-                std::vector<VkDescriptorSet> descriptorsets;
-                std::vector<uint32_t>        dynamic_offsets;
-
-                for (size_t i = 0; i < uniform_count; ++i)
-                {
-                    auto uniform_handle = p_uniforms[i];
-                    auto opt_uniform    = getUniform(uniform_handle);
-
-                    if (opt_uniform.has_value())
-                    {
-                        descriptorsets.push_back(opt_uniform.value());
-                    }
-                    else
-                    {
-                        LOG_ERROR("No Descriptor Set returned for Uniform {} {}",
-                                  uniform_handle.uniform_layout_id,
-                                  uniform_handle.uniform_id);
-                        continue;
-                    }
-
-                    auto opt_offset = getDynamicOffset(uniform_handle);
-
-                    if (opt_offset.has_value())
-                    {
-                        dynamic_offsets.push_back(opt_offset.value());
-                    }
-                }
-
-                vkCmdBindDescriptorSets(commandbuffer,
-                                        VK_PIPELINE_BIND_POINT_GRAPHICS,
-                                        pipelines.pipelines[pipeline_handle].vk_pipeline_layout,
-                                        0,
-                                        static_cast<uint32_t>(descriptorsets.size()),
-                                        descriptorsets.data(),
-                                        static_cast<uint32_t>(dynamic_offsets.size()),
-                                        dynamic_offsets.data());
 
                 pipelines.draw_buckets[pipeline_handle].Submit();
                 pipelines.draw_buckets[pipeline_handle].Clear();
