@@ -19,6 +19,25 @@ if(NOT Log_POPULATED)
 	add_subdirectory(${log_SOURCE_DIR} ${log_BINARY_DIR})
 endif()
 
+FetchContent_Declare(
+	glm
+	GIT_REPOSITORY "https://github.com/g-truc/glm"
+	GIT_TAG 0.9.9.5
+)
+
+FetchContent_GetProperties(glm)
+if(NOT glm_POPULATED)
+	FetchContent_Populate(glm)
+	message(STATUS "glm source dir: ${glm_SOURCE_DIR}")
+	message(STATUS "glm binary dir: ${glm_BINARY_DIR}")
+	message(STATUS "glm include dir: ${glm_SOURCE_DIR}/include")
+
+	set(BUILD_STATIC_LIBS OFF CACHE BOOL "" FORCE)
+	set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
+	set(GLM_TEST_ENABLE OFF CACHE BOOL "" FORCE)
+	add_subdirectory(${glm_SOURCE_DIR} ${glm_BINARY_DIR})
+endif()
+
 # gather all example files
 set(SOURCES_SINGLE_FILE
 	# list test files here
@@ -34,5 +53,5 @@ set(TARGETS_SINGLE_FILE ${BASENAMES_SINGLE_FILE} )
 
 foreach(name ${TARGETS_SINGLE_FILE})
     add_executable(${name} ${CMAKE_CURRENT_LIST_DIR}/${name}.cpp)
-    target_link_libraries(${name} JED::gfx JED::log)
+    target_link_libraries(${name} JED::gfx JED::log glm)
 endforeach()

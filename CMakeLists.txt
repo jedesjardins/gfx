@@ -28,46 +28,6 @@ if(NOT Cmd_POPULATED)
 	add_subdirectory(${cmd_SOURCE_DIR} ${cmd_BINARY_DIR})
 endif()
 
-#[[
-FetchContent_Declare(
-	glfw
-	GIT_REPOSITORY "https://github.com/glfw/glfw"
-	GIT_TAG latest
-)
-
-FetchContent_GetProperties(glfw)
-if(NOT glfw_POPULATED)
-	FetchContent_Populate(glfw)
-	message(STATUS "glfw source dir: ${glfw_SOURCE_DIR}")
-	message(STATUS "glfw binary dir: ${glfw_BINARY_DIR}")
-	message(STATUS "glfw include dir: ${glfw_SOURCE_DIR}/include")
-
-	set(GLFW_BUILD_DOCS OFF CACHE BOOL "" FORCE)
-	set(GLFW_BUILD_TESTS OFF CACHE BOOL "" FORCE)
-	set(GLFW_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
-	add_subdirectory(${glfw_SOURCE_DIR} ${glfw_BINARY_DIR})
-endif()
-]]
-
-FetchContent_Declare(
-	glm
-	GIT_REPOSITORY "https://github.com/g-truc/glm"
-	GIT_TAG 0.9.9.5
-)
-
-FetchContent_GetProperties(glm)
-if(NOT glm_POPULATED)
-	FetchContent_Populate(glm)
-	message(STATUS "glm source dir: ${glm_SOURCE_DIR}")
-	message(STATUS "glm binary dir: ${glm_BINARY_DIR}")
-	message(STATUS "glm include dir: ${glm_SOURCE_DIR}/include")
-
-	set(BUILD_STATIC_LIBS OFF CACHE BOOL "" FORCE)
-	set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
-	set(GLM_TEST_ENABLE OFF CACHE BOOL "" FORCE)
-	add_subdirectory(${glm_SOURCE_DIR} ${glm_BINARY_DIR})
-endif()
-
 FetchContent_Declare(
 	rapidjson
 	GIT_REPOSITORY https://github.com/Tencent/rapidjson.git
@@ -114,7 +74,6 @@ target_link_libraries(Gfx INTERFACE
 	JED::cmd
 	Vulkan::Vulkan
 	glfw
-	glm
 )
 
 add_library(JED::gfx ALIAS Gfx)
