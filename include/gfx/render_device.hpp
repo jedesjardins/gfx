@@ -349,6 +349,7 @@ struct RenderpassConfig
 {
     FramebufferConfig                                        framebuffer_config;
     std::unordered_map<std::string, VkAttachmentDescription> descriptions;
+    std::unordered_map<std::string, VkClearValue>            clear_values;
     std::unordered_map<std::string, SubpassHandle>           subpass_handles;
     std::vector<SubpassInfo>                                 subpasses;
     std::vector<VkSubpassDependency>                         subpass_dependencies;
@@ -759,6 +760,7 @@ public:
     std::vector<RenderpassConfig>                     render_pass_configs;
     std::vector<VkRenderPass>                         render_passes;
     std::vector<std::vector<VkFramebuffer>>           framebuffers;
+    std::vector<std::vector<VkClearValue>>            clear_values;
 
     bool init(RenderConfig & render_config, Device & device, ImageResources & image_resources);
     void quit(Device & device);
@@ -1942,6 +1944,65 @@ VkAttachmentReference initAttachmentReference(rapidjson::Value &  document,
     return reference;
 }
 
+VkClearValue initClearValue(rapidjson::Value const & document)
+{
+    VkClearValue value;
+
+    if (document.HasMember("color"))
+    {
+        value.color = {0.f, 0.f, 0.f, 1.f};
+
+        assert(document["color"].IsArray());
+
+        size_t i = 0;
+        for (auto const & comp_value: document["color"].GetArray())
+        {
+            assert(comp_value.IsNumber());
+            if (comp_value.IsInt())
+            {
+                value.color.float32[i] = comp_value.GetInt();
+            }
+            else if (comp_value.IsDouble())
+            {
+                value.color.float32[i] = comp_value.GetDouble();
+            }
+            ++i;
+        }
+        LOG_DEBUG("Parsed VkClearValue {} {} {} {}",
+                  value.color.float32[0],
+                  value.color.float32[1],
+                  value.color.float32[2],
+                  value.color.float32[3]);
+    }
+    else if (document.HasMember("depth_stencil"))
+    {
+        value.depthStencil = {1.f, 0};
+
+        auto & depth_stencil = document["depth_stencil"];
+
+        assert(depth_stencil.IsArray());
+        assert(depth_stencil.Size() == 2);
+
+        assert(depth_stencil[0].IsNumber());
+        if (depth_stencil[0].IsDouble())
+        {
+            value.depthStencil.depth = depth_stencil[0].GetDouble();
+        }
+        else if (depth_stencil[0].IsUint())
+        {
+            value.depthStencil.depth = depth_stencil[0].GetUint();
+        }
+
+        assert(depth_stencil[1].IsUint());
+        value.depthStencil.stencil = depth_stencil[1].GetUint();
+
+        LOG_DEBUG(
+            "Parsed VkClearValue {} {}", value.depthStencil.depth, value.depthStencil.stencil);
+    }
+
+    return value;
+}
+
 VkPipelineStageFlagBits initStageFlags(rapidjson::Value & document)
 {
     assert(document.IsArray());
@@ -2205,6 +2266,12 @@ void RenderpassConfig::init(rapidjson::Value & document)
         assert(ad["attachment_name"].IsString());
 
         descriptions[ad["attachment_name"].GetString()] = initAttachmentDescription(ad);
+
+        if (ad.HasMember("clear_value"))
+        {
+            assert(ad["clear_value"].IsObject());
+            clear_values[ad["attachment_name"].GetString()] = initClearValue(ad["clear_value"]);
+        }
     }
 
     assert(document.HasMember("subpasses"));
@@ -2675,7 +2742,7 @@ Device::Device(GLFWwindow * window_ptr): window{window_ptr}
 
 bool Device::init(RenderConfig & render_config)
 {
-    // clang-format off
+// clang-format off
     #ifndef NDEBUG
     checkValidationLayerSupport();
     #endif
@@ -2803,7 +2870,7 @@ void Device::getRequiredExtensions()
 // INSTANCE
 ErrorCode Device::createInstance(char const * window_name)
 {
-    // clang-format off
+// clang-format off
     #ifdef NDEBUG
     use_validation = false;
     #else
@@ -3626,6 +3693,7 @@ bool RenderPassResources::init(RenderConfig &   render_config,
 
     render_passes.resize(render_pass_configs.size());
     framebuffers.resize(render_pass_configs.size());
+    clear_values.resize(render_pass_configs.size());
 
     return createRenderPasses(device, image_resources) == ErrorCode::NONE;
 }
@@ -3653,6 +3721,10 @@ ErrorCode RenderPassResources::createRenderPasses(Device & device, ImageResource
         auto & render_pass_config = render_pass_configs[rp_i];
         auto & render_pass        = render_passes[rp_i];
 
+        auto & clear_value_list = clear_values[rp_i];
+        clear_value_list.reserve(render_pass_config.clear_values.size());
+
+        std::vector<std::string>             sorted_names{render_pass_config.descriptions.size()};
         std::vector<VkAttachmentDescription> sorted_descriptions{
             render_pass_config.descriptions.size()};
 
@@ -3690,6 +3762,17 @@ ErrorCode RenderPassResources::createRenderPasses(Device & device, ImageResource
             }
 
             sorted_descriptions[attachment_index] = description;
+            sorted_names[attachment_index] = attachment_name;
+        }
+
+        for (auto & name: sorted_names)
+        {
+        	auto name_clear_value = render_pass_config.clear_values.find(name);
+        	if (name_clear_value != render_pass_config.clear_values.end())
+        	{
+        		clear_value_list.push_back(render_pass_config.clear_values[name]);
+        		LOG_DEBUG("Found clear value for attachment {}", name);
+        	}
         }
 
         std::vector<VkSubpassDescription> subpasses;
@@ -5400,9 +5483,13 @@ ErrorCode Renderer::createCommandbuffer(uint32_t image_index)
     {
         LOG_TRACE("Drawing Renderpass {}", rp_handle);
 
+        /*
         auto clearValues = std::array<VkClearValue, 2>{
             VkClearValue{.color = {0.0f, 0.0f, 0.0f, 1.0f}},
             VkClearValue{.depthStencil = {1.0f, 0}}};
+        */
+
+        auto & clearValues = render_passes.clear_values[rp_handle];
 
         auto renderPassInfo = VkRenderPassBeginInfo{
             .sType             = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,

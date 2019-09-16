@@ -36,14 +36,21 @@
 						"load_op": "CLEAR",
 						"store_op": "DONT_CARE",
 						"initial_layout": "UNDEFINED",
-						"final_layout": "COLOR_ATTACHMENT_OPTIMAL"
+						"final_layout": "COLOR_ATTACHMENT_OPTIMAL",
+						"clear_value": {
+							"color": [0, 0, 0, 1]
+						}
+
 					},
 					{
 						"attachment_name": "a_depth",
 						"load_op": "CLEAR",
 						"store_op": "DONT_CARE",
 						"initial_layout": "UNDEFINED",
-						"final_layout": "DEPTH_STENCIL_ATTACHMENT_OPTIMAL"
+						"final_layout": "DEPTH_STENCIL_ATTACHMENT_OPTIMAL",
+						"clear_value": {
+							"depth_stencil": [1, 0]
+						}
 					},
 					{
 						"attachment_name": "a_screen_color",
