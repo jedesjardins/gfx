@@ -114,7 +114,8 @@
 			"binding": 0,
 			"descriptor_type": "UNIFORM_BUFFER_DYNAMIC",
 			"descriptor_count": 1,
-			"stage": "VERTEX"
+			"stage": "VERTEX",
+			"max_count": 1
 		}
 	],
 	"push_constants":
