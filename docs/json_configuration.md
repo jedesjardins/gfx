@@ -48,4 +48,20 @@ To initialize the Vulkan Renderer you need a JSON configuration file that outlin
 
 * renderpasses
 	* type - array of renderpass objects
-	* usage - used to describe the number and layout of renderpasses in
+	* usage - used to describe the number and layout of renderpasses created at configuration time
+	* renderpass object
+		* name
+			* type - string
+			* usage - the name of this renderpass, used to referenced this renderpass from other configuration objects
+		* framebuffer
+			* type - framebuffer object
+			* usage - the framebuffer that the enclosing renderpass object draws to
+			* framebuffer object
+				* attachments
+					* type - array of attachment description objects
+					* usage - names and usages of attachments
+					* attachment description object
+						* attachment name
+
+		* subpasses
+		* subpass_dependencies
