@@ -265,6 +265,7 @@ struct DynamicBufferUniform
 struct SamplerCollection
 {
     std::vector<VkDescriptorSet> descriptor_sets;
+    IndexAllocator               free_uniform_slots;
 
     std::optional<UniformHandle>   createUniform(VkDevice &  logical_device,
                                                  VkImageView view,
@@ -383,6 +384,14 @@ struct Pipeline
     VkPipelineLayout vk_pipeline_layout;
 };
 
+struct UniformConfig
+{
+    size_t                       max_uniform_count;
+    VkDescriptorSetLayoutBinding layout_binding;
+
+    void init(rapidjson::Value & document);
+};
+
 struct RenderConfig
 {
     char const * config_filename;
@@ -405,7 +414,7 @@ struct RenderConfig
 
     std::unordered_map<std::string, AttachmentConfig> attachment_configs;
 
-    std::unordered_map<std::string, VkDescriptorSetLayoutBinding> uniform_layout_infos;
+    std::unordered_map<std::string, UniformConfig> uniform_configs;
 
     std::unordered_map<std::string, VkPushConstantRange> push_constants;
 
@@ -811,6 +820,7 @@ public:
     std::vector<VkDescriptorSetLayoutBinding> uniform_layout_infos;
     std::vector<VkDescriptorSetLayout>        uniform_layouts;
     std::vector<VkDescriptorPool>             pools;
+    std::vector<size_t>                       uniform_counts;
     std::vector<UniformVariant>               uniform_collections;
 
     bool init(RenderConfig & render_config, Device & device, BufferResources & buffers);
@@ -1632,7 +1642,13 @@ std::optional<UniformHandle> SamplerCollection::createUniform(VkDevice &  logica
                                                               VkImageView view,
                                                               VkSampler   sampler)
 {
-    size_t descriptor_set_index = 0;
+    int64_t descriptor_set_index = free_uniform_slots.acquire();
+    if (descriptor_set_index < 0)
+    {
+        LOG_ERROR("Couldn't acquire a VkDescriptorSet in SamplerCollection", descriptor_set_index);
+        return std::nullopt;
+    }
+    LOG_DEBUG("Acquired descriptor_set_index {} in SamplerCollection", descriptor_set_index);
 
     auto imageInfo = VkDescriptorImageInfo{.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
                                            .imageView   = view,
@@ -1651,7 +1667,7 @@ std::optional<UniformHandle> SamplerCollection::createUniform(VkDevice &  logica
 
     vkUpdateDescriptorSets(logical_device, 1, &descriptorWrite, 0, nullptr);
 
-    return UniformHandle{.uniform_id = descriptor_set_index};
+    return UniformHandle{.uniform_id = static_cast<uint64_t>(descriptor_set_index)};
 }
 
 std::optional<VkDescriptorSet> SamplerCollection::getUniform(UniformHandle handle)
@@ -2294,6 +2310,18 @@ void PipelineConfig::init(rapidjson::Value &                                   d
     max_draw_calls = document["max_drawn_objects"].GetUint();
 }
 
+void UniformConfig::init(rapidjson::Value & document)
+{
+    assert(document.IsObject());
+    assert(document.HasMember("max_count"));
+    assert(document["max_count"].IsUint());
+
+    max_uniform_count = document["max_count"].GetUint();
+    assert(max_uniform_count != 0);
+
+    layout_binding = initVkDescriptorSetLayoutBinding(document);
+}
+
 void RenderConfig::init()
 {
     namespace rj = rapidjson;
@@ -2400,7 +2428,9 @@ void RenderConfig::init()
         assert(ul.HasMember("name"));
         assert(ul["name"].IsString());
 
-        uniform_layout_infos[ul["name"].GetString()] = initVkDescriptorSetLayoutBinding(ul);
+        // uniform_layout_infos[ul["name"].GetString()] = initVkDescriptorSetLayoutBinding(ul);
+
+        uniform_configs[ul["name"].GetString()].init(ul);
     }
 
     assert(document.HasMember("push_constants"));
@@ -3779,13 +3809,16 @@ bool UniformResources::init(RenderConfig &    render_config,
                             Device &          device,
                             BufferResources & buffers)
 {
-    uniform_layout_infos.reserve(render_config.uniform_layout_infos.size());
-    for (auto iter: render_config.uniform_layout_infos)
+    uniform_layout_infos.reserve(render_config.uniform_configs.size());
+    uniform_counts.reserve(render_config.uniform_configs.size());
+
+    for (auto iter: render_config.uniform_configs)
     {
         UniformLayoutHandle handle = uniform_layout_infos.size();
 
         uniform_layout_handles[iter.first] = handle;
-        uniform_layout_infos.push_back(iter.second);
+        uniform_layout_infos.push_back(iter.second.layout_binding);
+        uniform_counts.push_back(iter.second.max_uniform_count);
 
         LOG_DEBUG("Added Uniform Layout Handle {} for Layout {}", handle, iter.first);
     }
@@ -3834,28 +3867,33 @@ ErrorCode UniformResources::createUniformLayouts(Device & device, BufferResource
                             device.logical_device, &layoutInfo, nullptr, &uniform_layout),
                         "Unable to create VkDescriptorSetLayout");
 
-        auto poolsize = VkDescriptorPoolSize{.type            = uniform_layout_info.descriptorType,
-                                             .descriptorCount = 1};
-
-        auto poolInfo = VkDescriptorPoolCreateInfo{
-            .sType         = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
-            .poolSizeCount = 1,
-            .pPoolSizes    = &poolsize,
-            .maxSets       = 1};
-
-        VK_CHECK_RESULT(vkCreateDescriptorPool(device.logical_device, &poolInfo, nullptr, &pool),
-                        "Unable to create VkDescriptorPool");
-
         if (uniform_layout_info.descriptorType == VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC
             || uniform_layout_info.descriptorType == VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC)
         {
-            const size_t descriptor_count      = 1;
-            const size_t uniform_buffer_blocks = 8;
-            const size_t uniform_block_size    = 256;
+            const size_t uniform_count              = uniform_counts[ul_i];
+            const size_t uniforms_per_descriptorset = 8;
+            const size_t descriptor_count = ((uniform_count - 1) / uniforms_per_descriptorset) + 1;
+            const size_t uniform_block_size = 256;
+
+            LOG_DEBUG("descriptor_count for dynamic buffer uniform is {}", descriptor_count);
+
+            auto poolsize = VkDescriptorPoolSize{
+                .type            = uniform_layout_info.descriptorType,
+                .descriptorCount = static_cast<uint32_t>(descriptor_count)};
+
+            auto poolInfo = VkDescriptorPoolCreateInfo{
+                .sType         = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
+                .poolSizeCount = 1,
+                .pPoolSizes    = &poolsize,
+                .maxSets       = static_cast<uint32_t>(descriptor_count)};
+
+            VK_CHECK_RESULT(
+                vkCreateDescriptorPool(device.logical_device, &poolInfo, nullptr, &pool),
+                "Unable to create VkDescriptorPool");
 
             std::vector<MappedBuffer> uniform_buffers; //{descriptor_count};
 
-            VkDeviceSize memory_size = uniform_buffer_blocks * uniform_block_size;
+            VkDeviceSize memory_size = uniforms_per_descriptorset * uniform_block_size;
 
             for (size_t i = 0; i < descriptor_count; ++i)
             {
@@ -3931,21 +3969,39 @@ ErrorCode UniformResources::createUniformLayouts(Device & device, BufferResource
                 .descriptor_sets           = std::move(descriptor_sets),
                 .uniform_buffers           = std::move(uniform_buffers),
                 .uniforms                  = std::vector<DynamicBufferUniform>{descriptor_count
-                                                              * uniform_buffer_blocks},
+                                                              * uniforms_per_descriptorset},
                 .free_uniform_buffer_slots = IndexAllocator(),
                 .free_uniform_slots        = IndexAllocator()};
 
             std::get<DynamicBufferCollection>(uniform_collection)
-                .free_uniform_buffer_slots.init(descriptor_count * uniform_buffer_blocks);
+                .free_uniform_buffer_slots.init(descriptor_count * uniforms_per_descriptorset);
 
             std::get<DynamicBufferCollection>(uniform_collection)
-                .free_uniform_slots.init(descriptor_count * uniform_buffer_blocks);
+                .free_uniform_slots.init(descriptor_count * uniforms_per_descriptorset);
         }
         else if (uniform_layout_info.descriptorType == VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER)
         {
+            const size_t descriptor_count = uniform_counts[ul_i];
+
+            LOG_DEBUG("descriptor_count for sampler uniform is {}", descriptor_count);
+
+            auto poolsize = VkDescriptorPoolSize{
+                .type            = uniform_layout_info.descriptorType,
+                .descriptorCount = static_cast<uint32_t>(descriptor_count)};
+
+            auto poolInfo = VkDescriptorPoolCreateInfo{
+                .sType         = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
+                .poolSizeCount = 1,
+                .pPoolSizes    = &poolsize,
+                .maxSets       = static_cast<uint32_t>(descriptor_count)};
+
+            VK_CHECK_RESULT(
+                vkCreateDescriptorPool(device.logical_device, &poolInfo, nullptr, &pool),
+                "Unable to create VkDescriptorPool");
+
             std::vector<VkDescriptorSet> descriptor_sets;
 
-            descriptor_sets.resize(1);
+            descriptor_sets.resize(uniform_counts[ul_i]);
 
             std::vector<VkDescriptorSetLayout> layouts{descriptor_sets.size(), uniform_layout};
 
@@ -3959,7 +4015,11 @@ ErrorCode UniformResources::createUniformLayouts(Device & device, BufferResource
                 vkAllocateDescriptorSets(device.logical_device, &allocInfo, descriptor_sets.data()),
                 "Unable to allocate VkDescriptorSets");
 
-            uniform_collection = SamplerCollection{.descriptor_sets = descriptor_sets};
+            uniform_collection = SamplerCollection{.descriptor_sets    = descriptor_sets,
+                                                   .free_uniform_slots = IndexAllocator()};
+
+            std::get<SamplerCollection>(uniform_collection)
+                .free_uniform_slots.init(descriptor_sets.size());
         }
     }
 
@@ -4306,7 +4366,7 @@ bool CommandResources::init(RenderConfig & render_config, Device & device)
     int32_t const MAX_BUFFERED_RESOURCES = 3;
 
     size_t max_transfer_count = render_config.max_transfer_count;
-    size_t max_delete_count = render_config.max_delete_count;
+    size_t max_delete_count   = render_config.max_delete_count;
 
     for (uint32_t i = 0; i < MAX_BUFFERED_RESOURCES; ++i)
     {

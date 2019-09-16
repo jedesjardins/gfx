@@ -118,14 +118,16 @@
 			"binding": 0,
 			"descriptor_type": "UNIFORM_BUFFER_DYNAMIC",
 			"descriptor_count": 1,
-			"stage": "VERTEX"
+			"stage": "VERTEX",
+			"max_count": 8
 		},
 		{
 			"name": "ul_texture",
 			"binding": 1,
 			"descriptor_type": "COMBINED_IMAGE_SAMPLER",
 			"descriptor_count": 1,
-			"stage": "FRAGMENT"
+			"stage": "FRAGMENT",
+			"max_count": 8
 		}
 	],
 	"push_constants":
