@@ -4,15 +4,38 @@ To initialize the Vulkan Renderer you need a JSON configuration file that outlin
 
 ## Top level fields
 
-| Field Name | Type | Description |
-| ---------- | ---- | ----------- |
-| window_name | string | the name of the window |
-| dynamic_vertex_buffer_size | uint | the size of the vertex buffer used to upload dynamic vertices every frame |
-| dynamic_vertex_buffer_size | uint | the size of the vertex buffer used to upload dynamic vertices every frame |
-| staging_buffer_size| uint | the size of the staging buffer used to upload data to Device Local buffers, Textures, etc. |
-| max_updated_objects | uint | the maximum number of device memory updates per frame |
-| max_deleted_objects | uint | the maximum number of object delete calls per frame |
-| attachments | array of attachments | used to describe the number and type of attachments created at configuration time |
+| Field Name | Type | Description | Mandatory |
+| ---------- | ---- | ----------- | --------- |
+| window_name | string | the name of the window | Y |
+| dynamic_vertex_buffer_size | uint | the size of the vertex buffer used to upload dynamic vertices every frame | Y |
+| dynamic_vertex_buffer_size | uint | the size of the vertex buffer used to upload dynamic vertices every frame | Y |
+| staging_buffer_size| uint | the size of the staging buffer used to upload data to Device Local buffers, Textures, etc. | Y |
+| max_updated_objects | uint | the maximum number of device memory updates per frame | Y |
+| max_deleted_objects | uint | the maximum number of object delete calls per frame | Y |
+| attachments | array of (Attachment objects)[#Attachment] | describes the number and type of attachments | Y |
+| renderpasses | array of Renderpass objects | describes the number and layout of renderpasses | Y |
+| renderpass_order | array of strings | order of renderpasses to execute, where each string is the name of the renderpass | Y |
+| shaders | array of Shader objects | describes all shaders, vertex and fragment, that are used | Y |
+| uniform_layouts | array of Uniform Layout objects | describes all uniform types that are used | Y |
+| push_constants | array of Push Constant objects | describes all push constants that are used | Y |
+| vertex_bindings | array of Vertex Binding objects | describes all vertex bindings that are used | Y |
+| vertex_attributes | array of Vertex Attribute objects | describes all vertex attributes that are used | Y |
+| pipelines | array of Pipeline objects | describes all pipelines that are used | Y |
+
+### <a name="Attachment"></a> Attachment object fields
+
+| Field Name | Type | Description | Mandatory |
+| ---------- | ---- | ----------- | --------- |
+| name | string | name to reference the attachment by | Y |
+| format | string | either "color" or "depth" | Y |
+| multisampled | boolean | whether or not this attachment is multisampled | N |
+| screen_image | boolean | if this attachment refers to screen memory | N |
+
+###	Renderpass object fields
+
+| Field Name | Type | Description | Mandatory |
+| ---------- | ---- | ----------- | --------- |
+
 
 * attachments
 	* type - array of attachment objects
