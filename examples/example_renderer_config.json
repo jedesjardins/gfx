@@ -10,17 +10,20 @@
 		{
 			"name": "a_multisampled_color",
 			"format": "color",
+			"usage": ["COLOR_ATTACHMENT"],
 			"multisampled": true
 		},
 		{
 			"name": "a_depth",
 			"format": "depth",
+			"usage": ["DEPTH_STENCIL_ATTACHMENT"],
 			"multisampled": true
 		},
 		{
 			"name": "a_screen_color",
 			"is_swapchain_image": true,
 			"format": "color",
+			"usage": ["COLOR_ATTACHMENT"],
 			"multisampled": false
 		}
 	],

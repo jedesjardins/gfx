@@ -312,10 +312,10 @@ enum class Format
 
 struct AttachmentConfig
 {
-    Format format;
+    Format            format;
     VkImageUsageFlags usage;
-    bool   multisampled;
-    bool   is_swapchain_image;
+    bool              multisampled;
+    bool              is_swapchain_image;
 
     void init(rapidjson::Value & document);
 
@@ -1686,45 +1686,90 @@ void SamplerCollection::destroy(VkDevice & logical_device)
 
 VkImageLayout getVkImageLayout(std::string const & layout_name)
 {
+#define MAP_PAIR(value)                 \
+    {                                   \
+#value, VK_IMAGE_LAYOUT_##value \
+    }
+
     static std::unordered_map<std::string, VkImageLayout> layouts{
-        {"UNDEFINED", VK_IMAGE_LAYOUT_UNDEFINED},
-        {"GENERAL", VK_IMAGE_LAYOUT_GENERAL},
-        {"COLOR_ATTACHMENT_OPTIMAL", VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL},
-        {"DEPTH_STENCIL_ATTACHMENT_OPTIMAL", VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL},
-        {"DEPTH_STENCIL_READ_ONLY_OPTIMAL", VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL},
-        {"SHADER_READ_ONLY_OPTIMAL", VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL},
-        {"TRANSFER_SRC_OPTIMAL", VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL},
-        {"TRANSFER_DST_OPTIMAL", VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL},
-        {"PREINITIALIZED", VK_IMAGE_LAYOUT_PREINITIALIZED},
-        {"DEPTH_READ_ONLY_STENCIL_ATTACHMENT_OPTIMAL",
-         VK_IMAGE_LAYOUT_DEPTH_READ_ONLY_STENCIL_ATTACHMENT_OPTIMAL},
-        {"DEPTH_ATTACHMENT_STENCIL_READ_ONLY_OPTIMAL",
-         VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_STENCIL_READ_ONLY_OPTIMAL},
-        {"PRESENT_SRC_KHR", VK_IMAGE_LAYOUT_PRESENT_SRC_KHR},
-        {"SHARED_PRESENT_KHR", VK_IMAGE_LAYOUT_SHARED_PRESENT_KHR}};
+        MAP_PAIR(UNDEFINED),
+        MAP_PAIR(GENERAL),
+        MAP_PAIR(COLOR_ATTACHMENT_OPTIMAL),
+        MAP_PAIR(DEPTH_STENCIL_ATTACHMENT_OPTIMAL),
+        MAP_PAIR(DEPTH_STENCIL_READ_ONLY_OPTIMAL),
+        MAP_PAIR(SHADER_READ_ONLY_OPTIMAL),
+        MAP_PAIR(TRANSFER_SRC_OPTIMAL),
+        MAP_PAIR(TRANSFER_DST_OPTIMAL),
+        MAP_PAIR(PREINITIALIZED),
+        MAP_PAIR(DEPTH_READ_ONLY_STENCIL_ATTACHMENT_OPTIMAL),
+        MAP_PAIR(DEPTH_ATTACHMENT_STENCIL_READ_ONLY_OPTIMAL),
+        MAP_PAIR(PRESENT_SRC_KHR),
+        MAP_PAIR(SHARED_PRESENT_KHR)};
+
+#undef MAP_PAIR
 
     auto layout = layouts.find(layout_name);
     assert(layout != layouts.end());
     if (layout == layouts.end())
     {
-        // return static_cast<VkPipelineStageFlagBits>(0);
+        LOG_ERROR("Couldn't find VkImageLayout {}", layout_name);
+
+        return VK_IMAGE_LAYOUT_UNDEFINED;
     }
 
     return layout->second;
 }
 
+VkImageUsageFlagBits getVkImageUsageFlagBits(std::string const & usage_name)
+{
+#define MAP_PAIR(value)                      \
+    {                                        \
+#value, VK_IMAGE_USAGE_##value##_BIT \
+    }
+
+    static std::unordered_map<std::string, VkImageUsageFlagBits> bits{
+        MAP_PAIR(TRANSFER_SRC),
+        MAP_PAIR(TRANSFER_DST),
+        MAP_PAIR(SAMPLED),
+        MAP_PAIR(STORAGE),
+        MAP_PAIR(COLOR_ATTACHMENT),
+        MAP_PAIR(DEPTH_STENCIL_ATTACHMENT),
+        MAP_PAIR(TRANSIENT_ATTACHMENT),
+        MAP_PAIR(INPUT_ATTACHMENT),
+    };
+
+#undef MAP_PAIR
+
+    auto bit = bits.find(usage_name);
+    assert(bit != bits.end());
+    if (bit == bits.end())
+    {
+        LOG_ERROR("Couldn't find VkImageUsageFlagBit {}", usage_name);
+        return static_cast<VkImageUsageFlagBits>(0);
+    }
+
+    return bit->second;
+}
+
 VkAttachmentLoadOp getVkAttachmentLoadOp(std::string const & op_name)
 {
+#define MAP_PAIR(value)                       \
+    {                                         \
+#value, VK_ATTACHMENT_LOAD_OP_##value \
+    }
+
     static std::unordered_map<std::string, VkAttachmentLoadOp> ops{
-        {"LOAD", VK_ATTACHMENT_LOAD_OP_LOAD},
-        {"CLEAR", VK_ATTACHMENT_LOAD_OP_CLEAR},
-        {"DONT_CARE", VK_ATTACHMENT_LOAD_OP_DONT_CARE}};
+        MAP_PAIR(LOAD), MAP_PAIR(CLEAR), MAP_PAIR(DONT_CARE)};
+
+#undef MAP_PAIR
 
     auto op = ops.find(op_name);
     assert(op != ops.end());
     if (op == ops.end())
     {
-        // return static_cast<VkPipelineStageFlagBits>(0);
+        LOG_ERROR("Couldn't find VkAttachmentLoadOp {}", op_name);
+
+        return VK_ATTACHMENT_LOAD_OP_DONT_CARE;
     }
 
     return op->second;
@@ -1732,14 +1777,22 @@ VkAttachmentLoadOp getVkAttachmentLoadOp(std::string const & op_name)
 
 VkAttachmentStoreOp getVkAttachmentStoreOp(std::string const & op_name)
 {
-    static std::unordered_map<std::string, VkAttachmentStoreOp> ops{
-        {"STORE", VK_ATTACHMENT_STORE_OP_STORE}, {"DONT_CARE", VK_ATTACHMENT_STORE_OP_DONT_CARE}};
+#define MAP_PAIR(value)                        \
+    {                                          \
+#value, VK_ATTACHMENT_STORE_OP_##value \
+    }
+
+    static std::unordered_map<std::string, VkAttachmentStoreOp> ops{MAP_PAIR(STORE),
+                                                                    MAP_PAIR(DONT_CARE)};
+
+#undef MAP_PAIR
 
     auto op = ops.find(op_name);
     assert(op != ops.end());
     if (op == ops.end())
     {
-        // return static_cast<VkPipelineStageFlagBits>(0);
+        LOG_ERROR("Couldn't find VkAttachmentStoreOp {}", op_name);
+        return VK_ATTACHMENT_STORE_OP_DONT_CARE;
     }
 
     return op->second;
@@ -1747,27 +1800,35 @@ VkAttachmentStoreOp getVkAttachmentStoreOp(std::string const & op_name)
 
 VkPipelineStageFlagBits getVkPipelineStageFlagBit(std::string const & bit_name)
 {
+#define MAP_PAIR(value)                         \
+    {                                           \
+#value, VK_PIPELINE_STAGE_##value##_BIT \
+    }
+
     static std::unordered_map<std::string, VkPipelineStageFlagBits> bits = {
-        {"TOP_OF_PIPE", VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT},
-        {"DRAW_INDIRECT", VK_PIPELINE_STAGE_DRAW_INDIRECT_BIT},
-        {"VERTEX_INPUT", VK_PIPELINE_STAGE_VERTEX_INPUT_BIT},
-        {"VERTEX_SHADER", VK_PIPELINE_STAGE_VERTEX_SHADER_BIT},
-        {"FRAGMENT_SHADER", VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT},
-        {"EARLY_FRAGMENT_TESTS", VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT},
-        {"LATE_FRAGMENT_TESTS", VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT},
-        {"COLOR_ATTACHMENT_OUTPUT", VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT},
-        {"COMPUTE_SHADER", VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT},
-        {"TRANSFER", VK_PIPELINE_STAGE_TRANSFER_BIT},
-        {"BOTTOM_OF_PIPE", VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT},
-        {"HOST", VK_PIPELINE_STAGE_HOST_BIT},
-        {"ALL_GRAPHICS", VK_PIPELINE_STAGE_ALL_GRAPHICS_BIT},
-        {"ALL_COMMANDS", VK_PIPELINE_STAGE_ALL_COMMANDS_BIT}};
+        MAP_PAIR(TOP_OF_PIPE),
+        MAP_PAIR(DRAW_INDIRECT),
+        MAP_PAIR(VERTEX_INPUT),
+        MAP_PAIR(VERTEX_SHADER),
+        MAP_PAIR(FRAGMENT_SHADER),
+        MAP_PAIR(EARLY_FRAGMENT_TESTS),
+        MAP_PAIR(LATE_FRAGMENT_TESTS),
+        MAP_PAIR(COLOR_ATTACHMENT_OUTPUT),
+        MAP_PAIR(COMPUTE_SHADER),
+        MAP_PAIR(TRANSFER),
+        MAP_PAIR(BOTTOM_OF_PIPE),
+        MAP_PAIR(HOST),
+        MAP_PAIR(ALL_GRAPHICS),
+        MAP_PAIR(ALL_COMMANDS)};
+
+#undef MAP_PAIR
 
     auto bit = bits.find(bit_name);
     assert(bit != bits.end());
     if (bit == bits.end())
     {
-        // return static_cast<VkPipelineStageFlagBits>(0);
+        LOG_ERROR("Couldn't find VkPipelineStageFlagBit {}", bit_name);
+        return static_cast<VkPipelineStageFlagBits>(0);
     }
 
     return bit->second;
@@ -1775,30 +1836,38 @@ VkPipelineStageFlagBits getVkPipelineStageFlagBit(std::string const & bit_name)
 
 VkAccessFlagBits getVkAccessFlagBit(std::string const & bit_name)
 {
+#define MAP_PAIR(value)                 \
+    {                                   \
+#value, VK_ACCESS_##value##_BIT \
+    }
+
     static std::unordered_map<std::string, VkAccessFlagBits> bits = {
-        {"INDIRECT_COMMAND_READ", VK_ACCESS_INDIRECT_COMMAND_READ_BIT},
-        {"INDEX_READ", VK_ACCESS_INDEX_READ_BIT},
-        {"VERTEX_ATTRIBUTE_READ", VK_ACCESS_VERTEX_ATTRIBUTE_READ_BIT},
-        {"UNIFORM_READ", VK_ACCESS_UNIFORM_READ_BIT},
-        {"INPUT_ATTACHMENT_READ", VK_ACCESS_INPUT_ATTACHMENT_READ_BIT},
-        {"SHADER_READ", VK_ACCESS_SHADER_READ_BIT},
-        {"SHADER_WRITE", VK_ACCESS_SHADER_WRITE_BIT},
-        {"COLOR_ATTACHMENT_READ", VK_ACCESS_COLOR_ATTACHMENT_READ_BIT},
-        {"COLOR_ATTACHMENT_WRITE", VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT},
-        {"DEPTH_STENCIL_ATTACHMENT_READ", VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT},
-        {"DEPTH_STENCIL_ATTACHMENT_WRITE", VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT},
-        {"TRANSFER_READ", VK_ACCESS_TRANSFER_READ_BIT},
-        {"TRANSFER_WRITE", VK_ACCESS_TRANSFER_WRITE_BIT},
-        {"HOST_READ", VK_ACCESS_HOST_READ_BIT},
-        {"HOST_WRITE", VK_ACCESS_HOST_WRITE_BIT},
-        {"MEMORY_READ", VK_ACCESS_MEMORY_READ_BIT},
-        {"MEMORY_WRITE", VK_ACCESS_MEMORY_WRITE_BIT}};
+        MAP_PAIR(INDIRECT_COMMAND_READ),
+        MAP_PAIR(INDEX_READ),
+        MAP_PAIR(VERTEX_ATTRIBUTE_READ),
+        MAP_PAIR(UNIFORM_READ),
+        MAP_PAIR(INPUT_ATTACHMENT_READ),
+        MAP_PAIR(SHADER_READ),
+        MAP_PAIR(SHADER_WRITE),
+        MAP_PAIR(COLOR_ATTACHMENT_READ),
+        MAP_PAIR(COLOR_ATTACHMENT_WRITE),
+        MAP_PAIR(DEPTH_STENCIL_ATTACHMENT_READ),
+        MAP_PAIR(DEPTH_STENCIL_ATTACHMENT_WRITE),
+        MAP_PAIR(TRANSFER_READ),
+        MAP_PAIR(TRANSFER_WRITE),
+        MAP_PAIR(HOST_READ),
+        MAP_PAIR(HOST_WRITE),
+        MAP_PAIR(MEMORY_READ),
+        MAP_PAIR(MEMORY_WRITE)};
+
+#undef MAP_PAIR
 
     auto bit = bits.find(bit_name);
     assert(bit != bits.end());
     if (bit == bits.end())
     {
-        // return static_cast<VkPipelineStageFlagBits>(0);
+        LOG_ERROR("Couldn't find VkPipelineStageFlagBit {}", bit_name);
+        return static_cast<VkAccessFlagBits>(0);
     }
 
     return bit->second;
@@ -1806,20 +1875,26 @@ VkAccessFlagBits getVkAccessFlagBit(std::string const & bit_name)
 
 VkShaderStageFlagBits getVkShaderStageFlagBit(std::string const & flag_name)
 {
+#define MAP_PAIR(value)                       \
+    {                                         \
+#value, VK_SHADER_STAGE_##value##_BIT \
+    }
+
     static std::unordered_map<std::string, VkShaderStageFlagBits> flags{
-        {"VERTEX", VK_SHADER_STAGE_VERTEX_BIT},
-        {"FRAGMENT", VK_SHADER_STAGE_FRAGMENT_BIT},
-        {"COMPUTE", VK_SHADER_STAGE_COMPUTE_BIT},
-        {"TESSELLATION_CONTROL", VK_SHADER_STAGE_TESSELLATION_CONTROL_BIT},
-        {"TESSELLATION_EVALUATION", VK_SHADER_STAGE_TESSELLATION_EVALUATION_BIT},
-        {"ALL_GRAPHICS", VK_SHADER_STAGE_ALL_GRAPHICS},
-        {"ALL", VK_SHADER_STAGE_ALL}};
+        MAP_PAIR(VERTEX),
+        MAP_PAIR(FRAGMENT),
+        MAP_PAIR(COMPUTE),
+        MAP_PAIR(TESSELLATION_CONTROL),
+        MAP_PAIR(TESSELLATION_EVALUATION)};
+
+#undef MAP_PAIR
 
     auto flag = flags.find(flag_name);
     assert(flag != flags.end());
     if (flag == flags.end())
     {
-        // return static_cast<VkPipelineStageFlagBits>(0);
+        LOG_ERROR("Couldn't find VkShaderStageFlagBits {}", flag_name);
+        return static_cast<VkShaderStageFlagBits>(0);
     }
 
     return flag->second;
@@ -1827,24 +1902,31 @@ VkShaderStageFlagBits getVkShaderStageFlagBit(std::string const & flag_name)
 
 VkDescriptorType getVkDescriptorType(std::string const & type_name)
 {
-    static std::unordered_map<std::string, VkDescriptorType> types{
-        {"SAMPLER", VK_DESCRIPTOR_TYPE_SAMPLER},
-        {"COMBINED_IMAGE_SAMPLER", VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER},
-        {"SAMPLED_IMAGE", VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE},
-        {"STORAGE_IMAGE", VK_DESCRIPTOR_TYPE_STORAGE_IMAGE},
-        {"UNIFORM_TEXEL_BUFFER", VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER},
-        {"STORAGE_TEXEL_BUFFER", VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER},
-        {"UNIFORM_BUFFER", VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER},
-        {"STORAGE_BUFFER", VK_DESCRIPTOR_TYPE_STORAGE_BUFFER},
-        {"UNIFORM_BUFFER_DYNAMIC", VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC},
-        {"STORAGE_BUFFER_DYNAMIC", VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC},
-        {"INPUT_ATTACHMENT", VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT}};
+#define MAP_PAIR(value)                    \
+    {                                      \
+#value, VK_DESCRIPTOR_TYPE_##value \
+    }
+
+    static std::unordered_map<std::string, VkDescriptorType> types{MAP_PAIR(COMBINED_IMAGE_SAMPLER),
+                                                                   MAP_PAIR(SAMPLER),
+                                                                   MAP_PAIR(SAMPLED_IMAGE),
+                                                                   MAP_PAIR(STORAGE_IMAGE),
+                                                                   MAP_PAIR(UNIFORM_TEXEL_BUFFER),
+                                                                   MAP_PAIR(STORAGE_TEXEL_BUFFER),
+                                                                   MAP_PAIR(UNIFORM_BUFFER),
+                                                                   MAP_PAIR(STORAGE_BUFFER),
+                                                                   MAP_PAIR(UNIFORM_BUFFER_DYNAMIC),
+                                                                   MAP_PAIR(STORAGE_BUFFER_DYNAMIC),
+                                                                   MAP_PAIR(INPUT_ATTACHMENT)};
+
+#undef MAP_PAIR
 
     auto type = types.find(type_name);
     assert(type != types.end());
     if (type == types.end())
     {
-        // return static_cast<VkPipelineStageFlagBits>(0);
+        LOG_ERROR("Couldn't find VkDescriptorType {}", type_name);
+        return static_cast<VkDescriptorType>(0);
     }
 
     return type->second;
@@ -1860,7 +1942,8 @@ VkFormat getVkFormat(std::string const & format_name)
     assert(format != formats.end());
     if (format == formats.end())
     {
-        // return static_cast<VkPipelineStageFlagBits>(0);
+        LOG_ERROR("Couldn't find VkFormat {}", format_name);
+        return static_cast<VkFormat>(0);
     }
 
     return format->second;
@@ -2200,6 +2283,15 @@ void AttachmentConfig::init(rapidjson::Value & document)
     else if (strcmp(format_str, "depth") == 0)
     {
         format = Format::USE_DEPTH;
+    }
+
+    usage = static_cast<VkImageUsageFlags>(0);
+    assert(document.HasMember("usage"));
+    assert(document["usage"].IsArray());
+    for (auto & usage_bit_name: document["usage"].GetArray())
+    {
+        assert(usage_bit_name.IsString());
+        usage |= getVkImageUsageFlagBits(usage_bit_name.GetString());
     }
 
     assert(document.HasMember("multisampled"));
@@ -3590,7 +3682,7 @@ ErrorCode ImageResources::createAttachments(Device & device)
         }
 
         VkFormat           format;
-        VkImageUsageFlags  usage;
+        VkImageUsageFlags  usage = attachment_config.usage;
         VkImageAspectFlags aspect;
         VkImageLayout      final_layout;
 
