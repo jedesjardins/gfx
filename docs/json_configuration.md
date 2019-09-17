@@ -12,15 +12,15 @@ To initialize the Vulkan Renderer you need a JSON configuration file that outlin
 | staging_buffer_size| uint | the size of the staging buffer used to upload data to Device Local buffers, Textures, etc. | Y |
 | max_updated_objects | uint | the maximum number of device memory updates per frame | Y |
 | max_deleted_objects | uint | the maximum number of object delete calls per frame | Y |
-| attachments | array of (Attachment objects)[#Attachment] | describes the number and type of attachments | Y |
-| renderpasses | array of Renderpass objects | describes the number and layout of renderpasses | Y |
+| attachments | array of [Attachment objects](#Attachment) | describes the number and type of attachments | Y |
+| renderpasses | array of [Renderpass objects](#Renderpass) | describes the number and layout of renderpasses | Y |
 | renderpass_order | array of strings | order of renderpasses to execute, where each string is the name of the renderpass | Y |
-| shaders | array of Shader objects | describes all shaders, vertex and fragment, that are used | Y |
-| uniform_layouts | array of Uniform Layout objects | describes all uniform types that are used | Y |
-| push_constants | array of Push Constant objects | describes all push constants that are used | Y |
-| vertex_bindings | array of Vertex Binding objects | describes all vertex bindings that are used | Y |
-| vertex_attributes | array of Vertex Attribute objects | describes all vertex attributes that are used | Y |
-| pipelines | array of Pipeline objects | describes all pipelines that are used | Y |
+| shaders | array of [Shader objects](#Shader) | describes all shaders, vertex and fragment, that are used | Y |
+| uniform_layouts | array of [Uniform Layout objects](#Uniform_Layout) | describes all uniform types that are used | Y |
+| push_constants | array of [Push Constant objects](#Push_Constant) | describes all push constants that are used | Y |
+| vertex_bindings | array of [Vertex Binding objects](#Vertex_Binding) | describes all vertex bindings that are used | Y |
+| vertex_attributes | array of [Vertex Attribute objects](#Vertex_Attribute) | describes all vertex attributes that are used | Y |
+| pipelines | array of [Pipeline objects](#Pipeline) | describes all pipelines that are used | Y |
 
 ### <a name="Attachment"></a> Attachment object fields
 
@@ -31,10 +31,33 @@ To initialize the Vulkan Renderer you need a JSON configuration file that outlin
 | multisampled | boolean | whether or not this attachment is multisampled | N |
 | screen_image | boolean | if this attachment refers to screen memory | N |
 
-###	Renderpass object fields
+###	<a name="Renderpass"></a> Renderpass object fields
 
 | Field Name | Type | Description | Mandatory |
 | ---------- | ---- | ----------- | --------- |
+| name | string | name to reference the Renderpass by | Y |
+| framebuffer | [Framebuffer object](#Framebuffer) | the framebuffer object this Renderpass uses | Y |
+| subpasses | Array of [Subpass objects](#Subpass_Description) | the subpasses in this renderpass | Y |
+| subpass_dependencies | Array of [Subpass Dependency objects](#Subpass_Dependencies) | the inter subpass dependencies | Y |
+
+###	<a name="Framebuffer"></a> Framebuffer object fields
+
+###	<a name="Subpass_Description"></a> Subpass object fields
+
+###	<a name="Subpass_Dependencies"></a> Subpass Dependency object fields
+
+###	<a name="Shader"></a> Shader object fields
+
+###	<a name="Uniform_Layout"></a> Uniform Layout object fields
+
+###	<a name="Push_Constant"></a> Push Constant object fields
+
+###	<a name="Vertex_Binding"></a> Vertex Binding object fields
+
+###	<a name="Vertex_Attribute"></a> Vertex Attribute object fields
+
+###	<a name="Pipeline"></a> Pipeline object fields
+
 
 
 * attachments
