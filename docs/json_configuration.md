@@ -50,7 +50,7 @@ To initialize the Vulkan Renderer you need a JSON configuration file that outlin
 | store_op | string | the [store operation](#Store_Op) for this attachment | Y |
 | initial_layout | string | the initial [Image Layout](#Image_Layout) of this attachment | Y |
 | final_layout | string | the [Image Layout](#Image_Layout) this attachment will be in at the end of the renderpass | Y |
-| clear value | [Clear Value object](#Clear_Value) | | required if load_op is clear |
+| clear value | [Clear Value object](#Clear_Value) | | required if load_op is CLEAR |
 
 #### <a name="Load_Op"></a> Attachment Load Operations
 
