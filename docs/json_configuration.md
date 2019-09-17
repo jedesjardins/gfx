@@ -36,11 +36,20 @@ To initialize the Vulkan Renderer you need a JSON configuration file that outlin
 | Field Name | Type | Description | Mandatory |
 | ---------- | ---- | ----------- | --------- |
 | name | string | name to reference the Renderpass by | Y |
-| framebuffer | [Framebuffer object](#Framebuffer) | the framebuffer object this Renderpass uses | Y |
+| framebuffer | array of [Attachment Description objects](#Attachment_Description) | the framebuffer object this Renderpass uses | Y |
 | subpasses | Array of [Subpass objects](#Subpass_Description) | the subpasses in this renderpass | Y |
 | subpass_dependencies | Array of [Subpass Dependency objects](#Subpass_Dependencies) | the inter subpass dependencies | Y |
 
-###	<a name="Framebuffer"></a> Framebuffer object fields
+###    <a name="Attachment_Description"></a> Attachment Description object fields
+
+| Field Name | Type | Description | Mandatory |
+| ---------- | ---- | ----------- | --------- |
+| attachment_name | string | | Y |
+| load_op | string | | Y |
+| store_op | string | | Y |
+| initial_layout | string | | Y |
+| final_layout | string | | Y |
+| clear value | [Clear Value object](#Clear_Value) | | required if load_op is clear |
 
 ###	<a name="Subpass_Description"></a> Subpass object fields
 
