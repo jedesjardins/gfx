@@ -44,12 +44,49 @@ To initialize the Vulkan Renderer you need a JSON configuration file that outlin
 
 | Field Name | Type | Description | Mandatory |
 | ---------- | ---- | ----------- | --------- |
-| attachment_name | string | | Y |
-| load_op | string | | Y |
-| store_op | string | | Y |
-| initial_layout | string | | Y |
-| final_layout | string | | Y |
+| attachment_name | string | name of the attachment | Y |
+| load_op | string | the [load operation](#Load_Op) for this attachment | Y |
+| store_op | string | the [store operation](#Store_Op) for this attachment | Y |
+| initial_layout | string | the initial [Image Layout](#Image_Layout) of this attachment | Y |
+| final_layout | string | the [Image Layout](#Image_Layout) this attachment will be in at the end of the renderpass | Y |
 | clear value | [Clear Value object](#Clear_Value) | | required if load_op is clear |
+
+#### <a name="Load_Op"></a> Attachment Load Operations
+
+These operations describe how an attachment is loaded at the beginning of a Renderpass
+
+| Value | Description |
+| ----- | ----------- |
+| "LOAD" | use if you want to keep the contents of the attachment from a previous renderpass |
+| "CLEAR" | use if you want to clear the contents of the attachment before the renderpass starts |
+| "DONT_CARE" | use if the contents don't matter, i.e. you will entirely overwrite the contents without using them |
+
+#### <a name="Store_Op"></a> Attachment Store Operations
+
+These operations describe how an attachment is stored at the end of a Renderpass
+
+| Value | Description |
+| ----- | ----------- |
+| "STORE" | use if you want to use the contents of the attachment in a later renderpass |
+| "DONT_CARE" | use if the contents are only used in this renderpass |
+
+#### <a name="Image_Layout"></a> Image Layouts
+
+| Value | Description |
+| ----- | ----------- |
+| "UNDEFINED" | Can only be used as an initial layout. When transitioning from this layout, contents are not preserved |
+| "PREINITIALIZED" | Can only be used as an initial layout. When transitioning from this layout, contents are preserved |
+| "GENERAL" | Supports all types of usage but is suboptimal |
+| "COLOR_ATTACHMENT_OPTIMAL" | Attachments in this layout can only be used as a color or resolve attachment, the format of the attachment must also have been "color" |
+| "DEPTH_STENCIL_ATTACHMENT_OPTIMAL" | Attachments in this layout can only be used as a depth/stencil attachment, the format of the attachment must also have been "depth" |
+| "DEPTH_STENCIL_READ_ONLY_OPTIMAL" | Attachments in this layout can only be used as a read only depth/stencil attachment or as a read only image in a shader, the format of the attachment must also have been "depth" |
+| "SHADER_READ_ONLY_OPTIMAL" | Attachments in this format can only be used as a read only image in a shader |
+| "TRANSFER_SRC_OPTIMAL" | Attachments in this format can only be used as the source for a transfer operation |
+| "TRANSFER_DST_OPTIMAL" | Attachments in this format can only be used as the destination in a transfer operation |
+| "DEPTH_READ_ONLY_STENCIL_ATTACHMENT_OPTIMAL" | Attachments in this layout can only be used as a depth/stencil attachment where the depth aspect is read only, or as a read only image in a shader, the format of the attachment must also have been "depth" |
+| "DEPTH_ATTACHMENT_STENCIL_READ_ONLY_OPTIMAL" | Attachments in this layout can only be used as a depth/stencil attachment where the stencil aspect is read only, or as a read only image in a shader, the format of the attachment must also have been "depth" |
+| "PRESENT_SRC_KHR" | Attachments in this layout are used to present to the screen. Attachments to be used in this layout must have been created with their "is_swapchain_image" field set to true |
+| "SHARED_PRESENT_KHR" | Used for Shared Presentable images |
 
 ###	<a name="Subpass_Description"></a> Subpass object fields
 
