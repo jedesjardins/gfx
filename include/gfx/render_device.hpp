@@ -322,16 +322,6 @@ struct AttachmentConfig
     friend bool operator!=(AttachmentConfig const & lhs, AttachmentConfig const & rhs);
 };
 
-struct FramebufferConfig
-{
-    std::unordered_map<std::string, size_t> attachments;
-    uint32_t                                width;
-    uint32_t                                height;
-    uint32_t                                depth;
-
-    void init(rapidjson::Value & document);
-};
-
 struct SubpassInfo
 {
     std::vector<VkAttachmentReference> color_attachments;
@@ -339,7 +329,8 @@ struct SubpassInfo
     VkAttachmentReference color_resolve_attachment;
     VkAttachmentReference depth_stencil_attachment;
 
-    void init(rapidjson::Value & document, FramebufferConfig & framebuffer);
+    void init(rapidjson::Value &                        document,
+              std::unordered_map<std::string, size_t> & attachment_indices);
 
     friend bool operator==(SubpassInfo const & lhs, SubpassInfo const & rhs);
     friend bool operator!=(SubpassInfo const & lhs, SubpassInfo const & rhs);
@@ -347,7 +338,7 @@ struct SubpassInfo
 
 struct RenderpassConfig
 {
-    FramebufferConfig                                        framebuffer_config;
+    std::unordered_map<std::string, size_t>                  attachments;
     std::unordered_map<std::string, VkAttachmentDescription> descriptions;
     std::unordered_map<std::string, VkClearValue>            clear_values;
     std::unordered_map<std::string, SubpassHandle>           subpass_handles;
@@ -1920,8 +1911,9 @@ VkAttachmentDescription initAttachmentDescription(rapidjson::Value const & docum
     return description;
 }
 
-VkAttachmentReference initAttachmentReference(rapidjson::Value &  document,
-                                              FramebufferConfig & framebuffer)
+VkAttachmentReference initAttachmentReference(
+    rapidjson::Value &                        document,
+    std::unordered_map<std::string, size_t> & attachment_indices)
 {
     assert(document.IsObject());
 
@@ -1929,7 +1921,7 @@ VkAttachmentReference initAttachmentReference(rapidjson::Value &  document,
 
     assert(document.HasMember("attachment_name"));
     assert(document["attachment_name"].IsString());
-    reference.attachment = framebuffer.attachments[document["attachment_name"].GetString()];
+    reference.attachment = attachment_indices[document["attachment_name"].GetString()];
 
     /*
     assert(document.HasMember("attachment_index"));
@@ -1947,6 +1939,8 @@ VkAttachmentReference initAttachmentReference(rapidjson::Value &  document,
 VkClearValue initClearValue(rapidjson::Value const & document)
 {
     VkClearValue value;
+
+    assert(document.IsObject());
 
     if (document.HasMember("color"))
     {
@@ -2222,7 +2216,8 @@ void AttachmentConfig::init(rapidjson::Value & document)
     }
 }
 
-void SubpassInfo::init(rapidjson::Value & document, FramebufferConfig & framebuffer)
+void SubpassInfo::init(rapidjson::Value &                        document,
+                       std::unordered_map<std::string, size_t> & attachment_indices)
 {
     assert(document.IsObject());
 
@@ -2231,20 +2226,20 @@ void SubpassInfo::init(rapidjson::Value & document, FramebufferConfig & framebuf
         assert(document["color_attachments"].IsArray());
         for (auto & ca: document["color_attachments"].GetArray())
         {
-            color_attachments.push_back(initAttachmentReference(ca, framebuffer));
+            color_attachments.push_back(initAttachmentReference(ca, attachment_indices));
         }
     }
 
     if (document.HasMember("resolve_attachment"))
     {
         color_resolve_attachment = initAttachmentReference(document["resolve_attachment"],
-                                                           framebuffer);
+                                                           attachment_indices);
     }
 
     if (document.HasMember("depth_stencil_attachment"))
     {
         depth_stencil_attachment = initAttachmentReference(document["depth_stencil_attachment"],
-                                                           framebuffer);
+                                                           attachment_indices);
     }
 }
 
@@ -2253,23 +2248,20 @@ void RenderpassConfig::init(rapidjson::Value & document)
     assert(document.IsObject());
 
     assert(document.HasMember("framebuffer"));
-    framebuffer_config.init(document["framebuffer"]);
-
-    assert(document["framebuffer"].IsObject());
-    auto const & json_framebuffer = document["framebuffer"];
-    assert(json_framebuffer.HasMember("attachments"));
-    assert(json_framebuffer["attachments"].IsArray());
-    for (auto & ad: json_framebuffer["attachments"].GetArray())
+    assert(document["framebuffer"].IsArray());
+    size_t attachment_index{0};
+    for (auto & ad: document["framebuffer"].GetArray())
     {
         assert(ad.IsObject());
         assert(ad.HasMember("attachment_name"));
         assert(ad["attachment_name"].IsString());
+        std::string name = ad["attachment_name"].GetString();
 
-        descriptions[ad["attachment_name"].GetString()] = initAttachmentDescription(ad);
+        attachments[name]  = attachment_index++;
+        descriptions[name] = initAttachmentDescription(ad);
 
         if (ad.HasMember("clear_value"))
         {
-            assert(ad["clear_value"].IsObject());
             clear_values[ad["attachment_name"].GetString()] = initClearValue(ad["clear_value"]);
         }
     }
@@ -2286,7 +2278,7 @@ void RenderpassConfig::init(rapidjson::Value & document)
         SubpassHandle handle = subpasses.size();
 
         SubpassInfo info{};
-        info.init(sp, framebuffer_config);
+        info.init(sp, attachments);
 
         subpass_handles[sp["name"].GetString()] = handle;
         subpasses.push_back(info);
@@ -2298,24 +2290,6 @@ void RenderpassConfig::init(rapidjson::Value & document)
     for (auto & spd: document["subpass_dependencies"].GetArray())
     {
         subpass_dependencies.push_back(initDependency(spd));
-    }
-}
-
-void FramebufferConfig::init(rapidjson::Value & document)
-{
-    assert(document.IsObject());
-
-    assert(document.HasMember("attachments"));
-    assert(document["attachments"].IsArray());
-
-    size_t i{0};
-    for (auto const & attachment: document["attachments"].GetArray())
-    {
-        assert(attachment.IsObject());
-        assert(attachment.HasMember("attachment_name"));
-        assert(attachment["attachment_name"].IsString());
-
-        attachments[attachment["attachment_name"].GetString()] = i++;
     }
 }
 
@@ -2742,7 +2716,7 @@ Device::Device(GLFWwindow * window_ptr): window{window_ptr}
 
 bool Device::init(RenderConfig & render_config)
 {
-// clang-format off
+    // clang-format off
     #ifndef NDEBUG
     checkValidationLayerSupport();
     #endif
@@ -2870,7 +2844,7 @@ void Device::getRequiredExtensions()
 // INSTANCE
 ErrorCode Device::createInstance(char const * window_name)
 {
-// clang-format off
+    // clang-format off
     #ifdef NDEBUG
     use_validation = false;
     #else
@@ -3730,10 +3704,9 @@ ErrorCode RenderPassResources::createRenderPasses(Device & device, ImageResource
 
         for (auto & iter: render_pass_config.descriptions)
         {
-            auto & attachment_name = iter.first;
-            auto & description     = iter.second;
-            auto   attachment_index
-                = render_pass_config.framebuffer_config.attachments[attachment_name];
+            auto & attachment_name  = iter.first;
+            auto & description      = iter.second;
+            auto   attachment_index = render_pass_config.attachments[attachment_name];
 
             auto opt_attachment_handle = image_resources.get_attachment_handle(attachment_name);
             assert(opt_attachment_handle.has_value());
@@ -3762,17 +3735,17 @@ ErrorCode RenderPassResources::createRenderPasses(Device & device, ImageResource
             }
 
             sorted_descriptions[attachment_index] = description;
-            sorted_names[attachment_index] = attachment_name;
+            sorted_names[attachment_index]        = attachment_name;
         }
 
         for (auto & name: sorted_names)
         {
-        	auto name_clear_value = render_pass_config.clear_values.find(name);
-        	if (name_clear_value != render_pass_config.clear_values.end())
-        	{
-        		clear_value_list.push_back(render_pass_config.clear_values[name]);
-        		LOG_DEBUG("Found clear value for attachment {}", name);
-        	}
+            auto name_clear_value = render_pass_config.clear_values.find(name);
+            if (name_clear_value != render_pass_config.clear_values.end())
+            {
+                clear_value_list.push_back(render_pass_config.clear_values[name]);
+                LOG_DEBUG("Found clear value for attachment {}", name);
+            }
         }
 
         std::vector<VkSubpassDescription> subpasses;
@@ -3823,16 +3796,15 @@ ErrorCode RenderPassResources::createFramebuffer(Device &                     de
                                                  VkRenderPass const &         render_pass,
                                                  std::vector<VkFramebuffer> & framebuffers)
 {
-    auto const & framebuffer_config = config.framebuffer_config;
     framebuffers.resize(device.swapchain_image_count);
 
     for (size_t i = 0; i < device.swapchain_image_count; ++i)
     {
         auto & framebuffer = framebuffers[i];
 
-        auto fb_attachments = std::vector<VkImageView>{framebuffer_config.attachments.size()};
+        auto fb_attachments = std::vector<VkImageView>{config.attachments.size()};
 
-        for (auto iter: framebuffer_config.attachments)
+        for (auto iter: config.attachments)
         {
             auto attachment_name  = iter.first;
             auto attachment_index = iter.second;
@@ -5482,12 +5454,6 @@ ErrorCode Renderer::createCommandbuffer(uint32_t image_index)
     for (RenderpassHandle const & rp_handle: render_passes.renderpass_order)
     {
         LOG_TRACE("Drawing Renderpass {}", rp_handle);
-
-        /*
-        auto clearValues = std::array<VkClearValue, 2>{
-            VkClearValue{.color = {0.0f, 0.0f, 0.0f, 1.0f}},
-            VkClearValue{.depthStencil = {1.0f, 0}}};
-        */
 
         auto & clearValues = render_passes.clear_values[rp_handle];
 

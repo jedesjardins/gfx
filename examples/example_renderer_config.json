@@ -28,38 +28,36 @@
 	[
 		{
 			"name": "rp_main_render_pass",
-			"framebuffer": {
-				"attachments":
-				[
-					{
-						"attachment_name": "a_multisampled_color",
-						"load_op": "CLEAR",
-						"store_op": "DONT_CARE",
-						"initial_layout": "UNDEFINED",
-						"final_layout": "COLOR_ATTACHMENT_OPTIMAL",
-						"clear_value": {
-							"color": [0, 0, 0, 1]
-						}
-					},
-					{
-						"attachment_name": "a_depth",
-						"load_op": "CLEAR",
-						"store_op": "DONT_CARE",
-						"initial_layout": "UNDEFINED",
-						"final_layout": "DEPTH_STENCIL_ATTACHMENT_OPTIMAL",
-						"clear_value": {
-							"depth_stencil": [1, 0]
-						}
-					},
-					{
-						"attachment_name": "a_screen_color",
-						"load_op": "DONT_CARE",
-						"store_op": "STORE",
-						"initial_layout": "UNDEFINED",
-						"final_layout": "PRESENT_SRC_KHR"
+			"framebuffer":
+			[
+				{
+					"attachment_name": "a_multisampled_color",
+					"load_op": "CLEAR",
+					"store_op": "DONT_CARE",
+					"initial_layout": "UNDEFINED",
+					"final_layout": "COLOR_ATTACHMENT_OPTIMAL",
+					"clear_value": {
+						"color": [0, 0, 0, 1]
 					}
-				]
-			},
+				},
+				{
+					"attachment_name": "a_depth",
+					"load_op": "CLEAR",
+					"store_op": "DONT_CARE",
+					"initial_layout": "UNDEFINED",
+					"final_layout": "DEPTH_STENCIL_ATTACHMENT_OPTIMAL",
+					"clear_value": {
+						"depth_stencil": [1, 0]
+					}
+				},
+				{
+					"attachment_name": "a_screen_color",
+					"load_op": "DONT_CARE",
+					"store_op": "STORE",
+					"initial_layout": "UNDEFINED",
+					"final_layout": "PRESENT_SRC_KHR"
+				}
+			],
 			"subpasses":
 			[
 				{
