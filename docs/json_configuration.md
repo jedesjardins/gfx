@@ -2,32 +2,16 @@
 
 To initialize the Vulkan Renderer you need a JSON configuration file that outlines how you will use it.
 
-## Fields
+## Top level fields
 
-* window_name
-	* type - string
-	* usage - the name of the window
-
-* dynamic_vertex_buffer_size
-	* type - uint
-	* usage - the size of the vertex buffer used to upload dynamic vertices every frame
-
-* dynamic_index_buffer_size
-	* type - uint
-	* usage - the size of the index buffer used to upload dynamic indices every frame
-
-* staging_buffer_size
-	* type - uint
-	* usage - this size of the staging buffer used to upload data to Device Local buffers, Textures, etc.
-
-* max_updated_objects
-	* type - uint
-	* usage - the maximum number of device memory updates per frame
-
-* max_deleted_objects
-	* type - uint
-	* usage - the maximum size of device updates per frame
-
+| Field Name | Type | Description |
+| ---------- | ---- | ----------- |
+| window_name | string | the name of the window |
+| dynamic_vertex_buffer_size | uint | the size of the vertex buffer used to upload dynamic vertices every frame |
+| dynamic_vertex_buffer_size | uint | the size of the vertex buffer used to upload dynamic vertices every frame |
+| staging_buffer_size| uint | the size of the staging buffer used to upload data to Device Local buffers, Textures, etc. |
+| max_updated_objects | uint | the maximum number of device memory updates per frame |
+| max_deleted_objects | uint | the maximum number of object delete calls per frame
 
 * attachments
 	* type - array of attachment objects
