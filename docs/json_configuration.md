@@ -28,6 +28,7 @@ To initialize the Vulkan Renderer you need a JSON configuration file that outlin
 | ---------- | ---- | ----------- | --------- |
 | name | string | name to reference the attachment by | Y |
 | format | string | either "color" or "depth" | Y |
+| usage | array of [Attachment Usages](#Attachment_Usage) | Lists all possible usages of this attachment | Y |
 | multisampled | boolean | whether or not this attachment is multisampled | N |
 | screen_image | boolean | if this attachment refers to screen memory | N |
 

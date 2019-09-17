@@ -313,6 +313,7 @@ enum class Format
 struct AttachmentConfig
 {
     Format format;
+    VkImageUsageFlags usage;
     bool   multisampled;
     bool   is_swapchain_image;
 
