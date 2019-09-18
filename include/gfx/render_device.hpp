@@ -2133,8 +2133,13 @@ VkDescriptorSetLayoutBinding initVkDescriptorSetLayoutBinding(rapidjson::Value &
     layout.descriptorCount = document["descriptor_count"].GetInt();
 
     assert(document.HasMember("stage"));
-    assert(document["stage"].IsString());
-    layout.stageFlags = getVkShaderStageFlagBit(document["stage"].GetString());
+    assert(document["stage"].IsArray());
+    layout.stageFlags = 0;
+    for (auto & stage: document["stage"].GetArray())
+    {
+        assert(stage.IsString());
+        layout.stageFlags |= getVkShaderStageFlagBit(stage.GetString());
+    }
 
     return layout;
 }
@@ -2200,10 +2205,6 @@ VkPushConstantRange initVkPushConstantRange(rapidjson::Value & document)
 
     VkPushConstantRange push_constant;
 
-    assert(document.HasMember("stage"));
-    assert(document["stage"].IsString());
-    push_constant.stageFlags = getVkShaderStageFlagBit(document["stage"].GetString());
-
     assert(document.HasMember("offset"));
     assert(document["offset"].IsInt());
     push_constant.offset = document["offset"].GetInt();
@@ -2211,6 +2212,15 @@ VkPushConstantRange initVkPushConstantRange(rapidjson::Value & document)
     assert(document.HasMember("size"));
     assert(document["size"].IsInt());
     push_constant.size = document["size"].GetInt();
+
+    assert(document.HasMember("stage"));
+    assert(document["stage"].IsArray());
+    push_constant.stageFlags = 0;
+    for (auto & stage: document["stage"].GetArray())
+    {
+        assert(stage.IsString());
+        push_constant.stageFlags |= getVkShaderStageFlagBit(stage.GetString());
+    }
 
     return push_constant;
 }
@@ -2221,13 +2231,13 @@ VkVertexInputBindingDescription initVkVertexInputBindingDescription(rapidjson::V
 
     VkVertexInputBindingDescription vertex_binding;
 
-    assert(document.HasMember("binding"));
-    assert(document["binding"].IsInt());
-    vertex_binding.binding = document["binding"].GetInt();
+    assert(document.HasMember("binding_slot"));
+    assert(document["binding_slot"].IsUint());
+    vertex_binding.binding = document["binding_slot"].GetUint();
 
     assert(document.HasMember("stride"));
-    assert(document["stride"].IsInt());
-    vertex_binding.stride = document["stride"].GetInt();
+    assert(document["stride"].IsUint());
+    vertex_binding.stride = document["stride"].GetUint();
 
     assert(document.HasMember("input_rate"));
     assert(document["input_rate"].IsString());
@@ -2244,15 +2254,15 @@ VkVertexInputBindingDescription initVkVertexInputBindingDescription(rapidjson::V
     return vertex_binding;
 }
 
-VkVertexInputAttributeDescription initVkVertexInputAttributeDescription(rapidjson::Value & document)
+VkVertexInputAttributeDescription initVkVertexInputAttributeDescription(rapidjson::Value & document, std::unordered_map<std::string, VkVertexInputBindingDescription> vertex_bindings)
 {
     assert(document.IsObject());
 
     VkVertexInputAttributeDescription attribute;
 
-    assert(document.HasMember("binding"));
-    assert(document["binding"].IsInt());
-    attribute.binding = document["binding"].GetInt();
+    assert(document.HasMember("vertex_binding_name"));
+    assert(document["vertex_binding_name"].IsString());
+    attribute.binding = vertex_bindings[document["vertex_binding_name"].GetString()].binding;
 
     assert(document.HasMember("location"));
     assert(document["location"].IsInt());
@@ -2600,7 +2610,7 @@ void RenderConfig::init()
         assert(va.HasMember("name"));
         assert(va["name"].IsString());
 
-        vertex_attributes[va["name"].GetString()] = initVkVertexInputAttributeDescription(va);
+        vertex_attributes[va["name"].GetString()] = initVkVertexInputAttributeDescription(va, vertex_bindings);
     }
 
     assert(document.HasMember("pipelines"));
