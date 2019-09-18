@@ -122,7 +122,7 @@
 			"binding": 0,
 			"descriptor_type": "UNIFORM_BUFFER_DYNAMIC",
 			"descriptor_count": 1,
-			"stage": "VERTEX",
+			"stage": ["VERTEX"],
 			"max_count": 1
 		}
 	],
@@ -130,7 +130,7 @@
 	[
 		{
 			"name": "pc_model_matrix",
-			"stage": "VERTEX",
+			"stage": ["VERTEX"],
 			"offset": 0,
 			"size": 64
 		}
@@ -139,7 +139,7 @@
 	[
 		{
 			"name": "vb_pos",
-			"binding": 0,
+			"binding_slot": 0,
 			"stride": 12,
 			"input_rate": "PER_VERTEX"
 		}
@@ -148,7 +148,7 @@
 	[
 		{
 			"name": "va_pos",
-			"binding": 0,
+			"vertex_binding_name": "vb_pos",
 			"location": 0,
 			"format": "R32G32B32_SFLOAT",
 			"offset": 0
