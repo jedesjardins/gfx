@@ -38,7 +38,14 @@ To initialize the Vulkan Renderer you need a JSON configuration file that outlin
 
 | Value | Description |
 | ----- | ----------- |
-
+| TRANSFER_SRC | |
+| TRANSFER_DST | |
+| SAMPLED | |
+| STORAGE | |
+| COLOR_ATTACHMENT | |
+| DEPTH_STENCIL_ATTACHMENT | |
+| TRANSIENT_ATTACHMENT | |
+| INPUT_ATTACHMENT | |
 
 ###	<a name="Renderpass"></a> Renderpass object fields
 
@@ -150,7 +157,23 @@ These operations describe how an attachment is stored at the end of a Renderpass
 
 | Value | Description |
 | ----- | ----------- |
-
+| INDIRECT_COMMAND_READ | specifies read access to indirect command data read as part of an indirect drawing or dispatch command |
+| INDEX_READ | specifies read access to an index buffer as part of an indexed drawing command |
+| VERTEX_ATTRIBUTE_READ | specifies read access to a vertex buffer as part of a drawing command |
+| UNIFORM_READ | specifies read access to a uniform buffer |
+| INPUT_ATTACHMENT_READ | specifies read access to an input attachment within a render pass during fragment shading |
+| SHADER_READ | specifies read access to a storage buffer, physical storage buffer, uniform texel buffer, storage texel buffer, sampled image, or storage image |
+| SHADER_WRITE | specifies write access to a storage buffer, physical storage buffer, storage texel buffer, or storage image |
+| COLOR_ATTACHMENT_READ | specifies read access to a color attachment, such as via blending, logic operations, or via certain subpass load operations. It does not include advanced blend operations |
+| COLOR_ATTACHMENT_WRITE | specifies write access to a color, resolve, or depth/stencil resolve attachment during a render pass or via certain subpass load and store operations |
+| DEPTH_STENCIL_ATTACHMENT_READ | specifies read access to a depth/stencil attachment, via depth or stencil operations or via certain subpass load operations |
+| DEPTH_STENCIL_ATTACHMENT_WRITE | specifies write access to a depth/stencil attachment, via depth or stencil operations or via certain subpass load and store operations |
+| TRANSFER_READ | specifies read access to an image or buffer in a copy operation |
+| TRANSFER_WRITE | specifies write access to an image or buffer in a clear or copy operation |
+| HOST_READ | specifies read access by a host operation. Accesses of this type are not performed through a resource, but directly on memory |
+| HOST_WRITE | specifies write access by a host operation. Accesses of this type are not performed through a resource, but directly on memory |
+| MEMORY_READ | specifies read access via non-specific entities. These entities include the Vulkan device and host, but may also include entities external to the Vulkan device or otherwise not part of the core Vulkan pipeline. When included in a destination access mask, makes all available writes visible to all future read accesses on entities known to the Vulkan device |
+| MEMORY_WRITE | specifies write access via non-specific entities. These entities include the Vulkan device and host, but may also include entities external to the Vulkan device or otherwise not part of the core Vulkan pipeline. When included in a source access mask, all writes that are performed by entities known to the Vulkan device are made available. When included in a destination access mask, makes all available writes visible to all future write accesses on entities known to the Vulkan device |
 
 ###	<a name="Shader"></a> Shader object fields
 
@@ -175,13 +198,18 @@ These operations describe how an attachment is stored at the end of a Renderpass
 
 | Value | Description |
 | ----- | ----------- |
+| UNIFORM_BUFFER_DYNAMIC | a uniform that is directly tied to a buffer resource, this uniform only supports reading the value from it, never writing |
+| STORAGE_BUFFER_DYNAMIC | a uniform that is directly tied to a buffer resource, this uniform supports reading, writing, and atomic operations, it is thusly slower than a UNIFORM_BUFFER_DYNAMIC |
+| COMBINED_IMAGE_SAMPLER |
 
 
 #### <a name="Shader_Stage"></a> Shader Stage values
 
 | Value | Description |
 | ----- | ----------- |
-
+| VERTEX | the vertex shader |
+| FRAGMENT | the fragment shader |
+| COMPUTE | the compute shader |
 
 ###	<a name="Push_Constant"></a> Push Constant object fields
 
@@ -206,6 +234,8 @@ These operations describe how an attachment is stored at the end of a Renderpass
 
 | Value | Description |
 | ----- | ----------- |
+| PER_VERTEX | a vertex binding with this Input Rate is consumed once per vertex |
+| PER_INSTANCE | a vertex binding with this Input Rate is consumed once per vertex |
 
 
 ###	<a name="Vertex_Attribute"></a> Vertex Attribute object fields
@@ -219,14 +249,25 @@ These operations describe how an attachment is stored at the end of a Renderpass
 | offset | uint | the offset into the vertex where this attribute starts | Y |
 
 
-#### <a name="Format"></a> Input Rate values
+#### <a name="Format"></a> Format values
 
 | Value | Description |
 | ----- | ----------- |
+| R32G32B32_SFLOAT | a format with three components, RGB. Each component is a signed float, each is 32 bits in size, 96 in total |
 
 
 ###	<a name="Pipeline"></a> Pipeline object fields
 
 | Field Name | Type | Description | Mandatory |
 | ---------- | ---- | ----------- | --------- |
+| name | string | the name of this pipeline | Y |
+| vertex_shader_name | string | the name of the vertex shader to use in this pipeline | Y |
+| fragmen_shader_name | string | the name of the fragmen shader to use in this pipeline | Y |
+| vertex_bindings | array of strings | the names of the vertex bindings that this pipeline uses | Y |
+| vertex_attributes | array of strings | the names of the vertex attributes that this pipeline uses | Y |
+| uniform_layouts | array of strings | the names of the uniform layouts that this pipeline uses | Y |
+| push_constants | array of strings | the names of the push constants that this pipeline uses | Y |
+| renderpass | string | the name of the renderpass this pipeline is used in | Y |
+| subpass | string | the name of the subpass this pipeline is used in | Y |
+| max_drawn_objects | uint | the maximum number of objects that can be drawn with this pipeline | Y |
 
