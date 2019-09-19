@@ -41,7 +41,7 @@ Return Value
 	* `bool` - signifies the success or failure of the operation. If this operation fails, one can look at the generated logs
 
 ---
-#### `ErrorCode gfx::Renderer::draw(PipelineHandle  pipeline,
+#### ```ErrorCode gfx::Renderer::draw(PipelineHandle  pipeline,
                                     size_t          vertices_size,
                                     void *          vertices,
                                     uint32_t        index_count,
@@ -49,7 +49,8 @@ Return Value
                                     size_t          push_constant_size,
                                     void *          push_constant_data,
                                     size_t          uniform_count,
-                                    UniformHandle * p_uniforms);` 
+                                    UniformHandle * p_uniforms);
+```
 
 Draw
 
