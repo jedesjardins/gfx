@@ -6,9 +6,9 @@ The RenderConfig class, in the gfx namespace, is simply used to initialize the g
 
 #### `void gfx::RenderConfig::RenderConfig(char const* json_config_file_name);`
 
-Creates the RenderConfig class.
+	Creates the RenderConfig class.
 
 #### `void gfx::RenderConfig::init();`
 
-Initializes the RenderConfig class with the elements in the json configuration file.
+	Initializes the RenderConfig class with the elements in the json configuration file.
 
