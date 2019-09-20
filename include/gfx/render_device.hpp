@@ -327,7 +327,9 @@ struct SubpassInfo
 {
     std::vector<VkAttachmentReference> color_attachments;
 
+    bool                  has_color_resolve_attachment;
     VkAttachmentReference color_resolve_attachment;
+    bool                  has_depth_stencil_attachment;
     VkAttachmentReference depth_stencil_attachment;
 
     void init(rapidjson::Value &                        document,
@@ -2254,7 +2256,9 @@ VkVertexInputBindingDescription initVkVertexInputBindingDescription(rapidjson::V
     return vertex_binding;
 }
 
-VkVertexInputAttributeDescription initVkVertexInputAttributeDescription(rapidjson::Value & document, std::unordered_map<std::string, VkVertexInputBindingDescription> vertex_bindings)
+VkVertexInputAttributeDescription initVkVertexInputAttributeDescription(
+    rapidjson::Value &                                               document,
+    std::unordered_map<std::string, VkVertexInputBindingDescription> vertex_bindings)
 {
     assert(document.IsObject());
 
@@ -2335,14 +2339,24 @@ void SubpassInfo::init(rapidjson::Value &                        document,
 
     if (document.HasMember("resolve_attachment"))
     {
-        color_resolve_attachment = initAttachmentReference(document["resolve_attachment"],
+        has_color_resolve_attachment = true;
+        color_resolve_attachment     = initAttachmentReference(document["resolve_attachment"],
                                                            attachment_indices);
+    }
+    else
+    {
+        has_color_resolve_attachment = false;
     }
 
     if (document.HasMember("depth_stencil_attachment"))
     {
-        depth_stencil_attachment = initAttachmentReference(document["depth_stencil_attachment"],
+        has_depth_stencil_attachment = true;
+        depth_stencil_attachment     = initAttachmentReference(document["depth_stencil_attachment"],
                                                            attachment_indices);
+    }
+    else
+    {
+        has_depth_stencil_attachment = false;
     }
 }
 
@@ -2610,7 +2624,8 @@ void RenderConfig::init()
         assert(va.HasMember("name"));
         assert(va["name"].IsString());
 
-        vertex_attributes[va["name"].GetString()] = initVkVertexInputAttributeDescription(va, vertex_bindings);
+        vertex_attributes[va["name"].GetString()] = initVkVertexInputAttributeDescription(
+            va, vertex_bindings);
     }
 
     assert(document.HasMember("pipelines"));
@@ -3856,13 +3871,21 @@ ErrorCode RenderPassResources::createRenderPasses(Device & device, ImageResource
 
         for (auto & subpass_info: render_pass_config.subpasses)
         {
-            subpasses.push_back(VkSubpassDescription{
-                .pipelineBindPoint    = VK_PIPELINE_BIND_POINT_GRAPHICS,
-                .colorAttachmentCount = static_cast<uint32_t>(
-                    subpass_info.color_attachments.size()),
-                .pColorAttachments       = subpass_info.color_attachments.data(),
-                .pDepthStencilAttachment = &subpass_info.depth_stencil_attachment,
-                .pResolveAttachments     = &subpass_info.color_resolve_attachment});
+            subpasses.push_back(
+                VkSubpassDescription{.pipelineBindPoint    = VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                     .colorAttachmentCount = static_cast<uint32_t>(
+                                         subpass_info.color_attachments.size()),
+                                     .pColorAttachments = subpass_info.color_attachments.data()});
+
+            if (subpass_info.has_color_resolve_attachment)
+            {
+                subpasses.back().pResolveAttachments = &subpass_info.color_resolve_attachment;
+            }
+
+            if (subpass_info.has_depth_stencil_attachment)
+            {
+                subpasses.back().pDepthStencilAttachment = &subpass_info.depth_stencil_attachment;
+            }
         }
 
         auto renderPassInfo = VkRenderPassCreateInfo{
