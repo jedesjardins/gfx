@@ -312,10 +312,10 @@ enum class Format
 
 struct AttachmentConfig
 {
-    Format            format;
-    VkImageUsageFlags usage;
-    bool              multisampled;
-    bool              is_swapchain_image;
+    Format                format;
+    VkImageUsageFlags     usage;
+    VkSampleCountFlagBits multisamples;
+    bool                  is_swapchain_image;
 
     void init(rapidjson::Value & document);
 
@@ -331,6 +331,8 @@ struct SubpassInfo
     VkAttachmentReference color_resolve_attachment;
     bool                  has_depth_stencil_attachment;
     VkAttachmentReference depth_stencil_attachment;
+
+    VkSampleCountFlagBits multisamples;
 
     void init(rapidjson::Value &                        document,
               std::unordered_map<std::string, size_t> & attachment_indices);
@@ -569,7 +571,7 @@ struct PhysicalDeviceInfo
 
     VkPhysicalDeviceProperties properties{};
 
-    VkSampleCountFlagBits msaa_samples{VK_SAMPLE_COUNT_1_BIT};
+    VkSampleCountFlagBits max_msaa_samples{VK_SAMPLE_COUNT_1_BIT};
 };
 
 //
@@ -755,6 +757,7 @@ public:
     std::vector<VkRenderPass>                         render_passes;
     std::vector<std::vector<VkFramebuffer>>           framebuffers;
     std::vector<std::vector<VkClearValue>>            clear_values;
+    std::vector<VkSampleCountFlagBits>                samples;
 
     bool init(RenderConfig & render_config, Device & device, ImageResources & image_resources);
     void quit(Device & device);
@@ -1686,6 +1689,26 @@ void SamplerCollection::destroy(VkDevice & logical_device)
 // CONFIGURATION CODE
 //
 
+VkSampleCountFlagBits getVkSampleCountFlagBits(size_t num_samples)
+{
+#define SWITCH_CASE(value) \
+    case value:            \
+        return VK_SAMPLE_COUNT_##value##_BIT
+    switch (num_samples)
+    {
+        SWITCH_CASE(64);
+        SWITCH_CASE(32);
+        SWITCH_CASE(16);
+        SWITCH_CASE(8);
+        SWITCH_CASE(4);
+        SWITCH_CASE(2);
+        SWITCH_CASE(1);
+    default:
+        return VK_SAMPLE_COUNT_1_BIT;
+    };
+#undef SWITCH_CASE
+}
+
 VkImageLayout getVkImageLayout(std::string const & layout_name)
 {
 #define MAP_PAIR(value)                 \
@@ -2308,9 +2331,15 @@ void AttachmentConfig::init(rapidjson::Value & document)
         usage |= getVkImageUsageFlagBits(usage_bit_name.GetString());
     }
 
-    assert(document.HasMember("multisampled"));
-    assert(document["multisampled"].IsBool());
-    multisampled = document["multisampled"].GetBool();
+    if (document.HasMember("multisamples"))
+    {
+        assert(document["multisamples"].IsUint());
+        multisamples = getVkSampleCountFlagBits(document["multisamples"].GetUint());
+    }
+    else
+    {
+        multisamples = getVkSampleCountFlagBits(1);
+    }
 
     if (document.HasMember("is_swapchain_image"))
     {
@@ -2327,6 +2356,16 @@ void SubpassInfo::init(rapidjson::Value &                        document,
                        std::unordered_map<std::string, size_t> & attachment_indices)
 {
     assert(document.IsObject());
+
+    if (document.HasMember("multisamples"))
+    {
+        assert(document["multisamples"].IsUint());
+        multisamples = getVkSampleCountFlagBits(document["multisamples"].GetUint());
+    }
+    else
+    {
+        multisamples = getVkSampleCountFlagBits(1);
+    }
 
     if (document.HasMember("color_attachments"))
     {
@@ -3252,36 +3291,36 @@ void Device::getMaxUsableSampleCount()
         physical_device_info.properties.limits.framebufferDepthSampleCounts);
     if (counts & VK_SAMPLE_COUNT_64_BIT)
     {
-        physical_device_info.msaa_samples = VK_SAMPLE_COUNT_64_BIT;
+        physical_device_info.max_msaa_samples = VK_SAMPLE_COUNT_64_BIT;
         return;
     }
     if (counts & VK_SAMPLE_COUNT_32_BIT)
     {
-        physical_device_info.msaa_samples = VK_SAMPLE_COUNT_32_BIT;
+        physical_device_info.max_msaa_samples = VK_SAMPLE_COUNT_32_BIT;
         return;
     }
     if (counts & VK_SAMPLE_COUNT_16_BIT)
     {
-        physical_device_info.msaa_samples = VK_SAMPLE_COUNT_16_BIT;
+        physical_device_info.max_msaa_samples = VK_SAMPLE_COUNT_16_BIT;
         return;
     }
     if (counts & VK_SAMPLE_COUNT_8_BIT)
     {
-        physical_device_info.msaa_samples = VK_SAMPLE_COUNT_8_BIT;
+        physical_device_info.max_msaa_samples = VK_SAMPLE_COUNT_8_BIT;
         return;
     }
     if (counts & VK_SAMPLE_COUNT_4_BIT)
     {
-        physical_device_info.msaa_samples = VK_SAMPLE_COUNT_4_BIT;
+        physical_device_info.max_msaa_samples = VK_SAMPLE_COUNT_4_BIT;
         return;
     }
     if (counts & VK_SAMPLE_COUNT_2_BIT)
     {
-        physical_device_info.msaa_samples = VK_SAMPLE_COUNT_2_BIT;
+        physical_device_info.max_msaa_samples = VK_SAMPLE_COUNT_2_BIT;
         return;
     }
 
-    physical_device_info.msaa_samples = VK_SAMPLE_COUNT_1_BIT;
+    physical_device_info.max_msaa_samples = VK_SAMPLE_COUNT_1_BIT;
 }
 
 // LOGICAL DEVICE
@@ -3726,16 +3765,8 @@ ErrorCode ImageResources::createAttachments(Device & device)
             final_layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
         }
 
-        VkSampleCountFlagBits samples;
-
-        if (attachment_config.multisampled)
-        {
-            samples = device.physical_device_info.msaa_samples;
-        }
-        else
-        {
-            samples = VK_SAMPLE_COUNT_1_BIT;
-        }
+        auto samples = std::min(attachment_config.multisamples,
+                                device.physical_device_info.max_msaa_samples);
 
         auto opt_handle = create_texture(device.physical_device,
                                          device.logical_device,
@@ -3786,6 +3817,7 @@ bool RenderPassResources::init(RenderConfig &   render_config,
     render_passes.resize(render_pass_configs.size());
     framebuffers.resize(render_pass_configs.size());
     clear_values.resize(render_pass_configs.size());
+    samples.resize(render_pass_configs.size());
 
     return createRenderPasses(device, image_resources) == ErrorCode::NONE;
 }
@@ -3843,14 +3875,8 @@ ErrorCode RenderPassResources::createRenderPasses(Device & device, ImageResource
                 description.format = device.depth_format;
             }
 
-            if (attachment_config.multisampled)
-            {
-                description.samples = device.physical_device_info.msaa_samples;
-            }
-            else
-            {
-                description.samples = VK_SAMPLE_COUNT_1_BIT;
-            }
+            description.samples = std::min(attachment_config.multisamples,
+                                           device.physical_device_info.max_msaa_samples);
 
             sorted_descriptions[attachment_index] = description;
             sorted_names[attachment_index]        = attachment_name;
@@ -4341,6 +4367,11 @@ ErrorCode PipelineResources::createGraphicsPipeline(Device &              device
         auto &         pipeline        = pipelines[pipeline_handle];
         auto &         pipeline_config = pipeline_configs[pipeline_handle];
 
+        auto   render_pass_handle = render_passes.render_pass_handles[pipeline_config.renderpass];
+        auto & render_pass_config = render_passes.render_pass_configs[render_pass_handle];
+        auto   subpass_handle     = render_pass_config.subpass_handles[pipeline_config.subpass];
+        auto   subpass_info       = render_pass_config.subpasses[subpass_handle];
+
         LOG_DEBUG("Pipeline {} uses fragment shader {}, handle {}",
                   i,
                   pipeline_config.fragment_shader_name,
@@ -4414,10 +4445,13 @@ ErrorCode PipelineResources::createGraphicsPipeline(Device &              device
             .depthBiasSlopeFactor    = 0.0f  // Optional
         };
 
+        auto samples = std::min(subpass_info.multisamples,
+                                device.physical_device_info.max_msaa_samples);
+
         auto multisampling = VkPipelineMultisampleStateCreateInfo{
             .sType                 = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO,
             .sampleShadingEnable   = VK_TRUE,
-            .rasterizationSamples  = device.physical_device_info.msaa_samples,
+            .rasterizationSamples  = samples,
             .minSampleShading      = 0.2f,     // Optional
             .pSampleMask           = nullptr,  // Optional
             .alphaToCoverageEnable = VK_FALSE, // Optional
@@ -4496,10 +4530,6 @@ ErrorCode PipelineResources::createGraphicsPipeline(Device &              device
             vkCreatePipelineLayout(
                 device.logical_device, &pipelineLayoutInfo, nullptr, &pipeline.vk_pipeline_layout),
             "Unable to create VkPipelineLayout");
-
-        auto   render_pass_handle = render_passes.render_pass_handles[pipeline_config.renderpass];
-        auto & render_pass_config = render_passes.render_pass_configs[render_pass_handle];
-        auto   subpass_handle     = render_pass_config.subpass_handles[pipeline_config.subpass];
 
         // push this pipeline handle into the map of commandbuckets
 
