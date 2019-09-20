@@ -51,6 +51,9 @@ string(REPLACE ".cpp" "" BASENAMES_SINGLE_FILE "${SOURCES_SINGLE_FILE}")
 # gather list of single file targets
 set(TARGETS_SINGLE_FILE ${BASENAMES_SINGLE_FILE} )
 
+add_compile_definitions(RESOURCE_PATH="${CMAKE_CURRENT_SOURCE_DIR}/")
+message(STATUS "current source dir: ${CMAKE_CURRENT_SOURCE_DIR}")
+
 foreach(name ${TARGETS_SINGLE_FILE})
     add_executable(${name} ${CMAKE_CURRENT_LIST_DIR}/${name}.cpp)
     target_link_libraries(${name} JED::gfx JED::log glm)
