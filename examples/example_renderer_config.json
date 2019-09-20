@@ -1,0 +1,202 @@
+{
+	"window_name": "Example Window",
+	"dynamic_vertex_buffer_size": 1024,
+	"dynamic_index_buffer_size": 1024,
+	"staging_buffer_size": 1024,
+	"max_updated_objects": 7,
+	"max_deleted_objects": 4,
+	"attachments":
+	[
+		{
+			"name": "a_multisampled_color",
+			"format": "color",
+			"usage": ["COLOR_ATTACHMENT"],
+			"multisampled": true
+		},
+		{
+			"name": "a_depth",
+			"format": "depth",
+			"usage": ["DEPTH_STENCIL_ATTACHMENT"],
+			"multisampled": true
+		},
+		{
+			"name": "a_screen_color",
+			"is_swapchain_image": true,
+			"format": "color",
+			"usage": ["COLOR_ATTACHMENT"],
+			"multisampled": false
+		}
+	],
+	"renderpasses":
+	[
+		{
+			"name": "rp_main_render_pass",
+			"framebuffer":
+			[
+				{
+					"attachment_name": "a_multisampled_color",
+					"load_op": "CLEAR",
+					"store_op": "DONT_CARE",
+					"initial_layout": "UNDEFINED",
+					"final_layout": "COLOR_ATTACHMENT_OPTIMAL",
+					"clear_value": {
+						"color": [0, 0, 0, 1]
+					}
+				},
+				{
+					"attachment_name": "a_depth",
+					"load_op": "CLEAR",
+					"store_op": "DONT_CARE",
+					"initial_layout": "UNDEFINED",
+					"final_layout": "DEPTH_STENCIL_ATTACHMENT_OPTIMAL",
+					"clear_value": {
+						"depth_stencil": [1, 0]
+					}
+				},
+				{
+					"attachment_name": "a_screen_color",
+					"load_op": "DONT_CARE",
+					"store_op": "STORE",
+					"initial_layout": "UNDEFINED",
+					"final_layout": "PRESENT_SRC_KHR"
+				}
+			],
+			"subpasses":
+			[
+				{
+					"name": "sp_first_subpass",
+					"color_attachments":
+					[
+						{
+							"attachment_name": "a_multisampled_color",
+							"layout": "COLOR_ATTACHMENT_OPTIMAL"
+						}
+					],
+					"resolve_attachment":
+					{
+						"attachment_name": "a_screen_color",
+						"layout": "COLOR_ATTACHMENT_OPTIMAL"
+					},
+					"depth_stencil_attachment":
+					{
+						"attachment_name": "a_depth",
+						"layout": "DEPTH_STENCIL_ATTACHMENT_OPTIMAL"
+					}
+				}
+			],
+			"subpass_dependencies":
+			[
+				{
+					"src_subpass": "EXTERNAL_SUBPASS",
+					"dst_subpass": 0,
+					"src_stage_mask": ["COLOR_ATTACHMENT_OUTPUT"],
+					"dst_stage_mask": ["COLOR_ATTACHMENT_OUTPUT"],
+					"dst_access_mask":
+					[
+						"COLOR_ATTACHMENT_READ",
+						"COLOR_ATTACHMENT_WRITE"
+					]
+				}
+			]
+		}
+	],
+	"renderpass_order": [
+		"rp_main_render_pass"
+	],
+	"shaders":
+	[
+		{
+			"name": "s_vertex_shader",
+			"file": "shaders/vert.spv"
+		},
+		{
+			"name": "s_fragment_shader",
+			"file": "shaders/frag.spv"
+		},
+		{
+			"name": "s_simple_fragment_shader",
+			"file": "shaders/simple-frag.spv"
+		}
+	],
+	"uniform_layouts":
+	[
+		{
+			"name": "ul_camera_matrix",
+			"binding": 0,
+			"descriptor_type": "UNIFORM_BUFFER_DYNAMIC",
+			"descriptor_count": 1,
+			"stage": ["VERTEX"],
+			"max_count": 8
+		},
+		{
+			"name": "ul_texture",
+			"binding": 1,
+			"descriptor_type": "COMBINED_IMAGE_SAMPLER",
+			"descriptor_count": 1,
+			"stage": ["FRAGMENT"],
+			"max_count": 8
+		}
+	],
+	"push_constants":
+	[
+		{
+			"name": "pc_model_matrix",
+			"stage": ["VERTEX"],
+			"offset": 0,
+			"size": 64
+		}
+	],
+	"vertex_bindings":
+	[
+		{
+			"name": "vb_pos_color",
+			"binding_slot": 0,
+			"stride": 24,
+			"input_rate": "PER_VERTEX"
+		}
+	],
+	"vertex_attributes":
+	[
+		{
+			"name": "va_pos",
+			"vertex_binding_name": "vb_pos_color",
+			"location": 0,
+			"format": "R32G32B32_SFLOAT",
+			"offset": 0
+		},
+		{
+			"name": "va_color",
+			"vertex_binding_name": "vb_pos_color",
+			"location": 1,
+			"format": "R32G32B32_SFLOAT",
+			"offset": 12
+		}
+	],
+	"pipelines":
+	[
+		{
+			"name": "colored_texture_shader",
+			"vertex_shader_name": "s_vertex_shader",
+			"fragment_shader_name": "s_fragment_shader",
+			"vertex_bindings": ["vb_pos_color"],
+			"vertex_attributes": ["va_color", "va_pos"],
+			"uniform_layouts": ["ul_camera_matrix", "ul_texture"],
+			"push_constants": ["pc_model_matrix"],
+			"renderpass": "rp_main_render_pass",
+			"subpass": "sp_first_subpass",
+			"max_drawn_objects": 3
+		},
+		{
+			"name": "simple_texture_shader",
+			"vertex_shader_name": "s_vertex_shader",
+			"fragment_shader_name": "s_simple_fragment_shader",
+			"vertex_bindings": ["vb_pos_color"],
+			"vertex_attributes": ["va_color", "va_pos"],
+			"uniform_layouts": ["ul_camera_matrix", "ul_texture"],
+			"push_constants": ["pc_model_matrix"],
+			"renderpass": "rp_main_render_pass",
+			"subpass": "sp_first_subpass",
+			"max_drawn_objects": 1
+		}
+	]
+}
