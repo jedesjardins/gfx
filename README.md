@@ -2,9 +2,7 @@
 
 A single file Open Source C++ wrapper for [Vulkan](https://www.khronos.org/vulkan/), for abstracting away boilerplate, and easing use.
 
-## Quick and Easy Guide
-
-
+At this moment it's not fully featured, and still requires a lot of knowledge of Vulkan, but there are some [examples](examples) that can be referenced that should make it a bit easier.
 
 ## Usage
 
