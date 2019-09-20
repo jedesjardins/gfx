@@ -349,7 +349,7 @@ int main()
     auto render_device = gfx::Renderer{window};
 
     auto render_config = gfx::RenderConfig{
-        .config_filename = "../examples/example_renderer_config.json"};
+        .config_filename = RESOURCE_PATH "example_renderer_config.json"};
 
     render_config.init();
 
@@ -361,7 +361,7 @@ int main()
 
     std::vector<Object> objects{};
 
-    auto opt_texture = render_device.create_texture("../sword.png");
+    auto opt_texture = render_device.create_texture(RESOURCE_PATH "examples/sword.png");
     if (!opt_texture)
     {
         LOG_ERROR("Couldn't create texture, exiting program!!");

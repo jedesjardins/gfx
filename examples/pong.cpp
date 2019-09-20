@@ -541,7 +541,7 @@ int main()
 
     auto render_device = gfx::Renderer{window};
 
-    auto render_config = gfx::RenderConfig{.config_filename = "../examples/pong_config.json"};
+    auto render_config = gfx::RenderConfig{.config_filename = RESOURCE_PATH "pong_config.json"};
 
     render_config.init();
 
