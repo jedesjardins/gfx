@@ -361,7 +361,7 @@ int main()
 
     std::vector<Object> objects{};
 
-    auto opt_texture = render_device.create_texture("../sword.png");
+    auto opt_texture = render_device.create_texture("../examples/sword.png");
     if (!opt_texture)
     {
         LOG_ERROR("Couldn't create texture, exiting program!!");
