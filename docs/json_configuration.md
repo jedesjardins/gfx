@@ -30,7 +30,7 @@ To initialize the Vulkan Renderer you need a JSON configuration file that outlin
 | name | string | name to reference the attachment by | Y |
 | format | string | either "color" or "depth" | Y |
 | usage | array of [Attachment Usages](#Attachment_Usage) | Lists all possible usages of this attachment | Y |
-| multisampled | boolean | whether or not this attachment is multisampled | N |
+| multisamples | uint | the number of samples this attachment uses, must be a power of two, defaults to 1 | N |
 | is_swapchain_image | boolean | if this attachment refers to the screen swapchain  | N |
 
 
@@ -122,8 +122,9 @@ These operations describe how an attachment is stored at the end of a Renderpass
 | Field Name | Type | Description | Mandatory |
 | ---------- | ---- | ----------- | --------- |
 | name | string | the name of this subpass | Y |
+| multisamples | uint | the number of samples the attachments in this pass use, must be a power of two, defaults to 1 | N |
 | color_attachments | array of [Subpass Attachment objects](#Subpass_Attachment) | all the color attachments for this subpass | Y |
-| resolve_attachment | [Subpass Attachment](#Subpass_Attachment) | the multisample resolve attachment for this subpass | Y |
+| resolve_attachment | [Subpass Attachment](#Subpass_Attachment) | the multisample resolve attachment for this subpass | N, only required if multisamples is greater than 1 |
 | depth_stencil_attachment | [Subpass Attachment](#Subpass_Attachment) | the depth/stencil attachment for this subpass | Y |
 
 
