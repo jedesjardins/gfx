@@ -1960,7 +1960,9 @@ VkDescriptorType getVkDescriptorType(std::string const & type_name)
 VkFormat getVkFormat(std::string const & format_name)
 {
     static std::unordered_map<std::string, VkFormat> formats{
+        {"R32G32_SFLOAT", VK_FORMAT_R32G32_SFLOAT},
         {"R32G32B32_SFLOAT", VK_FORMAT_R32G32B32_SFLOAT},
+        {"R32G32B32A32_SFLOAT", VK_FORMAT_R32G32B32A32_SFLOAT}
     };
 
     auto format = formats.find(format_name);
