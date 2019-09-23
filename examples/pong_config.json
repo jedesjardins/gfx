@@ -8,23 +8,17 @@
 	"attachments":
 	[
 		{
-			"name": "a_multisampled_color",
+			"name": "a_screen_color",
 			"format": "color",
 			"usage": ["COLOR_ATTACHMENT"],
-			"multisampled": true
+			"is_swapchain_image": true,
+			"multisamples": 1
 		},
 		{
 			"name": "a_depth",
 			"format": "depth",
 			"usage": ["DEPTH_STENCIL_ATTACHMENT"],
-			"multisampled": true
-		},
-		{
-			"name": "a_screen_color",
-			"is_swapchain_image": true,
-			"format": "color",
-			"usage": ["COLOR_ATTACHMENT"],
-			"multisampled": false
+			"multisamples": 1
 		}
 	],
 	"renderpasses":
@@ -34,15 +28,14 @@
 			"framebuffer":
 			[
 				{
-					"attachment_name": "a_multisampled_color",
+					"attachment_name": "a_screen_color",
 					"load_op": "CLEAR",
-					"store_op": "DONT_CARE",
+					"store_op": "STORE",
 					"initial_layout": "UNDEFINED",
-					"final_layout": "COLOR_ATTACHMENT_OPTIMAL",
+					"final_layout": "PRESENT_SRC_KHR",
 					"clear_value": {
 						"color": [0, 0, 0, 1]
 					}
-
 				},
 				{
 					"attachment_name": "a_depth",
@@ -53,31 +46,20 @@
 					"clear_value": {
 						"depth_stencil": [1, 0]
 					}
-				},
-				{
-					"attachment_name": "a_screen_color",
-					"load_op": "DONT_CARE",
-					"store_op": "STORE",
-					"initial_layout": "UNDEFINED",
-					"final_layout": "PRESENT_SRC_KHR"
 				}
 			],
 			"subpasses":
 			[
 				{
 					"name": "sp_first_subpass",
+					"multisamples": 1,
 					"color_attachments":
 					[
 						{
-							"attachment_name": "a_multisampled_color",
+							"attachment_name": "a_screen_color",
 							"layout": "COLOR_ATTACHMENT_OPTIMAL"
 						}
 					],
-					"resolve_attachment":
-					{
-						"attachment_name": "a_screen_color",
-						"layout": "COLOR_ATTACHMENT_OPTIMAL"
-					},
 					"depth_stencil_attachment":
 					{
 						"attachment_name": "a_depth",

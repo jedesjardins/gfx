@@ -11,13 +11,13 @@
 			"name": "a_multisampled_color",
 			"format": "color",
 			"usage": ["COLOR_ATTACHMENT"],
-			"multisampled": true
+			"multisamples": 8
 		},
 		{
 			"name": "a_depth",
 			"format": "depth",
 			"usage": ["DEPTH_STENCIL_ATTACHMENT"],
-			"multisampled": true
+			"multisamples": 8
 		},
 		{
 			"name": "a_screen_color",
@@ -65,6 +65,7 @@
 			[
 				{
 					"name": "sp_first_subpass",
+					"multisamples": 8,
 					"color_attachments":
 					[
 						{
