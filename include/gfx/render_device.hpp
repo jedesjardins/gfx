@@ -1962,10 +1962,18 @@ VkDescriptorType getVkDescriptorType(std::string const & type_name)
 
 VkFormat getVkFormat(std::string const & format_name)
 {
+#define MAP_PAIR(value)                    \
+    {                                      \
+#value, VK_FORMAT_##value \
+    }
     static std::unordered_map<std::string, VkFormat> formats{
-        {"R32G32_SFLOAT", VK_FORMAT_R32G32_SFLOAT},
-        {"R32G32B32_SFLOAT", VK_FORMAT_R32G32B32_SFLOAT},
-        {"R32G32B32A32_SFLOAT", VK_FORMAT_R32G32B32A32_SFLOAT}};
+        MAP_PAIR(R32G32_SFLOAT),
+        MAP_PAIR(R32G32B32_SFLOAT),
+        MAP_PAIR(R32G32B32A32_SFLOAT),
+        MAP_PAIR(R8G8B8A8_UNORM)
+    };
+
+#undef MAP_PAIR
 
     auto format = formats.find(format_name);
     assert(format != formats.end());
