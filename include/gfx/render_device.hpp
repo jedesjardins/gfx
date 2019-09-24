@@ -16,8 +16,6 @@
 
 #include "rapidjson/document.h"
 
-#include "stb_image.h"
-
 #ifndef LOG_TRACE
 #define LOG_TRACE(...)
 #endif
@@ -1004,7 +1002,10 @@ public:
 
     void delete_buffers(size_t buffer_count, BufferHandle * buffers);
 
-    std::optional<TextureHandle> create_texture(char const * texture_path);
+    std::optional<TextureHandle> create_texture(size_t       width,
+                                                size_t       height,
+                                                size_t       pixel_size,
+                                                void * const pixels);
 
     void delete_textures(size_t sampler_count, TextureHandle * sampler_handles);
 
@@ -1962,8 +1963,7 @@ VkFormat getVkFormat(std::string const & format_name)
     static std::unordered_map<std::string, VkFormat> formats{
         {"R32G32_SFLOAT", VK_FORMAT_R32G32_SFLOAT},
         {"R32G32B32_SFLOAT", VK_FORMAT_R32G32B32_SFLOAT},
-        {"R32G32B32A32_SFLOAT", VK_FORMAT_R32G32B32A32_SFLOAT}
-    };
+        {"R32G32B32A32_SFLOAT", VK_FORMAT_R32G32B32A32_SFLOAT}};
 
     auto format = formats.find(format_name);
     assert(format != formats.end());
@@ -5427,33 +5427,23 @@ void Renderer::delete_buffers(size_t buffer_count, BufferHandle * buffer_handles
     }
 }
 
-std::optional<TextureHandle> Renderer::create_texture(char const * texture_path)
+std::optional<TextureHandle> Renderer::create_texture(size_t       width,
+                                                      size_t       height,
+                                                      size_t       pixel_size,
+                                                      void * const pixels)
 {
     LOG_INFO("Creating Texture");
-    int       texWidth, texHeight, texChannels;
-    stbi_uc * pixels = stbi_load(texture_path, &texWidth, &texHeight, &texChannels, STBI_rgb_alpha);
 
-    VkDeviceSize imageSize = texWidth * texHeight * 4;
-
-    // mipLevels = static_cast<uint32_t>(std::floor(std::log2(std::max(texWidth, texHeight)))) +
-    // 1;
-
-    if (!pixels)
-    {
-        LOG_ERROR("Failed to load texture image {}", texture_path);
-        return std::nullopt;
-    }
+    VkDeviceSize imageSize = width*height*pixel_size;
 
     VkDeviceSize pixel_data_offset = buffers.staging_buffer[frames.currentResource].copy(
         static_cast<size_t>(imageSize), pixels);
 
-    stbi_image_free(pixels);
-
     auto opt_texture_handle = images.create_texture(
         render_device.physical_device,
         render_device.logical_device,
-        texWidth,
-        texHeight,
+        width,
+        height,
         1,
         VK_SAMPLE_COUNT_1_BIT,
         VK_FORMAT_R8G8B8A8_UNORM,
@@ -5499,8 +5489,8 @@ std::optional<TextureHandle> Renderer::create_texture(char const * texture_path)
     copy_command->srcBuffer     = buffers.staging_buffer[frames.currentResource].buffer_handle();
     copy_command->srcOffset     = pixel_data_offset;
     copy_command->dstImage      = texture.image_handle();
-    copy_command->width         = static_cast<uint32_t>(texWidth);
-    copy_command->height        = static_cast<uint32_t>(texHeight);
+    copy_command->width         = static_cast<uint32_t>(width);
+    copy_command->height        = static_cast<uint32_t>(height);
 
     SetImageLayout * shader_optimal_command = bucket.AddCommand<SetImageLayout>(0, 0);
     shader_optimal_command->commandbuffer

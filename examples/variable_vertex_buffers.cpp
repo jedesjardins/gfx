@@ -329,6 +329,24 @@ private:
 
 }; // class RawClock
 
+std::optional<gfx::TextureHandle> create_texture(gfx::Renderer & renderer, char const * texture_path)
+{
+    int       texWidth, texHeight, texChannels;
+    stbi_uc * pixels = stbi_load(texture_path, &texWidth, &texHeight, &texChannels, STBI_rgb_alpha);
+
+    if (!pixels)
+    {
+        LOG_ERROR("Failed to load texture image {}", texture_path);
+        return std::nullopt;
+    }
+
+    auto texture = renderer.create_texture(texWidth, texHeight, 4, pixels);
+
+    stbi_image_free(pixels);
+
+    return texture;
+}
+
 int main()
 {
     get_console_sink()->set_level(spdlog::level::warn);
@@ -361,7 +379,7 @@ int main()
 
     std::vector<Object> objects{};
 
-    auto opt_texture = render_device.create_texture(RESOURCE_PATH "sword.png");
+    auto opt_texture = create_texture(render_device, RESOURCE_PATH "sword.png");
     if (!opt_texture)
     {
         LOG_ERROR("Couldn't create texture, exiting program!!");
