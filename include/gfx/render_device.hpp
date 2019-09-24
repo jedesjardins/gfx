@@ -2700,7 +2700,7 @@ void draw(void const * data)
 {
     Draw const * realdata = reinterpret_cast<Draw const *>(data);
 
-    if (realdata->push_constant_size == 0)
+    if (realdata->push_constant_size != 0)
     {
         vkCmdPushConstants(realdata->commandbuffer,
                            realdata->pipeline_layout,
@@ -5258,8 +5258,6 @@ ErrorCode Renderer::make_draw_command(cmd::CommandBucket<int> & bucket,
         command->dynamic_offset_count = 0;
         command->dynamic_offsets      = nullptr;
     }
-    
-    
 
     return ErrorCode::NONE;
 }
