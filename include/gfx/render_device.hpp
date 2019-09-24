@@ -2700,14 +2700,19 @@ void draw(void const * data)
 {
     Draw const * realdata = reinterpret_cast<Draw const *>(data);
 
-    vkCmdPushConstants(realdata->commandbuffer,
-                       realdata->pipeline_layout,
-                       VK_SHADER_STAGE_VERTEX_BIT,
-                       0,
-                       realdata->push_constant_size,
-                       realdata->push_constant_data);
+    if (realdata->push_constant_size == 0)
+    {
+        vkCmdPushConstants(realdata->commandbuffer,
+                           realdata->pipeline_layout,
+                           VK_SHADER_STAGE_VERTEX_BIT,
+                           0,
+                           realdata->push_constant_size,
+                           realdata->push_constant_data);
+    }
 
-    vkCmdBindDescriptorSets(realdata->commandbuffer,
+    if (realdata->descriptor_set_count != 0)
+    {
+        vkCmdBindDescriptorSets(realdata->commandbuffer,
                             VK_PIPELINE_BIND_POINT_GRAPHICS,
                             realdata->pipeline_layout,
                             0,
@@ -2715,6 +2720,7 @@ void draw(void const * data)
                             realdata->descriptor_sets,
                             realdata->dynamic_offset_count,
                             realdata->dynamic_offsets);
+    }
 
     vkCmdBindVertexBuffers(
         realdata->commandbuffer, 0, 1, &realdata->vertexbuffer, &realdata->vertexbuffer_offset);
@@ -5169,49 +5175,48 @@ ErrorCode Renderer::make_draw_command(cmd::CommandBucket<int> & bucket,
 
 )
 {
+    size_t descriptor_sets_size = 0;
+    size_t dynamic_offsets_size = 0;
     std::vector<VkDescriptorSet> descriptorsets;
     std::vector<uint32_t>        dynamic_offsets;
 
-    descriptorsets.reserve(uniform_count);
-
-    for (size_t i = 0; i < uniform_count; ++i)
+    if (uniform_count != 0)
     {
-        auto uniform_handle = p_uniforms[i];
-        auto opt_uniform    = getUniform(uniform_handle);
+        descriptorsets.reserve(uniform_count);
 
-        if (opt_uniform.has_value())
+        for (size_t i = 0; i < uniform_count; ++i)
         {
-            descriptorsets.push_back(opt_uniform.value());
-        }
-        else
-        {
-            LOG_ERROR("No Descriptor Set returned for Uniform {} {}",
-                      uniform_handle.uniform_layout_id,
-                      uniform_handle.uniform_id);
-            return ErrorCode::API_ERROR;
+            auto uniform_handle = p_uniforms[i];
+            auto opt_uniform    = getUniform(uniform_handle);
+
+            if (opt_uniform.has_value())
+            {
+                descriptorsets.push_back(opt_uniform.value());
+            }
+            else
+            {
+                LOG_ERROR("No Descriptor Set returned for Uniform {} {}",
+                          uniform_handle.uniform_layout_id,
+                          uniform_handle.uniform_id);
+                return ErrorCode::API_ERROR;
+            }
+
+            auto opt_offset = getDynamicOffset(uniform_handle);
+
+            if (opt_offset.has_value())
+            {
+                dynamic_offsets.push_back(opt_offset.value());
+            }
         }
 
-        auto opt_offset = getDynamicOffset(uniform_handle);
-
-        if (opt_offset.has_value())
-        {
-            dynamic_offsets.push_back(opt_offset.value());
-        }
+        descriptor_sets_size = sizeof(VkDescriptorSet) * descriptorsets.size();
+        dynamic_offsets_size = sizeof(uint32_t) * dynamic_offsets.size();
     }
-
-    size_t descriptor_sets_size = sizeof(VkDescriptorSet) * descriptorsets.size();
-    size_t dynamic_offsets_size = sizeof(uint32_t) * dynamic_offsets.size();
 
     Draw * command = bucket.AddCommand<Draw>(
         0, push_constant_size + descriptor_sets_size + dynamic_offsets_size);
 
     char * command_memory = cmd::commandPacket::GetAuxiliaryMemory(command);
-
-    memcpy(command_memory, push_constant_data, push_constant_size);
-    memcpy(command_memory + push_constant_size, descriptorsets.data(), descriptor_sets_size);
-    memcpy(command_memory + push_constant_size + descriptor_sets_size,
-           dynamic_offsets.data(),
-           dynamic_offsets_size);
 
     command->commandbuffer        = commands.draw_commandbuffers[frames.currentResource];
     command->pipeline_layout      = pipeline_layout;
@@ -5220,14 +5225,41 @@ ErrorCode Renderer::make_draw_command(cmd::CommandBucket<int> & bucket,
     command->indexbuffer          = index_buffer;
     command->indexbuffer_offset   = index_buffer_offset;
     command->indexbuffer_count    = index_buffer_count;
-    command->push_constant_size   = push_constant_size;
-    command->push_constant_data   = reinterpret_cast<void *>(command_memory);
-    command->descriptor_set_count = descriptorsets.size();
-    command->descriptor_sets      = reinterpret_cast<VkDescriptorSet *>(command_memory
-                                                                   + push_constant_size);
-    command->dynamic_offset_count = dynamic_offsets.size();
-    command->dynamic_offsets      = reinterpret_cast<uint32_t *>(command_memory + push_constant_size
-                                                            + descriptor_sets_size);
+    if (push_constant_size != 0)
+    {
+        memcpy(command_memory, push_constant_data, push_constant_size);
+        command->push_constant_size = push_constant_size;
+        command->push_constant_data = reinterpret_cast<void *>(command_memory);
+    }
+    else
+    {
+        command->push_constant_size = 0;
+        command->push_constant_data = nullptr;
+    }
+
+    if (descriptorsets.size() != 0)
+    {
+        memcpy(command_memory + push_constant_size, descriptorsets.data(), descriptor_sets_size);
+        memcpy(command_memory + push_constant_size + descriptor_sets_size,
+               dynamic_offsets.data(),
+               dynamic_offsets_size);
+
+        command->descriptor_set_count = descriptorsets.size();
+        command->descriptor_sets      = reinterpret_cast<VkDescriptorSet *>(command_memory
+                                                                       + push_constant_size);
+        command->dynamic_offset_count = dynamic_offsets.size();
+        command->dynamic_offsets      = reinterpret_cast<uint32_t *>(command_memory + push_constant_size
+                                                                + descriptor_sets_size);
+    }
+    else
+    {
+        command->descriptor_set_count = 0;
+        command->descriptor_sets      = nullptr;
+        command->dynamic_offset_count = 0;
+        command->dynamic_offsets      = nullptr;
+    }
+    
+    
 
     return ErrorCode::NONE;
 }
