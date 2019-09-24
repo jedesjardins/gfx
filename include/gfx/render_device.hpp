@@ -266,6 +266,7 @@ struct SamplerCollection
     IndexAllocator               free_uniform_slots;
 
     std::optional<UniformHandle>   createUniform(VkDevice &  logical_device,
+                                                 uint32_t    binding,
                                                  VkImageView view,
                                                  VkSampler   sampler);
     std::optional<VkDescriptorSet> getUniform(UniformHandle handle);
@@ -1639,6 +1640,7 @@ void DynamicBufferCollection::destroy(VkDevice & logical_device)
 }
 
 std::optional<UniformHandle> SamplerCollection::createUniform(VkDevice &  logical_device,
+                                                              uint32_t    binding,
                                                               VkImageView view,
                                                               VkSampler   sampler)
 {
@@ -1657,7 +1659,7 @@ std::optional<UniformHandle> SamplerCollection::createUniform(VkDevice &  logica
     auto descriptorWrite = VkWriteDescriptorSet{
         .sType            = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
         .dstSet           = descriptor_sets[0],
-        .dstBinding       = 1,
+        .dstBinding       = binding,
         .dstArrayElement  = 0,
         .descriptorType   = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
         .descriptorCount  = 1,
@@ -4163,7 +4165,7 @@ ErrorCode UniformResources::createUniformLayouts(Device & device, BufferResource
                 auto descriptorWrite = VkWriteDescriptorSet{
                     .sType            = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
                     .dstSet           = descriptor_sets[ds_i],
-                    .dstBinding       = 0,
+                    .dstBinding       = uniform_layout_info.binding,
                     .dstArrayElement  = 0,
                     .descriptorType   = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC,
                     .descriptorCount  = 1,
@@ -5283,7 +5285,8 @@ std::optional<UniformHandle> Renderer::new_uniform(UniformLayoutHandle layout_ha
 
     auto sampler = images.get_texture(texture_handle).value();
 
-    auto & uniform_collection = uniforms.uniform_collections[layout_handle];
+    auto &       uniform_collection  = uniforms.uniform_collections[layout_handle];
+    auto const & uniform_layout_info = uniforms.uniform_layout_infos[layout_handle];
 
     if (!std::holds_alternative<SamplerCollection>(uniform_collection))
     {
@@ -5293,8 +5296,10 @@ std::optional<UniformHandle> Renderer::new_uniform(UniformLayoutHandle layout_ha
 
     auto & sampler_collection = std::get<SamplerCollection>(uniform_collection);
 
-    auto opt_uniform_handle = sampler_collection.createUniform(
-        render_device.logical_device, sampler.view_handle(), sampler.sampler_handle());
+    auto opt_uniform_handle = sampler_collection.createUniform(render_device.logical_device,
+                                                               uniform_layout_info.binding,
+                                                               sampler.view_handle(),
+                                                               sampler.sampler_handle());
 
     if (opt_uniform_handle)
     {
@@ -5434,7 +5439,7 @@ std::optional<TextureHandle> Renderer::create_texture(size_t       width,
 {
     LOG_INFO("Creating Texture");
 
-    VkDeviceSize imageSize = width*height*pixel_size;
+    VkDeviceSize imageSize = width * height * pixel_size;
 
     VkDeviceSize pixel_data_offset = buffers.staging_buffer[frames.currentResource].copy(
         static_cast<size_t>(imageSize), pixels);
