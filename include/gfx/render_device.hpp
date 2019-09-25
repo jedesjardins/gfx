@@ -999,6 +999,8 @@ public:
                                               VkBufferUsageFlags    usage,
                                               VkMemoryPropertyFlags properties);
 
+    std::optional<MappedBuffer> create_mapped_buffer(BufferHandle buffer_handle, VkDeviceSize size);
+
     void update_buffer(BufferHandle buffer, VkDeviceSize size, void * data);
 
     void delete_buffers(size_t buffer_count, BufferHandle * buffers);
@@ -5393,6 +5395,20 @@ std::optional<BufferHandle> Renderer::create_buffer(VkDeviceSize          size,
     LOG_INFO("Creating Buffer");
 
     return buffers.create_buffer(render_device, size, usage, properties);
+}
+
+std::optional<MappedBuffer> Renderer::create_mapped_buffer(BufferHandle buffer_handle, VkDeviceSize size)
+{
+    auto opt_buffer = buffers.get_buffer(buffer_handle);
+
+    if (!opt_buffer)
+    {
+        return std::nullopt;
+    }
+
+    auto buffer = opt_buffer.value();
+
+    return MappedBuffer(render_device.logical_device, buffer, size);
 }
 
 void Renderer::update_buffer(BufferHandle buffer_handle, VkDeviceSize size, void * data)
