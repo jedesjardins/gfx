@@ -2728,7 +2728,7 @@ void draw(void const * data)
         realdata->commandbuffer, 0, 1, &realdata->vertexbuffer, &realdata->vertexbuffer_offset);
     vkCmdBindIndexBuffer(realdata->commandbuffer,
                          realdata->indexbuffer,
-                         realdata->indexbuffer_offset,
+                         realdata->indexbuffer_offset*sizeof(uint32_t),
                          VK_INDEX_TYPE_UINT32);
 
     vkCmdDrawIndexed(realdata->commandbuffer, realdata->indexbuffer_count, 1, 0, 0, 0);
@@ -5074,6 +5074,7 @@ bool Renderer::submit_frame()
 
     commands.transfer_buckets[frames.currentResource].Clear();
     commands.delete_buckets[frames.currentResource].Submit();
+    commands.delete_buckets[frames.currentResource].Clear();
 
     return true;
 }
