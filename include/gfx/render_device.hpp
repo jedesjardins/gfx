@@ -369,6 +369,9 @@ struct PipelineConfig
     std::string renderpass;
     std::string subpass;
 
+    bool blendable;
+    bool tests_depth;
+
     size_t max_draw_calls;
 
     void init(rapidjson::Value & document, std::unordered_map<std::string, std::string> const &);
@@ -1964,16 +1967,14 @@ VkDescriptorType getVkDescriptorType(std::string const & type_name)
 
 VkFormat getVkFormat(std::string const & format_name)
 {
-#define MAP_PAIR(value)                    \
-    {                                      \
+#define MAP_PAIR(value)           \
+    {                             \
 #value, VK_FORMAT_##value \
     }
-    static std::unordered_map<std::string, VkFormat> formats{
-        MAP_PAIR(R32G32_SFLOAT),
-        MAP_PAIR(R32G32B32_SFLOAT),
-        MAP_PAIR(R32G32B32A32_SFLOAT),
-        MAP_PAIR(R8G8B8A8_UNORM)
-    };
+    static std::unordered_map<std::string, VkFormat> formats{MAP_PAIR(R32G32_SFLOAT),
+                                                             MAP_PAIR(R32G32B32_SFLOAT),
+                                                             MAP_PAIR(R32G32B32A32_SFLOAT),
+                                                             MAP_PAIR(R8G8B8A8_UNORM)};
 
 #undef MAP_PAIR
 
@@ -2519,6 +2520,26 @@ void PipelineConfig::init(rapidjson::Value &                                   d
     assert(document.HasMember("max_drawn_objects"));
     assert(document["max_drawn_objects"].IsUint());
     max_draw_calls = document["max_drawn_objects"].GetUint();
+
+    if (document.HasMember("blendable"))
+    {
+        assert(document["blendable"].IsBool());
+        blendable = document["blendable"].GetBool();
+    }
+    else
+    {
+        blendable = true;
+    }
+
+    if (document.HasMember("tests_depth"))
+    {
+        assert(document["tests_depth"].IsBool());
+        tests_depth = document["tests_depth"].GetBool();
+    }
+    else
+    {
+        tests_depth = false;
+    }
 }
 
 void UniformConfig::init(rapidjson::Value & document)
@@ -2715,20 +2736,20 @@ void draw(void const * data)
     if (realdata->descriptor_set_count != 0)
     {
         vkCmdBindDescriptorSets(realdata->commandbuffer,
-                            VK_PIPELINE_BIND_POINT_GRAPHICS,
-                            realdata->pipeline_layout,
-                            0,
-                            realdata->descriptor_set_count,
-                            realdata->descriptor_sets,
-                            realdata->dynamic_offset_count,
-                            realdata->dynamic_offsets);
+                                VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                realdata->pipeline_layout,
+                                0,
+                                realdata->descriptor_set_count,
+                                realdata->descriptor_sets,
+                                realdata->dynamic_offset_count,
+                                realdata->dynamic_offsets);
     }
 
     vkCmdBindVertexBuffers(
         realdata->commandbuffer, 0, 1, &realdata->vertexbuffer, &realdata->vertexbuffer_offset);
     vkCmdBindIndexBuffer(realdata->commandbuffer,
                          realdata->indexbuffer,
-                         realdata->indexbuffer_offset*sizeof(uint32_t),
+                         realdata->indexbuffer_offset * sizeof(uint32_t),
                          VK_INDEX_TYPE_UINT32);
 
     vkCmdDrawIndexed(realdata->commandbuffer, realdata->indexbuffer_count, 1, 0, 0, 0);
@@ -3366,8 +3387,8 @@ ErrorCode Device::createLogicalDevice()
     }
 
     // ensure physical device supports this
-    auto deviceFeatures = VkPhysicalDeviceFeatures{.samplerAnisotropy = VK_TRUE,
-                                                   .sampleRateShading = VK_TRUE};
+    auto deviceFeatures = VkPhysicalDeviceFeatures{
+        .samplerAnisotropy = VK_TRUE, .sampleRateShading = VK_TRUE, .fillModeNonSolid = VK_TRUE};
 
     // create logical device info
     auto createInfo = VkDeviceCreateInfo{
@@ -4480,9 +4501,9 @@ ErrorCode PipelineResources::createGraphicsPipeline(Device &              device
 
         auto depthStencil = VkPipelineDepthStencilStateCreateInfo{
             .sType                 = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO,
-            .depthTestEnable       = VK_TRUE,
+            .depthTestEnable       = pipeline_config.tests_depth,
             .depthWriteEnable      = VK_TRUE,
-            .depthCompareOp        = VK_COMPARE_OP_LESS,
+            .depthCompareOp        = VK_COMPARE_OP_LESS_OR_EQUAL,
             .depthBoundsTestEnable = VK_FALSE,
             .minDepthBounds        = 0.0f,
             .maxDepthBounds        = 1.0f,
@@ -4493,7 +4514,7 @@ ErrorCode PipelineResources::createGraphicsPipeline(Device &              device
         auto colorBlendAttachment = VkPipelineColorBlendAttachmentState{
             .colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT
                               | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT,
-            .blendEnable         = VK_FALSE,
+            .blendEnable         = pipeline_config.blendable,
             .srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA,
             .dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA,
             .colorBlendOp        = VK_BLEND_OP_ADD,
@@ -5178,8 +5199,8 @@ ErrorCode Renderer::make_draw_command(cmd::CommandBucket<int> & bucket,
 
 )
 {
-    size_t descriptor_sets_size = 0;
-    size_t dynamic_offsets_size = 0;
+    size_t                       descriptor_sets_size = 0;
+    size_t                       dynamic_offsets_size = 0;
     std::vector<VkDescriptorSet> descriptorsets;
     std::vector<uint32_t>        dynamic_offsets;
 
@@ -5221,13 +5242,13 @@ ErrorCode Renderer::make_draw_command(cmd::CommandBucket<int> & bucket,
 
     char * command_memory = cmd::commandPacket::GetAuxiliaryMemory(command);
 
-    command->commandbuffer        = commands.draw_commandbuffers[frames.currentResource];
-    command->pipeline_layout      = pipeline_layout;
-    command->vertexbuffer         = vertex_buffer;
-    command->vertexbuffer_offset  = vertex_buffer_offset;
-    command->indexbuffer          = index_buffer;
-    command->indexbuffer_offset   = index_buffer_offset;
-    command->indexbuffer_count    = index_buffer_count;
+    command->commandbuffer       = commands.draw_commandbuffers[frames.currentResource];
+    command->pipeline_layout     = pipeline_layout;
+    command->vertexbuffer        = vertex_buffer;
+    command->vertexbuffer_offset = vertex_buffer_offset;
+    command->indexbuffer         = index_buffer;
+    command->indexbuffer_offset  = index_buffer_offset;
+    command->indexbuffer_count   = index_buffer_count;
     if (push_constant_size != 0)
     {
         memcpy(command_memory, push_constant_data, push_constant_size);
@@ -5251,7 +5272,7 @@ ErrorCode Renderer::make_draw_command(cmd::CommandBucket<int> & bucket,
         command->descriptor_sets      = reinterpret_cast<VkDescriptorSet *>(command_memory
                                                                        + push_constant_size);
         command->dynamic_offset_count = dynamic_offsets.size();
-        command->dynamic_offsets      = reinterpret_cast<uint32_t *>(command_memory + push_constant_size
+        command->dynamic_offsets = reinterpret_cast<uint32_t *>(command_memory + push_constant_size
                                                                 + descriptor_sets_size);
     }
     else
@@ -5398,7 +5419,8 @@ std::optional<BufferHandle> Renderer::create_buffer(VkDeviceSize          size,
     return buffers.create_buffer(render_device, size, usage, properties);
 }
 
-std::optional<MappedBuffer> Renderer::create_mapped_buffer(BufferHandle buffer_handle, VkDeviceSize size)
+std::optional<MappedBuffer> Renderer::create_mapped_buffer(BufferHandle buffer_handle,
+                                                           VkDeviceSize size)
 {
     auto opt_buffer = buffers.get_buffer(buffer_handle);
 
