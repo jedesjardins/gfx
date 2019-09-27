@@ -372,6 +372,8 @@ struct PipelineConfig
     bool blendable;
     bool tests_depth;
 
+    std::vector<VkDynamicState> dynamic_state;
+
     size_t max_draw_calls;
 
     void init(rapidjson::Value & document, std::unordered_map<std::string, std::string> const &);
@@ -431,6 +433,17 @@ struct RenderConfig
 //
 //  COMMANDS
 //
+
+struct SetScissor
+{
+    static cmd::BackendDispatchFunction const DISPATCH_FUNCTION;
+
+    VkCommandBuffer commandbuffer;
+    VkRect2D        scissor;
+};
+static_assert(std::is_pod<SetScissor>::value == true, "SetScissor must be a POD.");
+
+void setScissor(void const * data);
 
 struct Draw
 {
@@ -922,6 +935,8 @@ public:
     void wait_for_idle();
 
     bool submit_frame();
+
+    ErrorCode set_scissor(PipelineHandle pipeline, VkRect2D const & scissor);
 
     ErrorCode draw(PipelineHandle  pipeline,
                    size_t          vertices_size,
@@ -1696,6 +1711,28 @@ void SamplerCollection::destroy(VkDevice & logical_device)
 //
 // CONFIGURATION CODE
 //
+
+VkDynamicState getVkDynamicState(std::string const & state_name)
+{
+#define MAP_PAIR(value)                  \
+    {                                    \
+#value, VK_DYNAMIC_STATE_##value \
+    }
+
+    static std::unordered_map<std::string, VkDynamicState> states{MAP_PAIR(VIEWPORT),
+                                                                  MAP_PAIR(SCISSOR)};
+
+#undef MAP_PAIR
+
+    auto state = states.find(state_name);
+    assert(state != states.end());
+    if (state == states.end())
+    {
+        return static_cast<VkDynamicState>(0);
+    }
+
+    return state->second;
+}
 
 VkSampleCountFlagBits getVkSampleCountFlagBits(size_t num_samples)
 {
@@ -2540,6 +2577,18 @@ void PipelineConfig::init(rapidjson::Value &                                   d
     {
         tests_depth = false;
     }
+
+    if (document.HasMember("dynamic_state"))
+    {
+        assert(document["dynamic_state"].IsArray());
+
+        for (auto const & state: document["dynamic_state"].GetArray())
+        {
+            assert(state.IsString());
+            LOG_DEBUG("Pushing state {}", state.GetString());
+            dynamic_state.push_back(getVkDynamicState(state.GetString()));
+        }
+    }
 }
 
 void UniformConfig::init(rapidjson::Value & document)
@@ -2718,6 +2767,15 @@ void RenderConfig::init()
 //
 //  DRAW COMMANDS
 //
+
+void setScissor(void const * data)
+{
+    SetScissor const * realdata = reinterpret_cast<SetScissor const *>(data);
+
+    vkCmdSetScissor(realdata->commandbuffer, 0, 1, &realdata->scissor);
+}
+
+cmd::BackendDispatchFunction const SetScissor::DISPATCH_FUNCTION = &setScissor;
 
 void draw(void const * data)
 {
@@ -4534,15 +4592,10 @@ ErrorCode PipelineResources::createGraphicsPipeline(Device &              device
             .blendConstants[3] = 0.0f  // Optional
         };
 
-        /*
-        VkDynamicState dynamicStates[] = {VK_DYNAMIC_STATE_VIEWPORT,
-        VK_DYNAMIC_STATE_LINE_WIDTH};
-
         auto dynamicState = VkPipelineDynamicStateCreateInfo{
             .sType             = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO,
-            .dynamicStateCount = 2,
-            .pDynamicStates    = dynamicStates};
-        */
+            .dynamicStateCount = static_cast<uint32_t>(pipeline_config.dynamic_state.size()),
+            .pDynamicStates    = pipeline_config.dynamic_state.data()};
 
         auto pushConstantRanges = std::vector<VkPushConstantRange>{};
         for (auto const & push_constant_name: pipeline_config.push_constant_names)
@@ -4593,7 +4646,7 @@ ErrorCode PipelineResources::createGraphicsPipeline(Device &              device
             .pMultisampleState   = &multisampling,
             .pDepthStencilState  = &depthStencil,
             .pColorBlendState    = &colorBlending,
-            .pDynamicState       = nullptr, // Optional
+            .pDynamicState       = &dynamicState, // Optional
             .layout              = pipeline.vk_pipeline_layout,
             .renderPass          = render_passes.render_passes[render_pass_handle],
             .subpass             = static_cast<uint32_t>(subpass_handle),
@@ -5098,6 +5151,17 @@ bool Renderer::submit_frame()
     commands.delete_buckets[frames.currentResource].Clear();
 
     return true;
+}
+
+ErrorCode Renderer::set_scissor(PipelineHandle pipeline, VkRect2D const & scissor)
+{
+    auto & bucket = pipelines.draw_buckets[pipeline];
+
+    SetScissor * command   = bucket.AddCommand<SetScissor>(0, 0);
+    command->commandbuffer = commands.draw_commandbuffers[frames.currentResource];
+    command->scissor       = scissor;
+
+    return ErrorCode::NONE;
 }
 
 ErrorCode Renderer::draw(PipelineHandle  pipeline,
