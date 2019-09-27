@@ -445,6 +445,17 @@ static_assert(std::is_pod<SetScissor>::value == true, "SetScissor must be a POD.
 
 void setScissor(void const * data);
 
+struct SetViewport
+{
+    static cmd::BackendDispatchFunction const DISPATCH_FUNCTION;
+
+    VkCommandBuffer commandbuffer;
+    VkViewport      viewport;
+};
+static_assert(std::is_pod<SetViewport>::value == true, "SetViewport must be a POD.");
+
+void setViewport(void const * data);
+
 struct Draw
 {
     static cmd::BackendDispatchFunction const DISPATCH_FUNCTION;
@@ -937,6 +948,8 @@ public:
     bool submit_frame();
 
     ErrorCode set_scissor(PipelineHandle pipeline, VkRect2D const & scissor);
+
+    ErrorCode set_viewport(PipelineHandle pipeline, VkViewport const & scissor);
 
     ErrorCode draw(PipelineHandle  pipeline,
                    size_t          vertices_size,
@@ -2776,6 +2789,15 @@ void setScissor(void const * data)
 }
 
 cmd::BackendDispatchFunction const SetScissor::DISPATCH_FUNCTION = &setScissor;
+
+void setViewport(void const * data)
+{
+    SetViewport const * realdata = reinterpret_cast<SetViewport const *>(data);
+
+    vkCmdSetViewport(realdata->commandbuffer, 0, 1, &realdata->viewport);
+}
+
+cmd::BackendDispatchFunction const SetViewport::DISPATCH_FUNCTION = &setViewport;
 
 void draw(void const * data)
 {
@@ -5160,6 +5182,17 @@ ErrorCode Renderer::set_scissor(PipelineHandle pipeline, VkRect2D const & scisso
     SetScissor * command   = bucket.AddCommand<SetScissor>(0, 0);
     command->commandbuffer = commands.draw_commandbuffers[frames.currentResource];
     command->scissor       = scissor;
+
+    return ErrorCode::NONE;
+}
+
+ErrorCode Renderer::set_viewport(PipelineHandle pipeline, VkViewport const & viewport)
+{
+    auto & bucket = pipelines.draw_buckets[pipeline];
+
+    SetViewport * command  = bucket.AddCommand<SetViewport>(0, 0);
+    command->commandbuffer = commands.draw_commandbuffers[frames.currentResource];
+    command->viewport      = viewport;
 
     return ErrorCode::NONE;
 }
