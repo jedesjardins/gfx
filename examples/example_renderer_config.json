@@ -1,10 +1,7 @@
 {
 	"window_name": "Example Window",
-	"dynamic_vertex_buffer_size": 1024,
-	"dynamic_index_buffer_size": 1024,
-	"staging_buffer_size": 1024,
 	"max_updated_objects": 7,
-	"max_deleted_objects": 4,
+	"max_deleted_objects": 15,
 	"attachments":
 	[
 		{

@@ -395,12 +395,6 @@ struct RenderConfig
 
     char const * window_name;
 
-    size_t dynamic_vertex_buffer_size;
-
-    size_t dynamic_index_buffer_size;
-
-    size_t staging_buffer_size;
-
     size_t max_transfer_count;
 
     size_t max_delete_count;
@@ -803,12 +797,7 @@ private:
 struct BufferResources
 {
 public:
-    std::vector<MappedBuffer> dynamic_mapped_vertices;
-    std::vector<MappedBuffer> dynamic_mapped_indices;
-
-    std::vector<MappedBuffer> staging_buffer;
-
-    bool init(RenderConfig & render_config, Device & device, FrameResources & frames);
+    bool init();
     void quit(Device & device);
 
     std::optional<BufferHandle> create_buffer(Device &              render_device,
@@ -827,15 +816,6 @@ private:
     // todo: this isn't thread safe
     std::unordered_map<BufferHandle, Buffer> buffers;
     std::unordered_map<BufferHandle, void *> mapped_memory;
-
-    ErrorCode createDynamicObjectResources(Device &         device,
-                                           FrameResources & frames,
-                                           size_t           dynamic_vertices_count,
-                                           size_t           dynamic_indices_count);
-
-    ErrorCode createStagingObjectResources(Device &         device,
-                                           FrameResources & frames,
-                                           size_t           staging_buffer_size);
 }; // struct BufferResources
 
 /*
@@ -2594,21 +2574,6 @@ void RenderConfig::init()
     assert(document.HasMember("window_name"));
     assert(document["window_name"].IsString());
     window_name = document["window_name"].GetString();
-
-    assert(document.HasMember("dynamic_vertex_buffer_size"));
-    assert(document["dynamic_vertex_buffer_size"].IsNumber());
-    assert(document["dynamic_vertex_buffer_size"].IsInt());
-    dynamic_vertex_buffer_size = document["dynamic_vertex_buffer_size"].GetInt();
-
-    assert(document.HasMember("dynamic_index_buffer_size"));
-    assert(document["dynamic_index_buffer_size"].IsNumber());
-    assert(document["dynamic_index_buffer_size"].IsInt());
-    dynamic_index_buffer_size = document["dynamic_index_buffer_size"].GetInt();
-
-    assert(document.HasMember("staging_buffer_size"));
-    assert(document["staging_buffer_size"].IsNumber());
-    assert(document["staging_buffer_size"].IsInt());
-    staging_buffer_size = document["staging_buffer_size"].GetInt();
 
     assert(document.HasMember("max_updated_objects"));
     assert(document["max_updated_objects"].IsUint());
@@ -4740,23 +4705,8 @@ ErrorCode CommandResources::createCommandbuffers(Device & device)
     return ErrorCode::NONE;
 }
 
-bool BufferResources::init(RenderConfig & render_config, Device & device, FrameResources & frames)
+bool BufferResources::init()
 {
-    if (createDynamicObjectResources(device,
-                                     frames,
-                                     render_config.dynamic_vertex_buffer_size,
-                                     render_config.dynamic_index_buffer_size)
-        != ErrorCode::NONE)
-    {
-        return false;
-    }
-
-    if (createStagingObjectResources(device, frames, render_config.staging_buffer_size)
-        != ErrorCode::NONE)
-    {
-        return false;
-    }
-
     return true;
 }
 
@@ -4768,121 +4718,6 @@ void BufferResources::quit(Device & device)
     }
 
     buffers.clear();
-}
-
-ErrorCode BufferResources::createDynamicObjectResources(Device &         device,
-                                                        FrameResources & frames,
-                                                        size_t           dynamic_vertex_buffer_size,
-                                                        size_t           dynamic_index_buffer_size)
-{
-    dynamic_mapped_vertices.reserve(frames.MAX_BUFFERED_RESOURCES);
-    dynamic_mapped_indices.reserve(frames.MAX_BUFFERED_RESOURCES);
-
-    VkDeviceSize vertices_memory_size = dynamic_vertex_buffer_size;
-    VkDeviceSize indices_memory_size  = dynamic_index_buffer_size;
-
-    for (uint32_t i = 0; i < frames.MAX_BUFFERED_RESOURCES; ++i)
-    {
-        LOG_DEBUG("Creating mapped vertices buffer for resource frame {}", i);
-
-        auto opt_vertex_buffer_handle = create_buffer(
-            device,
-            vertices_memory_size,
-            VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
-            VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
-        if (!opt_vertex_buffer_handle)
-        {
-            LOG_ERROR("create_buffer returned nullopt when creating a vertex buffer for dynamic "
-                      "vertex buffer");
-            return ErrorCode::API_ERROR;
-        }
-
-        auto opt_vertex_buffer = get_buffer(opt_vertex_buffer_handle.value());
-
-        if (!opt_vertex_buffer)
-        {
-            LOG_ERROR("get_buffer returned nullopt when getting a vertex buffer for dynamic vertex "
-                      "buffer");
-            return ErrorCode::API_ERROR;
-        }
-
-        dynamic_mapped_vertices.push_back(
-            MappedBuffer{.offset      = 0,
-                         .memory_size = vertices_memory_size,
-                         .vk_buffer   = opt_vertex_buffer.value().buffer_handle(),
-                         .data        = map_buffer(opt_vertex_buffer_handle.value()).value()});
-
-        LOG_DEBUG("Creating mapped vertices buffer for resource frame {}", i);
-
-        auto opt_index_buffer_handle = create_buffer(
-            device,
-            indices_memory_size,
-            VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
-            VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
-
-        if (!opt_index_buffer_handle)
-        {
-            LOG_ERROR("create_buffer returned nullopt when creating an index buffer for dynamic "
-                      "index buffer");
-            return ErrorCode::API_ERROR;
-        }
-
-        auto opt_index_buffer = get_buffer(opt_index_buffer_handle.value());
-
-        if (!opt_index_buffer)
-        {
-            LOG_ERROR("get_buffer returned nullopt when getting an index buffer for dynamic index "
-                      "buffer");
-            return ErrorCode::API_ERROR;
-        }
-
-        dynamic_mapped_indices.push_back(
-            MappedBuffer{.offset      = 0,
-                         .memory_size = indices_memory_size,
-                         .vk_buffer   = opt_index_buffer.value().buffer_handle(),
-                         .data        = map_buffer(opt_index_buffer_handle.value()).value()});
-    }
-
-    return ErrorCode::NONE;
-}
-
-ErrorCode BufferResources::createStagingObjectResources(Device &         device,
-                                                        FrameResources & frames,
-                                                        size_t           staging_buffer_size)
-{
-    staging_buffer.reserve(frames.MAX_BUFFERED_RESOURCES);
-
-    for (uint32_t i = 0; i < frames.MAX_BUFFERED_RESOURCES; ++i)
-    {
-        LOG_DEBUG("Creating staged buffer for resource {}", i);
-
-        auto opt_staging_buffer_handle = create_buffer(
-            device,
-            staging_buffer_size,
-            VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-            VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
-        if (!opt_staging_buffer_handle)
-        {
-            LOG_ERROR("create_buffer returned nullopt when creating a staging buffer");
-            return ErrorCode::API_ERROR;
-        }
-
-        auto opt_staging_buffer = get_buffer(opt_staging_buffer_handle.value());
-
-        if (!opt_staging_buffer)
-        {
-            LOG_ERROR("get_buffer returned nullopt when getting a staging buffer");
-            return ErrorCode::API_ERROR;
-        }
-
-        staging_buffer.push_back(
-            MappedBuffer{.offset      = 0,
-                         .memory_size = staging_buffer_size,
-                         .vk_buffer   = opt_staging_buffer.value().buffer_handle(),
-                         .data        = map_buffer(opt_staging_buffer_handle.value()).value()});
-    }
-
-    return ErrorCode::NONE;
 }
 
 std::optional<BufferHandle> BufferResources::create_buffer(Device &              render_device,
@@ -4990,7 +4825,7 @@ bool Renderer::init(RenderConfig & render_config)
         return false;
     }
 
-    if (!buffers.init(render_config, render_device, frames))
+    if (!buffers.init())
     {
         LOG_ERROR("Failed to initialize BufferResources in Renderer");
         return false;
@@ -5158,11 +4993,6 @@ bool Renderer::submit_frame()
 
     frames.currentFrame    = (frames.currentFrame + 1) % frames.MAX_FRAMES_IN_FLIGHT;
     frames.currentResource = (frames.currentResource + 1) % frames.MAX_BUFFERED_RESOURCES;
-
-    // reset buffer offsets for copies
-    buffers.dynamic_mapped_vertices[frames.currentResource].reset();
-    buffers.dynamic_mapped_indices[frames.currentResource].reset();
-    buffers.staging_buffer[frames.currentResource].reset();
 
     commands.transfer_buckets[frames.currentResource].Clear();
     commands.delete_buckets[frames.currentResource].Submit();
@@ -5463,19 +5293,46 @@ void Renderer::update_buffer(BufferHandle buffer_handle, VkDeviceSize size, void
 
     Buffer buffer = buffers.get_buffer(buffer_handle).value();
 
-    auto & mapped_buffer = buffers.staging_buffer[frames.currentResource];
+    auto opt_mapped_buffer_handle = buffers.create_buffer(
+        render_device,
+        size,
+        VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
 
-    VkDeviceSize data_offset = mapped_buffer.copy(size, data);
+    if (!opt_mapped_buffer_handle)
+    {
+        LOG_ERROR("Couldn't create a staging buffer for updating device local buffer {}", buffer_handle);
+    }
+
+    auto opt_mapped_buffer_ptr = buffers.map_buffer(opt_mapped_buffer_handle.value());
+
+    if (!opt_mapped_buffer_ptr)
+    {
+        LOG_ERROR("Couldn't map a staging buffer for uploading texture");
+    }
+
+    memcpy(opt_mapped_buffer_ptr.value(), data, size);
+
+    auto opt_mapped_buffer = buffers.get_buffer(opt_mapped_buffer_handle.value());
+
+    if (!opt_mapped_buffer)
+    {
+        LOG_ERROR("Couldn't get the staging buffer for updating device local buffer {}", buffer_handle);
+    }
 
     auto & bucket = commands.transfer_buckets[frames.currentResource];
 
     Copy * vertex_command         = bucket.AddCommand<Copy>(0, 0);
     vertex_command->commandbuffer = commands.transfer_commandbuffers[frames.currentResource];
-    vertex_command->srcBuffer     = mapped_buffer.buffer_handle();
+    vertex_command->srcBuffer     = opt_mapped_buffer.value().buffer_handle();
     vertex_command->dstBuffer     = buffer.buffer_handle();
-    vertex_command->srcOffset     = data_offset;
+    vertex_command->srcOffset     = 0;
     vertex_command->dstOffset     = 0;
     vertex_command->size          = size;
+
+
+    BufferHandle destroy_buffer = opt_mapped_buffer_handle.value();
+    delete_buffers(1, &destroy_buffer);
 }
 
 void Renderer::delete_buffers(size_t buffer_count, BufferHandle * buffer_handles)
@@ -5531,10 +5388,37 @@ std::optional<TextureHandle> Renderer::create_texture(size_t       width,
 {
     LOG_INFO("Creating Texture");
 
-    VkDeviceSize imageSize = width * height * pixel_size;
+    size_t imageSize = width * height * pixel_size;
 
-    VkDeviceSize pixel_data_offset = buffers.staging_buffer[frames.currentResource].copy(
-        static_cast<size_t>(imageSize), pixels);
+    auto opt_mapped_buffer_handle = buffers.create_buffer(
+        render_device,
+        imageSize,
+        VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+
+    if (!opt_mapped_buffer_handle)
+    {
+        LOG_ERROR("Couldn't create a staging buffer for uploading texture");
+        return std::nullopt;
+    }
+
+    auto opt_mapped_buffer_ptr = buffers.map_buffer(opt_mapped_buffer_handle.value());
+
+    if (!opt_mapped_buffer_ptr)
+    {
+        LOG_ERROR("Couldn't map a staging buffer for uploading texture");
+        return std::nullopt;
+    }
+
+    memcpy(opt_mapped_buffer_ptr.value(), pixels, imageSize);
+
+    auto opt_mapped_buffer = buffers.get_buffer(opt_mapped_buffer_handle.value());
+
+    if (!opt_mapped_buffer)
+    {
+        LOG_ERROR("Couldn't get the staging buffer for uploading texture");
+        return std::nullopt;
+    }
 
     auto opt_texture_handle = images.create_texture(
         render_device.physical_device,
@@ -5583,8 +5467,8 @@ std::optional<TextureHandle> Renderer::create_texture(size_t       width,
 
     CopyToImage * copy_command  = bucket.AddCommand<CopyToImage>(0, 0);
     copy_command->commandbuffer = commands.transfer_commandbuffers[frames.currentResource];
-    copy_command->srcBuffer     = buffers.staging_buffer[frames.currentResource].buffer_handle();
-    copy_command->srcOffset     = pixel_data_offset;
+    copy_command->srcBuffer     = opt_mapped_buffer.value().buffer_handle();
+    copy_command->srcOffset     = 0;
     copy_command->dstImage      = texture.image_handle();
     copy_command->width         = static_cast<uint32_t>(width);
     copy_command->height        = static_cast<uint32_t>(height);
@@ -5601,6 +5485,9 @@ std::optional<TextureHandle> Renderer::create_texture(size_t       width,
     shader_optimal_command->aspectMask       = VK_IMAGE_ASPECT_COLOR_BIT;
     shader_optimal_command->sourceStage      = VK_PIPELINE_STAGE_TRANSFER_BIT;
     shader_optimal_command->destinationStage = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
+
+    BufferHandle destroy_buffer = opt_mapped_buffer_handle.value();
+    delete_buffers(1, &destroy_buffer);
 
     return texture_handle;
 }
@@ -5667,9 +5554,6 @@ void Renderer::delete_textures(size_t texture_count, TextureHandle * texture_han
 
 ErrorCode Renderer::createCommandbuffer(uint32_t image_index)
 {
-    auto & mapped_vertices = buffers.dynamic_mapped_vertices[frames.currentResource];
-    auto & mapped_indices  = buffers.dynamic_mapped_indices[frames.currentResource];
-
     auto commandbuffer = commands.draw_commandbuffers[frames.currentResource];
 
     auto beginInfo = VkCommandBufferBeginInfo{.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
