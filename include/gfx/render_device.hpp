@@ -452,7 +452,7 @@ static_assert(std::is_pod<SetViewport>::value == true, "SetViewport must be a PO
 
 void setViewport(void const * data);
 
-struct BetterDraw
+struct Draw
 {
     static cmd::BackendDispatchFunction const DISPATCH_FUNCTION;
 
@@ -473,28 +473,6 @@ struct BetterDraw
     size_t            descriptor_set_count;
     VkDescriptorSet * descriptor_sets;
     size_t            dynamic_offset_count;
-    uint32_t *        dynamic_offsets;
-};
-static_assert(std::is_pod<BetterDraw>::value == true, "BetterDraw must be a POD.");
-
-void betterDraw(void const * data);
-
-struct Draw
-{
-    static cmd::BackendDispatchFunction const DISPATCH_FUNCTION;
-
-    VkCommandBuffer   commandbuffer;
-    VkPipelineLayout  pipeline_layout;
-    VkBuffer          vertexbuffer;
-    VkDeviceSize      vertexbuffer_offset;
-    VkBuffer          indexbuffer;
-    VkDeviceSize      indexbuffer_offset;
-    VkDeviceSize      indexbuffer_count;
-    VkDeviceSize      push_constant_size;
-    void *            push_constant_data;
-    VkDeviceSize      descriptor_set_count;
-    VkDescriptorSet * descriptor_sets;
-    VkDeviceSize      dynamic_offset_count;
     uint32_t *        dynamic_offsets;
 };
 static_assert(std::is_pod<Draw>::value == true, "Draw must be a POD.");
@@ -2775,9 +2753,9 @@ void setViewport(void const * data)
 
 cmd::BackendDispatchFunction const SetViewport::DISPATCH_FUNCTION = &setViewport;
 
-void betterDraw(void const * data)
+void draw(void const * data)
 {
-    BetterDraw const * realdata = reinterpret_cast<BetterDraw const *>(data);
+    Draw const * realdata = reinterpret_cast<Draw const *>(data);
 
     if (realdata->push_constant_size != 0)
     {
@@ -2813,45 +2791,6 @@ void betterDraw(void const * data)
                          VK_INDEX_TYPE_UINT32);
 
     vkCmdDrawIndexed(realdata->commandbuffer, realdata->index_count, 1, 0, 0, 0);
-}
-
-cmd::BackendDispatchFunction const BetterDraw::DISPATCH_FUNCTION = &betterDraw;
-
-void draw(void const * data)
-{
-    Draw const * realdata = reinterpret_cast<Draw const *>(data);
-
-    if (realdata->push_constant_size != 0)
-    {
-        vkCmdPushConstants(realdata->commandbuffer,
-                           realdata->pipeline_layout,
-                           VK_SHADER_STAGE_VERTEX_BIT,
-                           0,
-                           realdata->push_constant_size,
-                           realdata->push_constant_data);
-    }
-
-    if (realdata->descriptor_set_count != 0)
-    {
-        vkCmdBindDescriptorSets(realdata->commandbuffer,
-                                VK_PIPELINE_BIND_POINT_GRAPHICS,
-                                realdata->pipeline_layout,
-                                0,
-                                realdata->descriptor_set_count,
-                                realdata->descriptor_sets,
-                                realdata->dynamic_offset_count,
-                                realdata->dynamic_offsets);
-    }
-
-    vkCmdBindVertexBuffers(
-        realdata->commandbuffer, 0, 1, &realdata->vertexbuffer, &realdata->vertexbuffer_offset);
-
-    vkCmdBindIndexBuffer(realdata->commandbuffer,
-                         realdata->indexbuffer,
-                         realdata->indexbuffer_offset * sizeof(uint32_t),
-                         VK_INDEX_TYPE_UINT32);
-
-    vkCmdDrawIndexed(realdata->commandbuffer, realdata->indexbuffer_count, 1, 0, 0, 0);
 }
 
 cmd::BackendDispatchFunction const Draw::DISPATCH_FUNCTION = &draw;
@@ -5328,10 +5267,10 @@ ErrorCode Renderer::draw(DrawParameters const & args)
 
     size_t push_constant_offset = dynamic_offsets_offset + dynamic_offsets_size;
 
-    BetterDraw * command = bucket.AddCommand<BetterDraw>(
-        0,
-        vk_vertex_buffers_size + vk_vertex_buffer_offsets_size + vk_descriptorsets_size
-            + dynamic_offsets_size + args.push_constant_size);
+    Draw * command = bucket.AddCommand<Draw>(0,
+                                             vk_vertex_buffers_size + vk_vertex_buffer_offsets_size
+                                                 + vk_descriptorsets_size + dynamic_offsets_size
+                                                 + args.push_constant_size);
 
     char * command_memory = cmd::commandPacket::GetAuxiliaryMemory(command);
 
