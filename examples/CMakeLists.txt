@@ -56,6 +56,7 @@ set(SOURCES_SINGLE_FILE
 	# list test files here
 	variable_vertex_buffers.cpp
 	pong.cpp
+	mul_vbs.cpp
 )
 
 # get base names of each file (strips off .cpp)

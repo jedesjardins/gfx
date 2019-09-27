@@ -1,0 +1,128 @@
+{
+	"window_name": "Example Window",
+	"dynamic_vertex_buffer_size": 2048,
+	"dynamic_index_buffer_size": 2048,
+	"staging_buffer_size": 2048,
+	"max_updated_objects": 15,
+	"max_deleted_objects": 1,
+	"attachments":
+	[
+		{
+			"name": "a_screen_color",
+			"format": "color",
+			"usage": ["COLOR_ATTACHMENT"],
+			"is_swapchain_image": true,
+			"multisamples": 1
+		}
+	],
+	"renderpasses":
+	[
+		{
+			"name": "rp_main_render_pass",
+			"framebuffer":
+			[
+				{
+					"attachment_name": "a_screen_color",
+					"load_op": "CLEAR",
+					"store_op": "STORE",
+					"initial_layout": "UNDEFINED",
+					"final_layout": "PRESENT_SRC_KHR",
+					"clear_value": {
+						"color": [0, 0, 0, 1]
+					}
+				}
+			],
+			"subpasses":
+			[
+				{
+					"name": "sp_first_subpass",
+					"multisamples": 1,
+					"color_attachments":
+					[
+						{
+							"attachment_name": "a_screen_color",
+							"layout": "COLOR_ATTACHMENT_OPTIMAL"
+						}
+					]
+				}
+			],
+			"subpass_dependencies":
+			[
+				{
+					"src_subpass": "EXTERNAL_SUBPASS",
+					"dst_subpass": 0,
+					"src_stage_mask": ["COLOR_ATTACHMENT_OUTPUT"],
+					"dst_stage_mask": ["COLOR_ATTACHMENT_OUTPUT"],
+					"dst_access_mask":
+					[
+						"COLOR_ATTACHMENT_READ",
+						"COLOR_ATTACHMENT_WRITE"
+					]
+				}
+			]
+		}
+	],
+	"renderpass_order": [
+		"rp_main_render_pass"
+	],
+	"shaders":
+	[
+		{
+			"name": "s_vertex_shader",
+			"file": "shaders/vb_vert.spv"
+		},
+		{
+			"name": "s_fragment_shader",
+			"file": "shaders/vb_frag.spv"
+		}
+	],
+	"uniform_layouts": [],
+	"push_constants": [],
+	"vertex_bindings":
+	[
+		{
+			"name": "vb_pos",
+			"binding_slot": 0,
+			"stride": 8,
+			"input_rate": "PER_VERTEX"
+		},
+		{
+			"name": "vb_color",
+			"binding_slot": 1,
+			"stride": 12,
+			"input_rate": "PER_VERTEX"
+		}
+	],
+	"vertex_attributes":
+	[
+		{
+			"name": "va_pos",
+			"vertex_binding_name": "vb_pos",
+			"location": 0,
+			"format": "R32G32_SFLOAT",
+			"offset": 0
+		},
+		{
+			"name": "va_color",
+			"vertex_binding_name": "vb_color",
+			"location": 1,
+			"format": "R32G32B32_SFLOAT",
+			"offset": 0
+		}
+	],
+	"pipelines":
+	[
+		{
+			"name": "mul_vbs_shader",
+			"vertex_shader_name": "s_vertex_shader",
+			"fragment_shader_name": "s_fragment_shader",
+			"vertex_bindings": ["vb_pos", "vb_color"],
+			"vertex_attributes": ["va_pos", "va_color"],
+			"uniform_layouts": [],
+			"push_constants": [],
+			"renderpass": "rp_main_render_pass",
+			"subpass": "sp_first_subpass",
+			"max_drawn_objects": 5
+		}
+	]
+}

@@ -187,16 +187,30 @@ public:
               gfx::PipelineHandle pipeline_handle,
               gfx::UniformHandle  view_handle)
     {
-        render_device.draw(pipeline_handle,
-                           vertex_buffer,
-                           0,
-                           index_buffer,
-                           0,
-                           index_count,
-                           sizeof(glm::mat4),
-                           glm::value_ptr(transform),
-                           1,
-                           &view_handle);
+        gfx::DrawParameters params{};
+
+        VkDeviceSize vertex_buffer_offset = 0;
+
+        params.pipeline = pipeline_handle;
+
+        params.vertex_buffer_count   = 1;
+        params.vertex_buffers        = &vertex_buffer;
+        params.vertex_buffer_offsets = &vertex_buffer_offset;
+
+        params.index_buffer        = index_buffer;
+        params.index_buffer_offset = 0;
+        params.index_count         = index_count;
+
+        params.push_constant_size = sizeof(glm::mat4);
+        params.push_constant_data = glm::value_ptr(transform);
+
+        params.uniform_count = 1;
+        params.uniforms      = &view_handle;
+
+        params.scissor  = nullptr;
+        params.viewport = nullptr;
+
+        render_device.draw(params);
     }
 
     void draw(gfx::Renderer &     render_device,
@@ -204,16 +218,30 @@ public:
               gfx::UniformHandle  view_handle,
               glm::mat4 &         n_transform)
     {
-        render_device.draw(pipeline_handle,
-                           vertex_buffer,
-                           0,
-                           index_buffer,
-                           0,
-                           index_count,
-                           sizeof(glm::mat4),
-                           glm::value_ptr(n_transform),
-                           1,
-                           &view_handle);
+        gfx::DrawParameters params{};
+
+        VkDeviceSize vertex_buffer_offset = 0;
+
+        params.pipeline = pipeline_handle;
+
+        params.vertex_buffer_count   = 1;
+        params.vertex_buffers        = &vertex_buffer;
+        params.vertex_buffer_offsets = &vertex_buffer_offset;
+
+        params.index_buffer        = index_buffer;
+        params.index_buffer_offset = 0;
+        params.index_count         = index_count;
+
+        params.push_constant_size = sizeof(glm::mat4);
+        params.push_constant_data = glm::value_ptr(n_transform);
+
+        params.uniform_count = 1;
+        params.uniforms      = &view_handle;
+
+        params.scissor  = nullptr;
+        params.viewport = nullptr;
+
+        render_device.draw(params);
     }
 };
 
@@ -391,7 +419,7 @@ States game_step(Object &   paddle_1,
 
         if (paddle_1.pos.y < 0.f)
         {
-           paddle_1.pos.y = 0.f; 
+            paddle_1.pos.y = 0.f;
         }
     }
 
@@ -411,7 +439,7 @@ States game_step(Object &   paddle_1,
 
         if (paddle_2.pos.y < 0.f)
         {
-           paddle_2.pos.y = 0.f; 
+            paddle_2.pos.y = 0.f;
         }
     }
 
@@ -576,8 +604,11 @@ int main()
     auto six_index_buffer     = make_index_buffer(render_device, six_indices);
     auto seven_index_buffer   = make_index_buffer(render_device, seven_indices);
 
+    LOG_DEBUG("Making Paddle 1");
     Object paddle_1{
         object_vertex_buffer, object_index_buffer, indices.size(), {1.f, 17.5f}, {1.f, 5.f}};
+
+    LOG_DEBUG("Ended making Paddle 1");
 
     Object paddle_2{
         object_vertex_buffer, object_index_buffer, indices.size(), {58.f, 17.5f}, {1.f, 5.f}};

@@ -6,3 +6,6 @@ glslc -fshader-stage=frag shaders/simple.frag -o ../build/shaders/simple-frag.sp
 
 glslc -fshader-stage=frag shaders/square.frag -o ../build/shaders/square_frag.spv
 glslc -fshader-stage=vert shaders/square.vert -o ../build/shaders/square_vert.spv
+
+glslc -fshader-stage=frag shaders/vb.frag -o ../build/shaders/vb_frag.spv
+glslc -fshader-stage=vert shaders/vb.vert -o ../build/shaders/vb_vert.spv

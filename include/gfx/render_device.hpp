@@ -456,6 +456,33 @@ static_assert(std::is_pod<SetViewport>::value == true, "SetViewport must be a PO
 
 void setViewport(void const * data);
 
+struct BetterDraw
+{
+    static cmd::BackendDispatchFunction const DISPATCH_FUNCTION;
+
+    VkCommandBuffer  commandbuffer;
+    VkPipelineLayout pipeline_layout;
+
+    size_t         vertex_buffer_count;
+    VkDeviceSize * vertex_buffer_offsets;
+    VkBuffer *     vertex_buffers;
+
+    size_t   index_count;
+    size_t   index_buffer_offset;
+    VkBuffer index_buffer;
+
+    size_t push_constant_size;
+    void * push_constant_data;
+
+    size_t            descriptor_set_count;
+    VkDescriptorSet * descriptor_sets;
+    size_t            dynamic_offset_count;
+    uint32_t *        dynamic_offsets;
+};
+static_assert(std::is_pod<BetterDraw>::value == true, "BetterDraw must be a POD.");
+
+void betterDraw(void const * data);
+
 struct Draw
 {
     static cmd::BackendDispatchFunction const DISPATCH_FUNCTION;
@@ -927,6 +954,23 @@ private:
 
 }; // namespace module
 
+struct DrawParameters
+{
+    PipelineHandle  pipeline;
+    size_t          vertex_buffer_count;
+    BufferHandle *  vertex_buffers;
+    VkDeviceSize *  vertex_buffer_offsets;
+    BufferHandle    index_buffer;
+    size_t          index_buffer_offset;
+    size_t          index_count;
+    size_t          push_constant_size;
+    void *          push_constant_data;
+    size_t          uniform_count;
+    UniformHandle * uniforms;
+    VkRect2D *      scissor;
+    VkViewport *    viewport;
+};
+
 /*
  *
  * This is basically the RenderDevice, but will break all functionality out into smaller classes
@@ -971,6 +1015,8 @@ public:
                    void *          push_constant_data,
                    size_t          uniform_count,
                    UniformHandle * p_uniforms);
+
+    ErrorCode draw(DrawParameters const & args);
 
     std::optional<UniformLayoutHandle> get_uniform_layout_handle(std::string layout_name);
     std::optional<PipelineHandle>      get_pipeline_handle(std::string pipeline_name);
@@ -2799,6 +2845,48 @@ void setViewport(void const * data)
 
 cmd::BackendDispatchFunction const SetViewport::DISPATCH_FUNCTION = &setViewport;
 
+void betterDraw(void const * data)
+{
+    BetterDraw const * realdata = reinterpret_cast<BetterDraw const *>(data);
+
+    if (realdata->push_constant_size != 0)
+    {
+        vkCmdPushConstants(realdata->commandbuffer,
+                           realdata->pipeline_layout,
+                           VK_SHADER_STAGE_VERTEX_BIT,
+                           0,
+                           realdata->push_constant_size,
+                           realdata->push_constant_data);
+    }
+
+    if (realdata->descriptor_set_count != 0)
+    {
+        vkCmdBindDescriptorSets(realdata->commandbuffer,
+                                VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                realdata->pipeline_layout,
+                                0,
+                                realdata->descriptor_set_count,
+                                realdata->descriptor_sets,
+                                realdata->dynamic_offset_count,
+                                realdata->dynamic_offsets);
+    }
+
+    vkCmdBindVertexBuffers(realdata->commandbuffer,
+                           0,
+                           realdata->vertex_buffer_count,
+                           realdata->vertex_buffers,
+                           realdata->vertex_buffer_offsets);
+
+    vkCmdBindIndexBuffer(realdata->commandbuffer,
+                         realdata->index_buffer,
+                         realdata->index_buffer_offset * sizeof(uint32_t),
+                         VK_INDEX_TYPE_UINT32);
+
+    vkCmdDrawIndexed(realdata->commandbuffer, realdata->index_count, 1, 0, 0, 0);
+}
+
+cmd::BackendDispatchFunction const BetterDraw::DISPATCH_FUNCTION = &betterDraw;
+
 void draw(void const * data)
 {
     Draw const * realdata = reinterpret_cast<Draw const *>(data);
@@ -2827,6 +2915,7 @@ void draw(void const * data)
 
     vkCmdBindVertexBuffers(
         realdata->commandbuffer, 0, 1, &realdata->vertexbuffer, &realdata->vertexbuffer_offset);
+
     vkCmdBindIndexBuffer(realdata->commandbuffer,
                          realdata->indexbuffer,
                          realdata->indexbuffer_offset * sizeof(uint32_t),
@@ -5280,6 +5369,122 @@ ErrorCode Renderer::draw(PipelineHandle  pipeline,
                              push_constant_data,
                              uniform_count,
                              p_uniforms);
+}
+
+ErrorCode Renderer::draw(DrawParameters const & args)
+{
+    // get bucket
+    auto & bucket = pipelines.draw_buckets[args.pipeline];
+
+    // get vertex_buffers
+    std::vector<VkBuffer> vk_buffers;
+    vk_buffers.reserve(args.vertex_buffer_count);
+    for (size_t i = 0; i < args.vertex_buffer_count; ++i)
+    {
+        auto opt_vertex_buffer = buffers.get_buffer(args.vertex_buffers[i]);
+
+        if (!opt_vertex_buffer)
+        {
+            LOG_ERROR("Unable to get Vertex Buffer for draw call, ignoring call..");
+            return ErrorCode::API_ERROR;
+        }
+
+        vk_buffers.push_back(opt_vertex_buffer.value().buffer_handle());
+    }
+
+    // get index buffers
+    auto opt_index_buffer = buffers.get_buffer(args.index_buffer);
+
+    if (!opt_index_buffer)
+    {
+        LOG_ERROR("Unable to get Index Buffer for draw call, ignoring call..");
+        return ErrorCode::API_ERROR;
+    }
+
+    // get descriptor sets
+    std::vector<VkDescriptorSet> descriptorsets;
+    std::vector<uint32_t>        dynamic_offsets;
+    descriptorsets.reserve(args.uniform_count);
+    for (size_t i = 0; i < args.uniform_count; ++i)
+    {
+        auto uniform_handle = args.uniforms[i];
+        auto opt_uniform    = getUniform(uniform_handle);
+
+        if (opt_uniform.has_value())
+        {
+            descriptorsets.push_back(opt_uniform.value());
+        }
+        else
+        {
+            LOG_ERROR("No Descriptor Set returned for Uniform {} {}",
+                      uniform_handle.uniform_layout_id,
+                      uniform_handle.uniform_id);
+            return ErrorCode::API_ERROR;
+        }
+
+        auto opt_offset = getDynamicOffset(uniform_handle);
+
+        if (opt_offset.has_value())
+        {
+            dynamic_offsets.push_back(opt_offset.value());
+        }
+    }
+
+    size_t vk_vertex_buffers_offset = 0;
+    size_t vk_vertex_buffers_size   = vk_buffers.size() * sizeof(VkBuffer);
+
+    size_t vk_vertex_buffer_offsets_offset = vk_vertex_buffers_offset + vk_vertex_buffers_size;
+    size_t vk_vertex_buffer_offsets_size   = vk_buffers.size() * sizeof(VkDeviceSize);
+
+    size_t vk_descriptorsets_offset = vk_vertex_buffer_offsets_offset
+                                      + vk_vertex_buffer_offsets_size;
+    size_t vk_descriptorsets_size = descriptorsets.size() * sizeof(VkDescriptorSet);
+
+    size_t dynamic_offsets_offset = vk_descriptorsets_offset + vk_descriptorsets_size;
+    size_t dynamic_offsets_size   = dynamic_offsets.size() * sizeof(uint32_t);
+
+    size_t push_constant_offset = dynamic_offsets_offset + dynamic_offsets_size;
+
+    BetterDraw * command = bucket.AddCommand<BetterDraw>(
+        0,
+        vk_vertex_buffers_size + vk_vertex_buffer_offsets_size + vk_descriptorsets_size
+            + dynamic_offsets_size + args.push_constant_size);
+
+    char * command_memory = cmd::commandPacket::GetAuxiliaryMemory(command);
+
+    command->commandbuffer   = commands.draw_commandbuffers[frames.currentResource];
+    command->pipeline_layout = pipelines.pipelines[args.pipeline].vk_pipeline_layout;
+
+    command->vertex_buffer_count   = args.vertex_buffer_count;
+    command->vertex_buffer_offsets = reinterpret_cast<VkDeviceSize *>(
+        command_memory + vk_vertex_buffer_offsets_offset);
+    command->vertex_buffers = reinterpret_cast<VkBuffer *>(command_memory
+                                                           + vk_vertex_buffers_offset);
+
+    command->index_count         = args.index_count;
+    command->index_buffer_offset = args.index_buffer_offset;
+    command->index_buffer        = opt_index_buffer.value().buffer_handle();
+
+    command->push_constant_size = args.push_constant_size;
+    command->push_constant_data = reinterpret_cast<void *>(command_memory + push_constant_offset);
+
+    command->descriptor_set_count = args.uniform_count;
+    command->descriptor_sets      = reinterpret_cast<VkDescriptorSet *>(command_memory
+                                                                   + vk_descriptorsets_offset);
+    command->dynamic_offset_count = dynamic_offsets.size();
+    command->dynamic_offsets      = reinterpret_cast<uint32_t *>(command_memory
+                                                            + dynamic_offsets_offset);
+
+    memcpy(command->vertex_buffers, vk_buffers.data(), vk_vertex_buffers_size);
+    memcpy(
+        command->vertex_buffer_offsets, args.vertex_buffer_offsets, vk_vertex_buffer_offsets_size);
+
+    memcpy(command->push_constant_data, args.push_constant_data, args.push_constant_size);
+
+    memcpy(command->descriptor_sets, descriptorsets.data(), vk_descriptorsets_size);
+    memcpy(command->dynamic_offsets, dynamic_offsets.data(), dynamic_offsets_size);
+
+    return ErrorCode::NONE;
 }
 
 ErrorCode Renderer::make_draw_command(cmd::CommandBucket<int> & bucket,
