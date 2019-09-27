@@ -222,11 +222,9 @@ protected:
     VkBuffer vk_buffer{VK_NULL_HANDLE};
 };
 
-class MappedBuffer
+struct MappedBuffer
 {
 public:
-    MappedBuffer(VkDevice logical_device, Buffer buffer, VkDeviceSize size);
-
     size_t copy(size_t size, void const * src_data);
 
     void reset();
@@ -234,8 +232,6 @@ public:
     VkBuffer buffer_handle();
 
     VkDeviceSize offset{0};
-
-private:
     VkDeviceSize memory_size{0};
     VkBuffer     vk_buffer{VK_NULL_HANDLE};
     void *       data{nullptr};
@@ -842,14 +838,17 @@ public:
                                               VkBufferUsageFlags    usage,
                                               VkMemoryPropertyFlags properties);
 
+    std::optional<void *> map_buffer(BufferHandle handle);
+
     std::optional<Buffer> get_buffer(BufferHandle handle);
 
-    void delete_buffer(Device & render_device, BufferHandle handle);
+    void delete_buffer(BufferHandle handle);
 
 private:
     BufferHandle next_buffer_handle{0};
     // todo: this isn't thread safe
     std::unordered_map<BufferHandle, Buffer> buffers;
+    std::unordered_map<BufferHandle, void *> mapped_memory;
 
     ErrorCode createDynamicObjectResources(Device &         device,
                                            FrameResources & frames,
@@ -995,57 +994,10 @@ public:
 
     ErrorCode set_viewport(PipelineHandle pipeline, VkViewport const & scissor);
 
-    ErrorCode draw(PipelineHandle  pipeline,
-                   size_t          vertices_size,
-                   void *          vertices,
-                   uint32_t        index_count,
-                   uint32_t *      indices,
-                   size_t          push_constant_size,
-                   void *          push_constant_data,
-                   size_t          uniform_count,
-                   UniformHandle * p_uniforms);
-
-    ErrorCode draw(PipelineHandle  pipeline,
-                   BufferHandle    vertexbuffer_handle,
-                   VkDeviceSize    vertexbuffer_offset,
-                   BufferHandle    indexbuffer_handle,
-                   VkDeviceSize    indexbuffer_offset,
-                   VkDeviceSize    indexbuffer_count,
-                   size_t          push_constant_size,
-                   void *          push_constant_data,
-                   size_t          uniform_count,
-                   UniformHandle * p_uniforms);
-
     ErrorCode draw(DrawParameters const & args);
 
     std::optional<UniformLayoutHandle> get_uniform_layout_handle(std::string layout_name);
     std::optional<PipelineHandle>      get_pipeline_handle(std::string pipeline_name);
-
-    /*
-    // TODO: figure out how to do this better
-    template <typename... Args>
-    std::optional<UniformHandle> newUniform(UniformLayoutHandle layout_handle, Args &&... args)
-    {
-        auto & uniform_collection = uniforms.uniform_collections[layout_handle];
-
-        auto opt_uniform_handle = std::visit(
-            [&](auto && collection) -> std::optional<UniformHandle> {
-                using T = std::decay_t<decltype(collection)>;
-                if constexpr (std::is_same_v<T, DynamicBufferCollection>)
-                    return collection.createUniform(std::forward<Args>(args)...);
-                else
-                    return std::nullopt;
-            },
-            uniform_collection);
-
-        if (opt_uniform_handle)
-        {
-            opt_uniform_handle.value().uniform_layout_id = layout_handle;
-        }
-
-        return opt_uniform_handle;
-    }
-    */
 
     std::optional<UniformHandle> new_uniform(UniformLayoutHandle layout_handle,
                                              VkDeviceSize        size,
@@ -1076,7 +1028,7 @@ public:
                                               VkBufferUsageFlags    usage,
                                               VkMemoryPropertyFlags properties);
 
-    std::optional<MappedBuffer> create_mapped_buffer(BufferHandle buffer_handle, VkDeviceSize size);
+    std::optional<void *> map_buffer(BufferHandle buffer_handle);
 
     void update_buffer(BufferHandle buffer, VkDeviceSize size, void * data);
 
@@ -1090,18 +1042,6 @@ public:
     void delete_textures(size_t sampler_count, TextureHandle * sampler_handles);
 
 private:
-    ErrorCode make_draw_command(cmd::CommandBucket<int> & bucket,
-                                VkPipelineLayout          layout,
-                                VkBuffer                  vertex_buffer,
-                                VkDeviceSize              vertex_buffer_offset,
-                                VkBuffer                  index_buffer,
-                                VkDeviceSize              Index_buffer_offset,
-                                VkDeviceSize              index_buffer_count,
-                                size_t                    push_constant_size,
-                                void *                    push_constant_data,
-                                size_t                    uniform_count,
-                                UniformHandle *           p_uniforms);
-
     std::optional<VkDescriptorSet> getUniform(UniformHandle handle);
 
     std::optional<VkDeviceSize> getDynamicOffset(UniformHandle handle);
@@ -1531,16 +1471,6 @@ void Buffer::destroy(VkDevice logical_device)
 VkBuffer Buffer::buffer_handle()
 {
     return vk_buffer;
-}
-
-MappedBuffer::MappedBuffer(VkDevice logical_device, Buffer buffer, VkDeviceSize size)
-: offset{0}, memory_size{size}, vk_buffer{buffer.buffer_handle()}
-{
-    if (buffer.map(logical_device, 0, size, &data) != ErrorCode::NONE)
-    {
-        memory_size = 0;
-        vk_buffer   = VK_NULL_HANDLE;
-    }
 }
 
 size_t MappedBuffer::copy(size_t size, void const * src_data)
@@ -4336,8 +4266,13 @@ ErrorCode UniformResources::createUniformLayouts(Device & device, BufferResource
                     return ErrorCode::API_ERROR;
                 }
 
-                uniform_buffers.emplace_back(
-                    device.logical_device, opt_uniform_buffer.value(), memory_size);
+                uniform_buffers.push_back(MappedBuffer{
+                    .offset      = 0,
+                    .memory_size = memory_size,
+                    .vk_buffer   = opt_uniform_buffer.value().buffer_handle(),
+                    .data        = buffers.map_buffer(opt_uniform_buffer_handle.value()).value()
+
+                });
             }
 
             // ALLOCATE DESCRIPTORSETS GUY
@@ -4932,8 +4867,11 @@ ErrorCode BufferResources::createDynamicObjectResources(Device &         device,
             return ErrorCode::API_ERROR;
         }
 
-        dynamic_mapped_vertices.emplace_back(
-            device.logical_device, opt_vertex_buffer.value(), vertices_memory_size);
+        dynamic_mapped_vertices.push_back(
+            MappedBuffer{.offset      = 0,
+                         .memory_size = vertices_memory_size,
+                         .vk_buffer   = opt_vertex_buffer.value().buffer_handle(),
+                         .data        = map_buffer(opt_vertex_buffer_handle.value()).value()});
 
         LOG_DEBUG("Creating mapped vertices buffer for resource frame {}", i);
 
@@ -4959,8 +4897,11 @@ ErrorCode BufferResources::createDynamicObjectResources(Device &         device,
             return ErrorCode::API_ERROR;
         }
 
-        dynamic_mapped_indices.emplace_back(
-            device.logical_device, opt_index_buffer.value(), indices_memory_size);
+        dynamic_mapped_indices.push_back(
+            MappedBuffer{.offset      = 0,
+                         .memory_size = indices_memory_size,
+                         .vk_buffer   = opt_index_buffer.value().buffer_handle(),
+                         .data        = map_buffer(opt_index_buffer_handle.value()).value()});
     }
 
     return ErrorCode::NONE;
@@ -4995,8 +4936,11 @@ ErrorCode BufferResources::createStagingObjectResources(Device &         device,
             return ErrorCode::API_ERROR;
         }
 
-        staging_buffer.emplace_back(
-            device.logical_device, opt_staging_buffer.value(), staging_buffer_size);
+        staging_buffer.push_back(
+            MappedBuffer{.offset      = 0,
+                         .memory_size = staging_buffer_size,
+                         .vk_buffer   = opt_staging_buffer.value().buffer_handle(),
+                         .data        = map_buffer(opt_staging_buffer_handle.value()).value()});
     }
 
     return ErrorCode::NONE;
@@ -5024,7 +4968,24 @@ std::optional<BufferHandle> BufferResources::create_buffer(Device &             
               static_cast<void *>(buffer.buffer_handle()),
               static_cast<void *>(buffer.memory_handle()));
 
+    if (properties & (VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT))
+    {
+        buffer.map(render_device.logical_device, 0, size, &mapped_memory[handle]);
+    }
+
     return handle;
+}
+
+std::optional<void *> BufferResources::map_buffer(BufferHandle handle)
+{
+    auto mapped_memory_iter = mapped_memory.find(handle);
+
+    if (mapped_memory_iter != mapped_memory.end())
+    {
+        return mapped_memory_iter->second;
+    }
+
+    return std::nullopt;
 }
 
 std::optional<Buffer> BufferResources::get_buffer(BufferHandle handle)
@@ -5039,7 +5000,7 @@ std::optional<Buffer> BufferResources::get_buffer(BufferHandle handle)
     return std::nullopt;
 }
 
-void BufferResources::delete_buffer(Device & render_device, BufferHandle handle)
+void BufferResources::delete_buffer(BufferHandle handle)
 {
     auto buffer_iter = buffers.find(handle);
 
@@ -5047,6 +5008,13 @@ void BufferResources::delete_buffer(Device & render_device, BufferHandle handle)
     {
         // buffer_iter->second.destroy(render_device.logical_device);
         buffers.erase(buffer_iter);
+    }
+
+    auto mapped_memory_iter = mapped_memory.find(handle);
+
+    if (mapped_memory_iter != mapped_memory.end())
+    {
+        mapped_memory.erase(mapped_memory_iter);
     }
 }
 
@@ -5286,91 +5254,6 @@ ErrorCode Renderer::set_viewport(PipelineHandle pipeline, VkViewport const & vie
     return ErrorCode::NONE;
 }
 
-ErrorCode Renderer::draw(PipelineHandle  pipeline,
-                         size_t          vertices_size,
-                         void *          vertices,
-                         uint32_t        index_buffer_count,
-                         uint32_t *      indices,
-                         size_t          push_constant_size,
-                         void *          push_constant_data,
-                         size_t          uniform_count,
-                         UniformHandle * p_uniforms)
-{
-    assert(push_constant_size < 128);
-    LOG_DEBUG("Queuing draw call");
-
-    auto & mapped_vertices = buffers.dynamic_mapped_vertices[frames.currentResource];
-    auto & mapped_indices  = buffers.dynamic_mapped_indices[frames.currentResource];
-
-    VkDeviceSize vertex_buffer_offset = mapped_vertices.copy(vertices_size, vertices);
-    VkDeviceSize index_buffer_offset  = mapped_indices.copy(sizeof(uint32_t) * index_buffer_count,
-                                                           indices);
-
-    auto & bucket = pipelines.draw_buckets[pipeline];
-
-    return make_draw_command(bucket,
-                             pipelines.pipelines[pipeline].vk_pipeline_layout,
-                             mapped_vertices.buffer_handle(),
-                             vertex_buffer_offset,
-                             mapped_indices.buffer_handle(),
-                             index_buffer_offset,
-                             index_buffer_count,
-                             push_constant_size,
-                             push_constant_data,
-                             uniform_count,
-                             p_uniforms);
-}
-
-ErrorCode Renderer::draw(PipelineHandle  pipeline,
-                         BufferHandle    vertexbuffer_handle,
-                         VkDeviceSize    vertexbuffer_offset,
-                         BufferHandle    indexbuffer_handle,
-                         VkDeviceSize    indexbuffer_offset,
-                         VkDeviceSize    indexbuffer_count,
-                         size_t          push_constant_size,
-                         void *          push_constant_data,
-                         size_t          uniform_count,
-                         UniformHandle * p_uniforms)
-{
-    assert(push_constant_size < 128);
-    LOG_DEBUG("Queuing draw call");
-
-    // get bucket
-    auto & bucket = pipelines.draw_buckets[pipeline];
-
-    // get buffers
-    auto opt_vertex_buffer = buffers.get_buffer(vertexbuffer_handle);
-
-    if (!opt_vertex_buffer)
-    {
-        LOG_ERROR("Unable to get Vertex Buffer for draw call, ignoring call..");
-        return ErrorCode::API_ERROR;
-    }
-
-    auto opt_index_buffer = buffers.get_buffer(indexbuffer_handle);
-
-    if (!opt_index_buffer)
-    {
-        LOG_ERROR("Unable to get Index Buffer for draw call, ignoring call..");
-        return ErrorCode::API_ERROR;
-    }
-
-    Buffer vertexbuffer = opt_vertex_buffer.value();
-    Buffer indexbuffer  = opt_index_buffer.value();
-
-    return make_draw_command(bucket,
-                             pipelines.pipelines[pipeline].vk_pipeline_layout,
-                             vertexbuffer.buffer_handle(),
-                             vertexbuffer_offset,
-                             indexbuffer.buffer_handle(),
-                             indexbuffer_offset,
-                             indexbuffer_count,
-                             push_constant_size,
-                             push_constant_data,
-                             uniform_count,
-                             p_uniforms);
-}
-
 ErrorCode Renderer::draw(DrawParameters const & args)
 {
     // get bucket
@@ -5483,107 +5366,6 @@ ErrorCode Renderer::draw(DrawParameters const & args)
 
     memcpy(command->descriptor_sets, descriptorsets.data(), vk_descriptorsets_size);
     memcpy(command->dynamic_offsets, dynamic_offsets.data(), dynamic_offsets_size);
-
-    return ErrorCode::NONE;
-}
-
-ErrorCode Renderer::make_draw_command(cmd::CommandBucket<int> & bucket,
-                                      VkPipelineLayout          pipeline_layout,
-                                      VkBuffer                  vertex_buffer,
-                                      VkDeviceSize              vertex_buffer_offset,
-                                      VkBuffer                  index_buffer,
-                                      VkDeviceSize              index_buffer_offset,
-                                      VkDeviceSize              index_buffer_count,
-                                      size_t                    push_constant_size,
-                                      void *                    push_constant_data,
-                                      size_t                    uniform_count,
-                                      UniformHandle *           p_uniforms
-
-)
-{
-    size_t                       descriptor_sets_size = 0;
-    size_t                       dynamic_offsets_size = 0;
-    std::vector<VkDescriptorSet> descriptorsets;
-    std::vector<uint32_t>        dynamic_offsets;
-
-    if (uniform_count != 0)
-    {
-        descriptorsets.reserve(uniform_count);
-
-        for (size_t i = 0; i < uniform_count; ++i)
-        {
-            auto uniform_handle = p_uniforms[i];
-            auto opt_uniform    = getUniform(uniform_handle);
-
-            if (opt_uniform.has_value())
-            {
-                descriptorsets.push_back(opt_uniform.value());
-            }
-            else
-            {
-                LOG_ERROR("No Descriptor Set returned for Uniform {} {}",
-                          uniform_handle.uniform_layout_id,
-                          uniform_handle.uniform_id);
-                return ErrorCode::API_ERROR;
-            }
-
-            auto opt_offset = getDynamicOffset(uniform_handle);
-
-            if (opt_offset.has_value())
-            {
-                dynamic_offsets.push_back(opt_offset.value());
-            }
-        }
-
-        descriptor_sets_size = sizeof(VkDescriptorSet) * descriptorsets.size();
-        dynamic_offsets_size = sizeof(uint32_t) * dynamic_offsets.size();
-    }
-
-    Draw * command = bucket.AddCommand<Draw>(
-        0, push_constant_size + descriptor_sets_size + dynamic_offsets_size);
-
-    char * command_memory = cmd::commandPacket::GetAuxiliaryMemory(command);
-
-    command->commandbuffer       = commands.draw_commandbuffers[frames.currentResource];
-    command->pipeline_layout     = pipeline_layout;
-    command->vertexbuffer        = vertex_buffer;
-    command->vertexbuffer_offset = vertex_buffer_offset;
-    command->indexbuffer         = index_buffer;
-    command->indexbuffer_offset  = index_buffer_offset;
-    command->indexbuffer_count   = index_buffer_count;
-    if (push_constant_size != 0)
-    {
-        memcpy(command_memory, push_constant_data, push_constant_size);
-        command->push_constant_size = push_constant_size;
-        command->push_constant_data = reinterpret_cast<void *>(command_memory);
-    }
-    else
-    {
-        command->push_constant_size = 0;
-        command->push_constant_data = nullptr;
-    }
-
-    if (descriptorsets.size() != 0)
-    {
-        memcpy(command_memory + push_constant_size, descriptorsets.data(), descriptor_sets_size);
-        memcpy(command_memory + push_constant_size + descriptor_sets_size,
-               dynamic_offsets.data(),
-               dynamic_offsets_size);
-
-        command->descriptor_set_count = descriptorsets.size();
-        command->descriptor_sets      = reinterpret_cast<VkDescriptorSet *>(command_memory
-                                                                       + push_constant_size);
-        command->dynamic_offset_count = dynamic_offsets.size();
-        command->dynamic_offsets = reinterpret_cast<uint32_t *>(command_memory + push_constant_size
-                                                                + descriptor_sets_size);
-    }
-    else
-    {
-        command->descriptor_set_count = 0;
-        command->descriptor_sets      = nullptr;
-        command->dynamic_offset_count = 0;
-        command->dynamic_offsets      = nullptr;
-    }
 
     return ErrorCode::NONE;
 }
@@ -5721,19 +5503,11 @@ std::optional<BufferHandle> Renderer::create_buffer(VkDeviceSize          size,
     return buffers.create_buffer(render_device, size, usage, properties);
 }
 
-std::optional<MappedBuffer> Renderer::create_mapped_buffer(BufferHandle buffer_handle,
-                                                           VkDeviceSize size)
+std::optional<void *> Renderer::map_buffer(BufferHandle buffer_handle)
 {
-    auto opt_buffer = buffers.get_buffer(buffer_handle);
+    LOG_INFO("Mapping Buffer");
 
-    if (!opt_buffer)
-    {
-        return std::nullopt;
-    }
-
-    auto buffer = opt_buffer.value();
-
-    return MappedBuffer(render_device.logical_device, buffer, size);
+    return buffers.map_buffer(buffer_handle);
 }
 
 void Renderer::update_buffer(BufferHandle buffer_handle, VkDeviceSize size, void * data)
@@ -5800,7 +5574,7 @@ void Renderer::delete_buffers(size_t buffer_count, BufferHandle * buffer_handles
         }
 
         auto buffer = opt_buffer.value();
-        buffers.delete_buffer(render_device, buffer_handles[i]);
+        buffers.delete_buffer(buffer_handles[i]);
 
         LOG_DEBUG("Queuing buffer {} {} for delete",
                   static_cast<void *>(buffer.buffer_handle()),

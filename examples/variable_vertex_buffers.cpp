@@ -225,28 +225,86 @@ public:
         {
             auto & static_data = std::get<StaticVertexData>(vertex_data);
 
-            render_device.draw(material.pipeline,
-                               static_data.vertexbuffer,
-                               0,
-                               static_data.indexbuffer,
-                               0,
-                               static_data.index_count,
-                               sizeof(glm::mat4),
-                               glm::value_ptr(material.transform),
-                               uniform_count, uniforms);
+            VkDeviceSize zero_offset = 0;
+
+            gfx::DrawParameters params{};
+
+            params.pipeline = material.pipeline;
+
+            params.vertex_buffer_count   = 1;
+            params.vertex_buffers        = &static_data.vertexbuffer;
+            params.vertex_buffer_offsets = &zero_offset;
+
+            params.index_buffer        = static_data.indexbuffer;
+            params.index_buffer_offset = 0;
+            params.index_count         = static_data.index_count;
+
+            params.push_constant_size = sizeof(glm::mat4);
+            params.push_constant_data = glm::value_ptr(material.transform);
+
+            params.uniform_count = uniform_count;
+            params.uniforms      = uniforms;
+
+            render_device.draw(params);
         }
         else if (std::holds_alternative<StreamedVertexData>(vertex_data))
         {
             auto & streamed_data = std::get<StreamedVertexData>(vertex_data);
 
-            render_device.draw(material.pipeline,
-                               streamed_data.vertex_count * sizeof(Vertex),
-                               streamed_data.vertices,
-                               streamed_data.index_count,
-                               streamed_data.indices,
-                               sizeof(glm::mat4),
-                               glm::value_ptr(material.transform),
-                               uniform_count, uniforms);
+            auto vertex_buffer_handle = render_device
+                                            .create_buffer(
+                                                streamed_data.vertex_count * sizeof(Vertex),
+                                                VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+                                                VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT
+                                                    | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT)
+                                            .value();
+
+            void * vertex_buffer_ptr = render_device.map_buffer(vertex_buffer_handle).value();
+
+            memcpy(vertex_buffer_ptr,
+                   streamed_data.vertices,
+                   streamed_data.vertex_count * sizeof(Vertex));
+
+            auto index_buffer_handle = render_device
+                                           .create_buffer(
+                                               streamed_data.index_count * sizeof(uint32_t),
+                                               VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
+                                               VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT
+                                                   | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT)
+                                           .value();
+
+            void * index_buffer_ptr = render_device.map_buffer(index_buffer_handle).value();
+
+            memcpy(index_buffer_ptr,
+                   streamed_data.indices,
+                   streamed_data.index_count * sizeof(uint32_t));
+
+            VkDeviceSize zero_offset = 0;
+
+            gfx::DrawParameters params{};
+
+            params.pipeline = material.pipeline;
+
+            params.vertex_buffer_count   = 1;
+            params.vertex_buffers        = &vertex_buffer_handle;
+            params.vertex_buffer_offsets = &zero_offset;
+
+            params.index_buffer        = index_buffer_handle;
+            params.index_buffer_offset = 0;
+            params.index_count         = streamed_data.index_count;
+
+            params.push_constant_size = sizeof(glm::mat4);
+            params.push_constant_data = glm::value_ptr(material.transform);
+
+            params.uniform_count = uniform_count;
+            params.uniforms      = uniforms;
+
+            render_device.draw(params);
+
+            std::array<gfx::BufferHandle, 2> delete_buffers{vertex_buffer_handle,
+                                                            index_buffer_handle};
+
+            render_device.delete_buffers(delete_buffers.size(), delete_buffers.data());
         }
     }
 
@@ -329,7 +387,8 @@ private:
 
 }; // class RawClock
 
-std::optional<gfx::TextureHandle> create_texture(gfx::Renderer & renderer, char const * texture_path)
+std::optional<gfx::TextureHandle> create_texture(gfx::Renderer & renderer,
+                                                 char const *    texture_path)
 {
     int       texWidth, texHeight, texChannels;
     stbi_uc * pixels = stbi_load(texture_path, &texWidth, &texHeight, &texChannels, STBI_rgb_alpha);
@@ -366,8 +425,8 @@ int main()
 
     auto render_device = gfx::Renderer{window};
 
-    auto render_config = gfx::RenderConfig{
-        .config_filename = RESOURCE_PATH "example_renderer_config.json"};
+    auto render_config = gfx::RenderConfig{.config_filename = RESOURCE_PATH
+                                           "example_renderer_config.json"};
 
     render_config.init();
 

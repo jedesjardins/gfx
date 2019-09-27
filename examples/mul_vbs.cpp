@@ -74,7 +74,8 @@ int main()
                               VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT)
                           .value();
 
-    render_device.update_buffer(pos_buffer, left_pos_vec.size() * sizeof(glm::vec2), left_pos_vec.data());
+    render_device.update_buffer(
+        pos_buffer, left_pos_vec.size() * sizeof(glm::vec2), left_pos_vec.data());
 
     auto color_buffer = render_device
                             .create_buffer(color_vec.size() * sizeof(glm::vec3),
@@ -85,7 +86,6 @@ int main()
 
     render_device.update_buffer(
         color_buffer, color_vec.size() * sizeof(glm::vec3), color_vec.data());
-
 
     // Both vertex bindings in one buffer
     std::array<float, 3 * 2 + 3 * 3> vertices;
@@ -137,12 +137,12 @@ int main()
 
         render_device.draw(params_1);
 
-
         // draw with the same buffer twice
         gfx::DrawParameters params_2{};
 
         std::array<gfx::BufferHandle, 2> vertex_buffers_2{vertex_buffer, vertex_buffer};
-        std::array<VkDeviceSize, 2>      vertex_buffer_offsets_2{0, right_pos_vec.size() * sizeof(glm::vec2)};
+        std::array<VkDeviceSize, 2>      vertex_buffer_offsets_2{
+            0, right_pos_vec.size() * sizeof(glm::vec2)};
 
         params_2.pipeline = pipeline;
 
