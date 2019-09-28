@@ -954,6 +954,7 @@ public:
 
     ErrorCode draw(DrawParameters const & args);
 
+    std::optional<AttachmentHandle>    get_attachment_handle(std::string attachment_name);
     std::optional<UniformLayoutHandle> get_uniform_layout_handle(std::string layout_name);
     std::optional<PipelineHandle>      get_pipeline_handle(std::string pipeline_name);
 
@@ -996,6 +997,8 @@ public:
                                                 size_t       height,
                                                 size_t       pixel_size,
                                                 void * const pixels);
+
+    std::optional<TextureHandle> get_texture(AttachmentHandle attachment);
 
     void delete_textures(size_t sampler_count, TextureHandle * sampler_handles);
 
@@ -5139,6 +5142,11 @@ ErrorCode Renderer::draw(DrawParameters const & args)
     return ErrorCode::NONE;
 }
 
+std::optional<AttachmentHandle> Renderer::get_attachment_handle(std::string attachment_name)
+{
+    return images.get_attachment_handle(attachment_name);
+}
+
 std::optional<UniformLayoutHandle> Renderer::get_uniform_layout_handle(std::string layout_name)
 {
     auto handle_iter = uniforms.uniform_layout_handles.find(layout_name);
@@ -5301,7 +5309,8 @@ void Renderer::update_buffer(BufferHandle buffer_handle, VkDeviceSize size, void
 
     if (!opt_mapped_buffer_handle)
     {
-        LOG_ERROR("Couldn't create a staging buffer for updating device local buffer {}", buffer_handle);
+        LOG_ERROR("Couldn't create a staging buffer for updating device local buffer {}",
+                  buffer_handle);
     }
 
     auto opt_mapped_buffer_ptr = buffers.map_buffer(opt_mapped_buffer_handle.value());
@@ -5317,7 +5326,8 @@ void Renderer::update_buffer(BufferHandle buffer_handle, VkDeviceSize size, void
 
     if (!opt_mapped_buffer)
     {
-        LOG_ERROR("Couldn't get the staging buffer for updating device local buffer {}", buffer_handle);
+        LOG_ERROR("Couldn't get the staging buffer for updating device local buffer {}",
+                  buffer_handle);
     }
 
     auto & bucket = commands.transfer_buckets[frames.currentResource];
@@ -5329,7 +5339,6 @@ void Renderer::update_buffer(BufferHandle buffer_handle, VkDeviceSize size, void
     vertex_command->srcOffset     = 0;
     vertex_command->dstOffset     = 0;
     vertex_command->size          = size;
-
 
     BufferHandle destroy_buffer = opt_mapped_buffer_handle.value();
     delete_buffers(1, &destroy_buffer);
@@ -5490,6 +5499,11 @@ std::optional<TextureHandle> Renderer::create_texture(size_t       width,
     delete_buffers(1, &destroy_buffer);
 
     return texture_handle;
+}
+
+std::optional<TextureHandle> Renderer::get_texture(AttachmentHandle attachment)
+{
+    return images::get_texture_handle(attachment);
 }
 
 void Renderer::delete_textures(size_t texture_count, TextureHandle * texture_handles)
