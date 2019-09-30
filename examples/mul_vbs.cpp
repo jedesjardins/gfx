@@ -166,6 +166,4 @@ int main()
     glfwDestroyWindow(window);
 
     glfwTerminate();
-
-    LOG_INFO("Stopping Pong\n");
 }
