@@ -261,10 +261,10 @@ struct SamplerCollection
     std::vector<VkDescriptorSet> descriptor_sets;
     IndexAllocator               free_uniform_slots;
 
-    std::optional<UniformHandle>   createUniform(VkDevice const&  logical_device,
-                                                 uint32_t    binding,
-                                                 VkImageView view,
-                                                 VkSampler   sampler);
+    std::optional<UniformHandle>   createUniform(VkDevice const & logical_device,
+                                                 uint32_t         binding,
+                                                 VkImageView      view,
+                                                 VkSampler        sampler);
     std::optional<VkDescriptorSet> getUniform(UniformHandle handle);
     std::optional<VkDeviceSize>    getDynamicOffset(UniformHandle handle);
     void                           destroyUniform(UniformHandle handle);
@@ -747,39 +747,39 @@ public:
     size_t        currentFrame{0};
     uint32_t      currentResource{0};
 
-    bool init(RenderConfig & render_config, VkDevice device);
-    void quit(VkDevice device);
+    bool init(RenderConfig & render_config, VkDevice const & device);
+    void quit(VkDevice const & device);
 }; // struct FrameResources
 
 class ImageResources
 {
 public:
-    bool init(RenderConfig & render_config, Device & device);
-    void quit(Device & device);
+    bool init(RenderConfig & render_config, Device const & device);
+    void quit(Device const & device);
 
-    ErrorCode recreate_attachments(Device & device);
+    ErrorCode recreate_attachments(Device const & device);
 
-    std::optional<TextureHandle> create_texture(VkPhysicalDevice      physical_device,
-                                                VkDevice              logical_device,
-                                                uint32_t              width,
-                                                uint32_t              height,
-                                                uint32_t              mipLevels,
-                                                VkSampleCountFlagBits numSamples,
-                                                VkFormat              format,
-                                                VkImageTiling         tiling,
-                                                VkImageUsageFlags     usage,
-                                                VkMemoryPropertyFlags properties,
-                                                VkImageAspectFlags    aspectFlags);
+    std::optional<TextureHandle> create_texture(VkPhysicalDevice const & physical_device,
+                                                VkDevice const &         logical_device,
+                                                uint32_t                 width,
+                                                uint32_t                 height,
+                                                uint32_t                 mipLevels,
+                                                VkSampleCountFlagBits    numSamples,
+                                                VkFormat                 format,
+                                                VkImageTiling            tiling,
+                                                VkImageUsageFlags        usage,
+                                                VkMemoryPropertyFlags    properties,
+                                                VkImageAspectFlags       aspectFlags);
 
-    std::optional<Sampler> get_texture(TextureHandle handle);
+    std::optional<Sampler> get_texture(TextureHandle const & handle) const;
 
-    void delete_texture(TextureHandle handle);
+    void delete_texture(TextureHandle const & handle);
 
-    std::optional<AttachmentConfig> get_config(AttachmentHandle);
+    std::optional<AttachmentConfig> get_config(AttachmentHandle const & handle) const;
 
-    std::optional<TextureHandle> get_texture_handle(AttachmentHandle);
+    std::optional<TextureHandle> get_texture_handle(AttachmentHandle const & handle) const;
 
-    std::optional<AttachmentHandle> get_attachment_handle(std::string const & name);
+    std::optional<AttachmentHandle> get_attachment_handle(std::string const & name) const;
 
 private:
     std::unordered_map<std::string, AttachmentHandle> attachment_handles;
@@ -788,13 +788,13 @@ private:
     TextureHandle                                     next_sampler_handle{0};
     std::unordered_map<TextureHandle, Sampler>        samplers;
 
-    ErrorCode create_attachments(Device & device);
+    ErrorCode create_attachments(Device const & device);
 
-    ErrorCode create_attachment(Device &                 device,
+    ErrorCode create_attachment(Device const &           device,
                                 AttachmentConfig const & attachment_config,
                                 TextureHandle &          attachment);
 
-    void destroy_attachments(Device & device);
+    void destroy_attachments(Device const & device);
 }; // class ImageResources
 
 struct RenderPassResources
@@ -812,45 +812,47 @@ public:
     std::vector<std::vector<VkClearValue>>            clear_values;
     std::vector<VkSampleCountFlagBits>                samples;
 
-    bool init(RenderConfig & render_config, Device & device, ImageResources & image_resources);
-    void quit(Device & device);
+    bool init(RenderConfig &         render_config,
+              Device const &         device,
+              ImageResources const & image_resources);
+    void quit(Device const & device);
 
-    void recreateFramebuffers(Device & device, ImageResources & image_resources);
+    void recreate_framebuffers(Device const & device, ImageResources const & image_resources);
 
 private:
-    ErrorCode createRenderPasses(Device & device, ImageResources & image_resources);
+    ErrorCode createRenderPasses(Device const & device, ImageResources const & image_resources);
 
     // FRAMEBUFFER
-    ErrorCode createFramebuffer(Device &                     device,
-                                ImageResources &             image_resources,
+    ErrorCode createFramebuffer(Device const &               device,
+                                ImageResources const &       image_resources,
                                 RenderpassConfig const &     config,
                                 VkRenderPass const &         render_pass,
                                 std::vector<VkFramebuffer> & framebuffers);
 }; // struct RenderPassResources
 
-struct BufferResources
+class BufferResources
 {
 public:
     bool init();
-    void quit(Device & device);
+    void quit(Device const & device);
 
-    std::optional<BufferHandle> create_buffer(Device &              device,
+    std::optional<BufferHandle> create_buffer(Device const &        device,
                                               VkDeviceSize          size,
                                               VkBufferUsageFlags    usage,
                                               VkMemoryPropertyFlags properties);
 
-    std::optional<void *> map_buffer(BufferHandle handle);
+    std::optional<void *> map_buffer(BufferHandle const & handle) const;
 
-    std::optional<Buffer> get_buffer(BufferHandle handle);
+    std::optional<Buffer> get_buffer(BufferHandle const & handle) const;
 
-    void delete_buffer(BufferHandle handle);
+    void delete_buffer(BufferHandle const & handle);
 
 private:
     BufferHandle next_buffer_handle{0};
     // todo: this isn't thread safe
     std::unordered_map<BufferHandle, Buffer> buffers;
     std::unordered_map<BufferHandle, void *> mapped_memory;
-}; // struct BufferResources
+}; // class BufferResources
 
 /*
  * Manages Uniforms
@@ -866,11 +868,11 @@ public:
     std::vector<size_t>                       uniform_counts;
     std::vector<UniformVariant>               uniform_collections;
 
-    bool init(RenderConfig & render_config, Device & device, BufferResources & buffers);
-    void quit(Device & device);
+    bool init(RenderConfig & render_config, Device const & device, BufferResources & buffers);
+    void quit(Device const & device);
 
 private:
-    ErrorCode createUniformLayouts(Device & device, BufferResources & buffers);
+    ErrorCode createUniformLayouts(Device const & device, BufferResources & buffers);
 }; // struct UniformResources
 
 struct PipelineResources
@@ -895,34 +897,34 @@ public:
     std::vector<cmd::CommandBucket<int>>            draw_buckets;
 
     bool init(RenderConfig &        render_config,
-              Device &              device,
+              Device const &        device,
               RenderPassResources & render_passes,
               UniformResources &    uniforms);
-    void quit(Device & device);
+    void quit(Device const & device);
 
-    ErrorCode recreate_pipelines(Device &              device,
+    ErrorCode recreate_pipelines(Device const &        device,
                                  RenderPassResources & render_passes,
                                  UniformResources &    uniforms);
 
 private:
-    ErrorCode createShaderModule(Device &                  device,
+    ErrorCode createShaderModule(Device const &            device,
                                  std::vector<char> const & code,
                                  VkShaderModule &          shaderModule);
 
-    ErrorCode createShaders(Device & device);
+    ErrorCode createShaders(Device const & device);
 
-    ErrorCode create_pipelines(Device &              device,
+    ErrorCode create_pipelines(Device const &        device,
                                RenderPassResources & render_passes,
                                UniformResources &    uniforms);
 
-    ErrorCode create_pipeline(Device &               device,
+    ErrorCode create_pipeline(Device const &         device,
                               RenderPassResources &  render_passes,
                               UniformResources &     uniforms,
                               PipelineHandle         pipeline_handle,
                               Pipeline &             pipeline,
                               PipelineConfig const & pipeline_config);
 
-    void destroy_pipelines(Device & device);
+    void destroy_pipelines(Device const & device);
 }; // struct PipelineResources
 
 /*
@@ -945,15 +947,15 @@ public:
     // queue) eventually have one pool per thread per
     VkCommandPool command_pool{VK_NULL_HANDLE};
 
-    bool init(RenderConfig & render_config, Device & device);
-    void quit(Device & device);
+    bool init(RenderConfig & render_config, Device const & device);
+    void quit(Device const & device);
 
 private:
-    void getQueues(Device & device);
+    void getQueues(Device const & device);
 
-    ErrorCode createCommandPool(Device & device);
+    ErrorCode createCommandPool(Device const & device);
 
-    ErrorCode createCommandbuffers(Device & device);
+    ErrorCode createCommandbuffers(Device const & device);
 }; // struct CommandResources
 
 }; // namespace module
@@ -995,25 +997,25 @@ public:
 
     bool submit_frame();
 
-    ErrorCode set_scissor(PipelineHandle pipeline, VkRect2D const & scissor);
+    ErrorCode set_scissor(PipelineHandle const & pipeline, VkRect2D const & scissor);
 
-    ErrorCode set_viewport(PipelineHandle pipeline, VkViewport const & scissor);
+    ErrorCode set_viewport(PipelineHandle const & pipeline, VkViewport const & scissor);
 
     ErrorCode draw(DrawParameters const & args);
 
-    std::optional<AttachmentHandle>    get_attachment_handle(std::string attachment_name);
-    std::optional<UniformLayoutHandle> get_uniform_layout_handle(std::string layout_name);
-    std::optional<PipelineHandle>      get_pipeline_handle(std::string pipeline_name);
+    std::optional<AttachmentHandle>    get_attachment_handle(std::string const & attachment_name);
+    std::optional<UniformLayoutHandle> get_uniform_layout_handle(std::string const & layout_name);
+    std::optional<PipelineHandle>      get_pipeline_handle(std::string const & pipeline_name);
 
-    std::optional<UniformHandle> new_uniform(UniformLayoutHandle layout_handle,
-                                             VkDeviceSize        size,
-                                             void *              data_ptr);
+    std::optional<UniformHandle> new_uniform(UniformLayoutHandle const & layout_handle,
+                                             VkDeviceSize                size,
+                                             void *                      data_ptr);
 
-    std::optional<UniformHandle> new_uniform(UniformLayoutHandle layout_handle,
-                                             TextureHandle       texture_handle);
+    std::optional<UniformHandle> new_uniform(UniformLayoutHandle const & layout_handle,
+                                             TextureHandle const &       texture_handle);
 
     template <typename... Args>
-    void update_uniform(UniformHandle handle, Args &&... args)
+    void update_uniform(UniformHandle const & handle, Args &&... args)
     {
         auto & uniform_collection = uniforms.uniform_collections[handle.uniform_layout_id];
 
@@ -1028,31 +1030,31 @@ public:
             uniform_collection);
     }
 
-    void delete_uniforms(size_t uniform_count, UniformHandle * uniforms);
+    void delete_uniforms(size_t uniform_count, UniformHandle const * uniforms);
 
     std::optional<BufferHandle> create_buffer(VkDeviceSize          size,
                                               VkBufferUsageFlags    usage,
                                               VkMemoryPropertyFlags properties);
 
-    std::optional<void *> map_buffer(BufferHandle buffer_handle);
+    std::optional<void *> map_buffer(BufferHandle const & buffer_handle);
 
-    void update_buffer(BufferHandle buffer, VkDeviceSize size, void * data);
+    void update_buffer(BufferHandle const & buffer, VkDeviceSize size, void * data);
 
-    void delete_buffers(size_t buffer_count, BufferHandle * buffers);
+    void delete_buffers(size_t buffer_count, BufferHandle const * buffers);
 
     std::optional<TextureHandle> create_texture(size_t       width,
                                                 size_t       height,
                                                 size_t       pixel_size,
                                                 void * const pixels);
 
-    std::optional<TextureHandle> get_texture(AttachmentHandle attachment);
+    std::optional<TextureHandle> get_texture(AttachmentHandle const & attachment);
 
-    void delete_textures(size_t sampler_count, TextureHandle * sampler_handles);
+    void delete_textures(size_t sampler_count, TextureHandle const * sampler_handles);
 
 private:
-    std::optional<VkDescriptorSet> getUniform(UniformHandle handle);
+    std::optional<VkDescriptorSet> getUniform(UniformHandle const & handle);
 
-    std::optional<VkDeviceSize> getDynamicOffset(UniformHandle handle);
+    std::optional<VkDeviceSize> getDynamicOffset(UniformHandle const &  handle);
 
     ErrorCode createCommandbuffer(uint32_t image_index);
 
@@ -3770,7 +3772,7 @@ std::optional<VkFormat> Device::findSupportedFormat(const std::vector<VkFormat> 
     return std::nullopt;
 }
 
-bool FrameResources::init(RenderConfig & render_config, VkDevice device)
+bool FrameResources::init(RenderConfig & render_config, VkDevice const & device)
 {
     image_available_semaphores.resize(MAX_FRAMES_IN_FLIGHT);
     render_finished_semaphores.resize(MAX_FRAMES_IN_FLIGHT);
@@ -3796,7 +3798,7 @@ bool FrameResources::init(RenderConfig & render_config, VkDevice device)
     return true;
 }
 
-void FrameResources::quit(VkDevice device)
+void FrameResources::quit(VkDevice const & device)
 {
     for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++)
     {
@@ -3806,7 +3808,7 @@ void FrameResources::quit(VkDevice device)
     }
 }
 
-bool ImageResources::init(RenderConfig & render_config, Device & device)
+bool ImageResources::init(RenderConfig & render_config, Device const & device)
 {
     // attachment_configs = std::move(render_config.attachment_configs);
     // attachment_handles.resize(attachment_configs.size());
@@ -3825,7 +3827,7 @@ bool ImageResources::init(RenderConfig & render_config, Device & device)
     return create_attachments(device) == ErrorCode::NONE;
 }
 
-void ImageResources::quit(Device & device)
+void ImageResources::quit(Device const & device)
 {
     attachment_handles.clear();
 
@@ -3837,13 +3839,13 @@ void ImageResources::quit(Device & device)
     samplers.clear();
 }
 
-ErrorCode ImageResources::recreate_attachments(Device & device)
+ErrorCode ImageResources::recreate_attachments(Device const & device)
 {
     destroy_attachments(device);
     return create_attachments(device);
 }
 
-ErrorCode ImageResources::create_attachments(Device & device)
+ErrorCode ImageResources::create_attachments(Device const & device)
 {
     for (size_t i = 0; i < attachment_configs.size(); ++i)
     {
@@ -3860,7 +3862,7 @@ ErrorCode ImageResources::create_attachments(Device & device)
     return ErrorCode::NONE;
 }
 
-ErrorCode ImageResources::create_attachment(Device &                 device,
+ErrorCode ImageResources::create_attachment(Device const &           device,
                                             AttachmentConfig const & attachment_config,
                                             TextureHandle &          attachment)
 {
@@ -3915,7 +3917,7 @@ ErrorCode ImageResources::create_attachment(Device &                 device,
     return ErrorCode::NONE;
 }
 
-void ImageResources::destroy_attachments(Device & device)
+void ImageResources::destroy_attachments(Device const & device)
 {
     for (TextureHandle attachment: attachments)
     {
@@ -3923,17 +3925,18 @@ void ImageResources::destroy_attachments(Device & device)
     }
 }
 
-std::optional<TextureHandle> ImageResources::create_texture(VkPhysicalDevice      physical_device,
-                                                            VkDevice              logical_device,
-                                                            uint32_t              width,
-                                                            uint32_t              height,
-                                                            uint32_t              mipLevels,
-                                                            VkSampleCountFlagBits numSamples,
-                                                            VkFormat              format,
-                                                            VkImageTiling         tiling,
-                                                            VkImageUsageFlags     usage,
-                                                            VkMemoryPropertyFlags properties,
-                                                            VkImageAspectFlags    aspectFlags)
+std::optional<TextureHandle> ImageResources::create_texture(
+    VkPhysicalDevice const & physical_device,
+    VkDevice const &         logical_device,
+    uint32_t                 width,
+    uint32_t                 height,
+    uint32_t                 mipLevels,
+    VkSampleCountFlagBits    numSamples,
+    VkFormat                 format,
+    VkImageTiling            tiling,
+    VkImageUsageFlags        usage,
+    VkMemoryPropertyFlags    properties,
+    VkImageAspectFlags       aspectFlags)
 {
     TextureHandle handle = next_sampler_handle++;
 
@@ -3968,7 +3971,7 @@ std::optional<TextureHandle> ImageResources::create_texture(VkPhysicalDevice    
     return handle;
 }
 
-std::optional<Sampler> ImageResources::get_texture(TextureHandle handle)
+std::optional<Sampler> ImageResources::get_texture(TextureHandle const & handle) const
 {
     auto sampler_iter = samplers.find(handle);
 
@@ -3980,7 +3983,7 @@ std::optional<Sampler> ImageResources::get_texture(TextureHandle handle)
     return std::nullopt;
 }
 
-void ImageResources::delete_texture(TextureHandle handle)
+void ImageResources::delete_texture(TextureHandle const & handle)
 {
     auto sampler_iter = samplers.find(handle);
 
@@ -3990,7 +3993,7 @@ void ImageResources::delete_texture(TextureHandle handle)
     }
 }
 
-std::optional<AttachmentConfig> ImageResources::get_config(AttachmentHandle handle)
+std::optional<AttachmentConfig> ImageResources::get_config(AttachmentHandle const & handle) const
 {
     if (handle >= attachment_configs.size())
     {
@@ -4000,7 +4003,8 @@ std::optional<AttachmentConfig> ImageResources::get_config(AttachmentHandle hand
     return attachment_configs[handle];
 }
 
-std::optional<TextureHandle> ImageResources::get_texture_handle(AttachmentHandle handle)
+std::optional<TextureHandle> ImageResources::get_texture_handle(
+    AttachmentHandle const & handle) const
 {
     if (handle >= attachments.size())
     {
@@ -4010,7 +4014,8 @@ std::optional<TextureHandle> ImageResources::get_texture_handle(AttachmentHandle
     return attachments[handle];
 }
 
-std::optional<AttachmentHandle> ImageResources::get_attachment_handle(std::string const & name)
+std::optional<AttachmentHandle> ImageResources::get_attachment_handle(
+    std::string const & name) const
 {
     auto iter = attachment_handles.find(name);
     if (iter == attachment_handles.end())
@@ -4022,9 +4027,9 @@ std::optional<AttachmentHandle> ImageResources::get_attachment_handle(std::strin
     return iter->second;
 }
 
-bool RenderPassResources::init(RenderConfig &   render_config,
-                               Device &         device,
-                               ImageResources & image_resources)
+bool RenderPassResources::init(RenderConfig &         render_config,
+                               Device const &         device,
+                               ImageResources const & image_resources)
 {
     for (auto & iter: render_config.renderpass_configs)
     {
@@ -4053,7 +4058,7 @@ bool RenderPassResources::init(RenderConfig &   render_config,
     return createRenderPasses(device, image_resources) == ErrorCode::NONE;
 }
 
-void RenderPassResources::quit(Device & device)
+void RenderPassResources::quit(Device const & device)
 {
     for (auto & buffered_framebuffers: framebuffers)
     {
@@ -4069,7 +4074,8 @@ void RenderPassResources::quit(Device & device)
     }
 }
 
-void RenderPassResources::recreateFramebuffers(Device & device, ImageResources & image_resources)
+void RenderPassResources::recreate_framebuffers(Device const &         device,
+                                                ImageResources const & image_resources)
 {
     for (size_t fb_i = 0; fb_i < framebuffers.size(); ++fb_i)
     {
@@ -4086,7 +4092,8 @@ void RenderPassResources::recreateFramebuffers(Device & device, ImageResources &
     }
 }
 
-ErrorCode RenderPassResources::createRenderPasses(Device & device, ImageResources & image_resources)
+ErrorCode RenderPassResources::createRenderPasses(Device const &         device,
+                                                  ImageResources const & image_resources)
 {
     for (size_t rp_i = 0; rp_i < render_passes.size(); ++rp_i)
     {
@@ -4190,8 +4197,8 @@ ErrorCode RenderPassResources::createRenderPasses(Device & device, ImageResource
 }
 
 // FRAMEBUFFER
-ErrorCode RenderPassResources::createFramebuffer(Device &                     device,
-                                                 ImageResources &             image_resources,
+ErrorCode RenderPassResources::createFramebuffer(Device const &               device,
+                                                 ImageResources const &       image_resources,
                                                  RenderpassConfig const &     config,
                                                  VkRenderPass const &         render_pass,
                                                  std::vector<VkFramebuffer> & framebuffers)
@@ -4261,7 +4268,7 @@ ErrorCode RenderPassResources::createFramebuffer(Device &                     de
 }
 
 bool UniformResources::init(RenderConfig &    render_config,
-                            Device &          device,
+                            Device const &    device,
                             BufferResources & buffers)
 {
     uniform_layout_infos.reserve(render_config.uniform_configs.size());
@@ -4285,7 +4292,7 @@ bool UniformResources::init(RenderConfig &    render_config,
     return createUniformLayouts(device, buffers) == ErrorCode::NONE;
 }
 
-void UniformResources::quit(Device & device)
+void UniformResources::quit(Device const & device)
 {
     for (auto & uniform_layout: uniform_layouts)
     {
@@ -4304,7 +4311,7 @@ void UniformResources::quit(Device & device)
     }
 }
 
-ErrorCode UniformResources::createUniformLayouts(Device & device, BufferResources & buffers)
+ErrorCode UniformResources::createUniformLayouts(Device const & device, BufferResources & buffers)
 {
     for (size_t ul_i = 0; ul_i < uniform_layout_infos.size(); ++ul_i)
     {
@@ -4488,7 +4495,7 @@ ErrorCode UniformResources::createUniformLayouts(Device & device, BufferResource
 }
 
 bool PipelineResources::init(RenderConfig &        render_config,
-                             Device &              device,
+                             Device const &        device,
                              RenderPassResources & render_passes,
                              UniformResources &    uniforms)
 {
@@ -4562,7 +4569,7 @@ bool PipelineResources::init(RenderConfig &        render_config,
     return create_pipelines(device, render_passes, uniforms) == ErrorCode::NONE;
 }
 
-void PipelineResources::quit(Device & device)
+void PipelineResources::quit(Device const & device)
 {
     for (auto & shader: shaders)
     {
@@ -4572,7 +4579,7 @@ void PipelineResources::quit(Device & device)
     destroy_pipelines(device);
 }
 
-void PipelineResources::destroy_pipelines(Device & device)
+void PipelineResources::destroy_pipelines(Device const & device)
 {
     for (auto & pipeline: pipelines)
     {
@@ -4581,7 +4588,7 @@ void PipelineResources::destroy_pipelines(Device & device)
     }
 }
 
-ErrorCode PipelineResources::createShaderModule(Device &                  device,
+ErrorCode PipelineResources::createShaderModule(Device const &            device,
                                                 std::vector<char> const & code,
                                                 VkShaderModule &          shaderModule)
 {
@@ -4597,7 +4604,7 @@ ErrorCode PipelineResources::createShaderModule(Device &                  device
     return ErrorCode::NONE;
 }
 
-ErrorCode PipelineResources::createShaders(Device & device)
+ErrorCode PipelineResources::createShaders(Device const & device)
 {
     for (size_t i = 0; i < shaders.size(); ++i)
     {
@@ -4616,7 +4623,7 @@ ErrorCode PipelineResources::createShaders(Device & device)
     return ErrorCode::NONE;
 }
 
-ErrorCode PipelineResources::recreate_pipelines(Device &              device,
+ErrorCode PipelineResources::recreate_pipelines(Device const &        device,
                                                 RenderPassResources & render_passes,
                                                 UniformResources &    uniforms)
 {
@@ -4624,7 +4631,7 @@ ErrorCode PipelineResources::recreate_pipelines(Device &              device,
     return create_pipelines(device, render_passes, uniforms);
 }
 
-ErrorCode PipelineResources::create_pipelines(Device &              device,
+ErrorCode PipelineResources::create_pipelines(Device const &        device,
                                               RenderPassResources & render_passes,
                                               UniformResources &    uniforms)
 {
@@ -4641,7 +4648,7 @@ ErrorCode PipelineResources::create_pipelines(Device &              device,
     return ErrorCode::NONE;
 }
 
-ErrorCode PipelineResources::create_pipeline(Device &               device,
+ErrorCode PipelineResources::create_pipeline(Device const &         device,
                                              RenderPassResources &  render_passes,
                                              UniformResources &     uniforms,
                                              PipelineHandle         pipeline_handle,
@@ -4846,7 +4853,7 @@ ErrorCode PipelineResources::create_pipeline(Device &               device,
     return ErrorCode::NONE;
 }
 
-bool CommandResources::init(RenderConfig & render_config, Device & device)
+bool CommandResources::init(RenderConfig & render_config, Device const & device)
 {
     int32_t const MAX_BUFFERED_RESOURCES = 3;
 
@@ -4869,7 +4876,7 @@ bool CommandResources::init(RenderConfig & render_config, Device & device)
     return createCommandbuffers(device) == ErrorCode::NONE;
 }
 
-void CommandResources::quit(Device & device)
+void CommandResources::quit(Device const & device)
 {
     for (uint32_t i = 0; i < delete_buckets.size(); ++i)
     {
@@ -4881,7 +4888,7 @@ void CommandResources::quit(Device & device)
     vkDestroyCommandPool(device.get_logical_device(), command_pool, nullptr);
 }
 
-void CommandResources::getQueues(Device & device)
+void CommandResources::getQueues(Device const & device)
 {
     vkGetDeviceQueue(
         device.get_logical_device(), device.get_device_info().present_queue, 0, &present_queue);
@@ -4891,7 +4898,7 @@ void CommandResources::getQueues(Device & device)
         device.get_logical_device(), device.get_device_info().transfer_queue, 0, &transfer_queue);
 }
 
-ErrorCode CommandResources::createCommandPool(Device & device)
+ErrorCode CommandResources::createCommandPool(Device const & device)
 {
     auto poolInfo = VkCommandPoolCreateInfo{
         .sType            = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
@@ -4905,7 +4912,7 @@ ErrorCode CommandResources::createCommandPool(Device & device)
     return ErrorCode::NONE;
 }
 
-ErrorCode CommandResources::createCommandbuffers(Device & device)
+ErrorCode CommandResources::createCommandbuffers(Device const & device)
 {
     int32_t const MAX_BUFFERED_RESOURCES = 3;
 
@@ -4941,7 +4948,7 @@ bool BufferResources::init()
     return true;
 }
 
-void BufferResources::quit(Device & device)
+void BufferResources::quit(Device const & device)
 {
     for (auto & buffer_iter: buffers)
     {
@@ -4951,7 +4958,7 @@ void BufferResources::quit(Device & device)
     buffers.clear();
 }
 
-std::optional<BufferHandle> BufferResources::create_buffer(Device &              device,
+std::optional<BufferHandle> BufferResources::create_buffer(Device const &        device,
                                                            VkDeviceSize          size,
                                                            VkBufferUsageFlags    usage,
                                                            VkMemoryPropertyFlags properties)
@@ -4981,7 +4988,7 @@ std::optional<BufferHandle> BufferResources::create_buffer(Device &             
     return handle;
 }
 
-std::optional<void *> BufferResources::map_buffer(BufferHandle handle)
+std::optional<void *> BufferResources::map_buffer(BufferHandle const & handle) const
 {
     auto mapped_memory_iter = mapped_memory.find(handle);
 
@@ -4993,7 +5000,7 @@ std::optional<void *> BufferResources::map_buffer(BufferHandle handle)
     return std::nullopt;
 }
 
-std::optional<Buffer> BufferResources::get_buffer(BufferHandle handle)
+std::optional<Buffer> BufferResources::get_buffer(BufferHandle const & handle) const
 {
     auto buffer_iter = buffers.find(handle);
 
@@ -5005,7 +5012,7 @@ std::optional<Buffer> BufferResources::get_buffer(BufferHandle handle)
     return std::nullopt;
 }
 
-void BufferResources::delete_buffer(BufferHandle handle)
+void BufferResources::delete_buffer(BufferHandle const & handle)
 {
     auto buffer_iter = buffers.find(handle);
 
@@ -5236,7 +5243,7 @@ bool Renderer::submit_frame()
     return true;
 }
 
-ErrorCode Renderer::set_scissor(PipelineHandle pipeline, VkRect2D const & scissor)
+ErrorCode Renderer::set_scissor(PipelineHandle const & pipeline, VkRect2D const & scissor)
 {
     auto & bucket = pipelines.draw_buckets[pipeline];
 
@@ -5247,7 +5254,7 @@ ErrorCode Renderer::set_scissor(PipelineHandle pipeline, VkRect2D const & scisso
     return ErrorCode::NONE;
 }
 
-ErrorCode Renderer::set_viewport(PipelineHandle pipeline, VkViewport const & viewport)
+ErrorCode Renderer::set_viewport(PipelineHandle const & pipeline, VkViewport const & viewport)
 {
     auto & bucket = pipelines.draw_buckets[pipeline];
 
@@ -5374,12 +5381,12 @@ ErrorCode Renderer::draw(DrawParameters const & args)
     return ErrorCode::NONE;
 }
 
-std::optional<AttachmentHandle> Renderer::get_attachment_handle(std::string attachment_name)
+std::optional<AttachmentHandle> Renderer::get_attachment_handle(std::string const & attachment_name)
 {
     return images.get_attachment_handle(attachment_name);
 }
 
-std::optional<UniformLayoutHandle> Renderer::get_uniform_layout_handle(std::string layout_name)
+std::optional<UniformLayoutHandle> Renderer::get_uniform_layout_handle(std::string const & layout_name)
 {
     auto handle_iter = uniforms.uniform_layout_handles.find(layout_name);
     if (handle_iter == uniforms.uniform_layout_handles.end())
@@ -5390,7 +5397,7 @@ std::optional<UniformLayoutHandle> Renderer::get_uniform_layout_handle(std::stri
     return handle_iter->second;
 }
 
-std::optional<PipelineHandle> Renderer::get_pipeline_handle(std::string pipeline_name)
+std::optional<PipelineHandle> Renderer::get_pipeline_handle(std::string const & pipeline_name)
 {
     auto handle_iter = pipelines.pipeline_handles.find(pipeline_name);
     if (handle_iter == pipelines.pipeline_handles.end())
@@ -5401,7 +5408,7 @@ std::optional<PipelineHandle> Renderer::get_pipeline_handle(std::string pipeline
     return handle_iter->second;
 }
 
-std::optional<UniformHandle> Renderer::new_uniform(UniformLayoutHandle layout_handle,
+std::optional<UniformHandle> Renderer::new_uniform(UniformLayoutHandle const & layout_handle,
                                                    VkDeviceSize        size,
                                                    void *              data_ptr)
 {
@@ -5426,8 +5433,8 @@ std::optional<UniformHandle> Renderer::new_uniform(UniformLayoutHandle layout_ha
     return opt_uniform_handle;
 }
 
-std::optional<UniformHandle> Renderer::new_uniform(UniformLayoutHandle layout_handle,
-                                                   TextureHandle       texture_handle)
+std::optional<UniformHandle> Renderer::new_uniform(UniformLayoutHandle const & layout_handle,
+                                                   TextureHandle       const & texture_handle)
 {
     LOG_INFO("Creating a new Uniform");
     auto opt_sampler = images.get_texture(texture_handle);
@@ -5464,7 +5471,7 @@ std::optional<UniformHandle> Renderer::new_uniform(UniformLayoutHandle layout_ha
     return opt_uniform_handle;
 }
 
-std::optional<VkDescriptorSet> Renderer::getUniform(UniformHandle handle)
+std::optional<VkDescriptorSet> Renderer::getUniform(UniformHandle const & handle)
 {
     auto & uniform_collection = uniforms.uniform_collections[handle.uniform_layout_id];
 
@@ -5475,7 +5482,7 @@ std::optional<VkDescriptorSet> Renderer::getUniform(UniformHandle handle)
         uniform_collection);
 }
 
-std::optional<VkDeviceSize> Renderer::getDynamicOffset(UniformHandle handle)
+std::optional<VkDeviceSize> Renderer::getDynamicOffset(UniformHandle const & handle)
 {
     auto & uniform_collection = uniforms.uniform_collections[handle.uniform_layout_id];
 
@@ -5486,7 +5493,7 @@ std::optional<VkDeviceSize> Renderer::getDynamicOffset(UniformHandle handle)
         uniform_collection);
 }
 
-void Renderer::delete_uniforms(size_t uniform_count, UniformHandle * uniform_handles)
+void Renderer::delete_uniforms(size_t uniform_count, UniformHandle const * uniform_handles)
 {
     LOG_INFO("Deleting Uniforms");
     auto & bucket = commands.delete_buckets[frames.currentResource];
@@ -5512,14 +5519,14 @@ std::optional<BufferHandle> Renderer::create_buffer(VkDeviceSize          size,
     return buffers.create_buffer(device, size, usage, properties);
 }
 
-std::optional<void *> Renderer::map_buffer(BufferHandle buffer_handle)
+std::optional<void *> Renderer::map_buffer(BufferHandle const & buffer_handle)
 {
     LOG_INFO("Mapping Buffer");
 
     return buffers.map_buffer(buffer_handle);
 }
 
-void Renderer::update_buffer(BufferHandle buffer_handle, VkDeviceSize size, void * data)
+void Renderer::update_buffer(BufferHandle const & buffer_handle, VkDeviceSize size, void * data)
 {
     LOG_INFO("Updating Buffer");
 
@@ -5576,7 +5583,7 @@ void Renderer::update_buffer(BufferHandle buffer_handle, VkDeviceSize size, void
     delete_buffers(1, &destroy_buffer);
 }
 
-void Renderer::delete_buffers(size_t buffer_count, BufferHandle * buffer_handles)
+void Renderer::delete_buffers(size_t buffer_count, BufferHandle const * buffer_handles)
 {
     LOG_INFO("Deleting Buffers");
 
@@ -5733,12 +5740,12 @@ std::optional<TextureHandle> Renderer::create_texture(size_t       width,
     return texture_handle;
 }
 
-std::optional<TextureHandle> Renderer::get_texture(AttachmentHandle attachment)
+std::optional<TextureHandle> Renderer::get_texture(AttachmentHandle const & attachment)
 {
     return images.get_texture_handle(attachment);
 }
 
-void Renderer::delete_textures(size_t texture_count, TextureHandle * texture_handles)
+void Renderer::delete_textures(size_t texture_count, TextureHandle const * texture_handles)
 {
     LOG_INFO("Deleting Textures");
 
@@ -5929,7 +5936,7 @@ void Renderer::changeSwapChain()
 
     images.recreate_attachments(device);
 
-    render_passes.recreateFramebuffers(device, images);
+    render_passes.recreate_framebuffers(device, images);
 }
 
 }; // namespace gfx
