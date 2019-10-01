@@ -5876,22 +5876,6 @@ ErrorCode Renderer::createCommandbuffer(uint32_t image_index)
         vkBeginCommandBuffer(commands.draw_commandbuffers[frames.currentResource], &beginInfo),
         "Unable to begin VkCommandBuffer recording");
 
-    // memory barrier for copy commands
-    auto barrier = VkMemoryBarrier{.sType         = VK_STRUCTURE_TYPE_MEMORY_BARRIER,
-                                   .srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT,
-                                   .dstAccessMask = VK_ACCESS_VERTEX_ATTRIBUTE_READ_BIT};
-
-    vkCmdPipelineBarrier(commandbuffer,
-                         VK_PIPELINE_STAGE_TRANSFER_BIT,
-                         VK_PIPELINE_STAGE_VERTEX_INPUT_BIT,
-                         0,
-                         1,
-                         &barrier,
-                         0,
-                         nullptr,
-                         0,
-                         nullptr);
-
     for (RenderpassHandle const & rp_handle: render_passes.renderpass_order)
     {
         LOG_TRACE("Drawing Renderpass {}", rp_handle);
