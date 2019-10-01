@@ -1,7 +1,5 @@
 {
 	"window_name": "Example Window",
-	"max_updated_objects": 15,
-	"max_deleted_objects": 15,
 	"attachments":
 	[
 		{
@@ -144,8 +142,7 @@
 			"uniform_layouts": ["ul_camera_matrix"],
 			"push_constants": ["pc_model_matrix"],
 			"renderpass": "rp_main_render_pass",
-			"subpass": "sp_first_subpass",
-			"max_drawn_objects": 5
+			"subpass": "sp_first_subpass"
 		}
 	]
 }

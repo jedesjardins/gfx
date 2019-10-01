@@ -1,7 +1,5 @@
 {
 	"window_name": "Example Window",
-	"max_updated_objects": 15,
-	"max_deleted_objects": 15,
 	"attachments":
 	[
 		{
@@ -118,8 +116,7 @@
 			"uniform_layouts": [],
 			"push_constants": [],
 			"renderpass": "rp_main_render_pass",
-			"subpass": "sp_first_subpass",
-			"max_drawn_objects": 5
+			"subpass": "sp_first_subpass"
 		}
 	]
 }

@@ -63,6 +63,8 @@ std::vector<char> readFile(std::string const & filename);
 
 namespace gfx
 {
+const size_t max_calls_per_bucket = 10;
+
 enum class ErrorCode
 {
     NONE,
@@ -370,8 +372,6 @@ struct PipelineConfig
 
     std::vector<VkDynamicState> dynamic_state;
 
-    size_t max_draw_calls;
-
     void init(rapidjson::Value & document, std::unordered_map<std::string, std::string> const &);
 };
 
@@ -394,10 +394,6 @@ struct RenderConfig
     char const * config_filename;
 
     char const * window_name;
-
-    size_t max_transfer_count;
-
-    size_t max_delete_count;
 
     std::unordered_map<std::string, RenderpassConfig> renderpass_configs;
 
@@ -428,7 +424,7 @@ struct Draw
 {
     static cmd::BackendDispatchFunction const DISPATCH_FUNCTION;
 
-    VkCommandBuffer commandbuffer;
+    VkCommandBuffer    commandbuffer;
     VkPipelineLayout * pipeline_layout;
 
     size_t         vertex_buffer_count;
@@ -873,10 +869,10 @@ public:
     std::unordered_map<std::string, VertexAttributeHandle> vertex_attribute_handles;
     std::vector<VkVertexInputAttributeDescription>         vertex_attributes;
 
-    std::unordered_map<std::string, PipelineHandle> pipeline_handles;
-    std::vector<PipelineConfig>                     pipeline_configs;
-    std::vector<Pipeline>                           pipelines;
-    std::vector<cmd::CommandBucket<int>>            draw_buckets;
+    std::unordered_map<std::string, PipelineHandle>   pipeline_handles;
+    std::vector<PipelineConfig>                       pipeline_configs;
+    std::vector<Pipeline>                             pipelines;
+    std::vector<std::vector<cmd::CommandBucket<int>>> draw_buckets;
 
     bool init(RenderConfig &        render_config,
               Device const &        device,
@@ -887,6 +883,8 @@ public:
     ErrorCode recreate_pipelines(Device const &        device,
                                  RenderPassResources & render_passes,
                                  UniformResources &    uniforms);
+
+    cmd::CommandBucket<int> & get_draw_bucket(PipelineHandle const & pipeline);
 
 private:
     ErrorCode createShaderModule(Device const &            device,
@@ -922,8 +920,8 @@ public:
     std::vector<VkCommandBuffer> draw_commandbuffers;
     std::vector<VkCommandBuffer> transfer_commandbuffers;
 
-    std::vector<cmd::CommandBucket<int>> transfer_buckets;
-    std::vector<cmd::CommandBucket<int>> delete_buckets;
+    std::vector<std::vector<cmd::CommandBucket<int>>> transfer_buckets;
+    std::vector<std::vector<cmd::CommandBucket<int>>> delete_buckets;
 
     // pools belong to queue types, need one per queue (for when we use the transfer and graphics
     // queue) eventually have one pool per thread per
@@ -931,6 +929,9 @@ public:
 
     bool init(RenderConfig & render_config, Device const & device);
     void quit(Device const & device);
+
+    cmd::CommandBucket<int> & get_transfer_bucket(uint32_t currentResource);
+    cmd::CommandBucket<int> & get_delete_bucket(uint32_t currentResource);
 
 private:
     void getQueues(Device const & device);
@@ -2543,10 +2544,6 @@ void PipelineConfig::init(rapidjson::Value &                                   d
     assert(document["subpass"].IsString());
     subpass = document["subpass"].GetString();
 
-    assert(document.HasMember("max_drawn_objects"));
-    assert(document["max_drawn_objects"].IsUint());
-    max_draw_calls = document["max_drawn_objects"].GetUint();
-
     if (document.HasMember("blendable"))
     {
         assert(document["blendable"].IsBool());
@@ -2616,16 +2613,6 @@ void RenderConfig::init()
     assert(document.HasMember("window_name"));
     assert(document["window_name"].IsString());
     window_name = document["window_name"].GetString();
-
-    assert(document.HasMember("max_updated_objects"));
-    assert(document["max_updated_objects"].IsUint());
-    max_transfer_count = document["max_updated_objects"].GetUint();
-
-    assert(document.HasMember("max_deleted_objects"));
-    assert(document["max_deleted_objects"].IsUint());
-    max_delete_count = document["max_deleted_objects"].GetUint();
-
-    assert(document.HasMember("max_deleted_objects"));
 
     assert(document.HasMember("attachments"));
     assert(document["attachments"].IsArray());
@@ -4530,7 +4517,8 @@ bool PipelineResources::init(RenderConfig &        render_config,
         auto pipeline_handle         = pipeline_configs.size();
         pipeline_handles[iter.first] = pipeline_handle;
         pipeline_configs.push_back(iter.second);
-        draw_buckets.emplace_back(iter.second.max_draw_calls);
+        draw_buckets.push_back({}); // push an empty vector<commandbucket>
+        draw_buckets.back().emplace_back(max_calls_per_bucket);
 
         LOG_DEBUG("Added Pipeline Handle {} for Pipeline {}", pipeline_handle, iter.first);
     }
@@ -4823,17 +4811,36 @@ ErrorCode PipelineResources::create_pipeline(Device const &         device,
     return ErrorCode::NONE;
 }
 
+cmd::CommandBucket<int> & PipelineResources::get_draw_bucket(PipelineHandle const & pipeline)
+{
+    auto & pipeline_draw_buckets = draw_buckets[pipeline];
+
+    for (auto & draw_bucket: pipeline_draw_buckets)
+    {
+        if (draw_bucket.size() < draw_bucket.capacity())
+        {
+            return draw_bucket;
+        }
+    }
+
+    LOG_DEBUG("Creating a new bucket for pipeline {} with capacity {}",
+              pipeline,
+              max_calls_per_bucket * (pipeline_draw_buckets.size() + 1));
+
+    pipeline_draw_buckets.emplace_back(max_calls_per_bucket * (pipeline_draw_buckets.size() + 1));
+    return pipeline_draw_buckets.back();
+}
+
 bool CommandResources::init(RenderConfig & render_config, Device const & device)
 {
     int32_t const MAX_BUFFERED_RESOURCES = 3;
 
-    size_t max_transfer_count = render_config.max_transfer_count;
-    size_t max_delete_count   = render_config.max_delete_count;
-
     for (uint32_t i = 0; i < MAX_BUFFERED_RESOURCES; ++i)
     {
-        transfer_buckets.emplace_back(max_transfer_count);
-        delete_buckets.emplace_back(max_delete_count);
+        transfer_buckets.push_back({});
+        transfer_buckets.back().emplace_back(max_calls_per_bucket);
+        delete_buckets.push_back({});
+        delete_buckets.back().emplace_back(max_calls_per_bucket);
     }
 
     getQueues(device);
@@ -4848,14 +4855,60 @@ bool CommandResources::init(RenderConfig & render_config, Device const & device)
 
 void CommandResources::quit(Device const & device)
 {
-    for (uint32_t i = 0; i < delete_buckets.size(); ++i)
+    for (auto & frame_delete_buckets: delete_buckets)
     {
-        delete_buckets[i].Submit();
-        delete_buckets[i].Clear();
-        transfer_buckets[i].Clear();
+        for (auto & delete_bucket: frame_delete_buckets)
+        {
+            delete_bucket.Submit();
+            delete_bucket.Clear();
+        }
     }
 
+    transfer_buckets.clear();
+
     vkDestroyCommandPool(device.get_logical_device(), command_pool, nullptr);
+}
+
+cmd::CommandBucket<int> & CommandResources::get_transfer_bucket(uint32_t currentResource)
+{
+    auto & resource_transfer_buckets = transfer_buckets[currentResource];
+
+    for (auto & transfer_bucket: resource_transfer_buckets)
+    {
+        if (transfer_bucket.size() < transfer_bucket.capacity())
+        {
+            return transfer_bucket;
+        }
+    }
+
+    LOG_DEBUG("Creating a new transfer bucket for resource frame {} with capacity {}",
+              currentResource,
+              max_calls_per_bucket * (resource_transfer_buckets.size() + 1));
+
+    resource_transfer_buckets.emplace_back(max_calls_per_bucket
+                                           * (resource_transfer_buckets.size() + 1));
+    return resource_transfer_buckets.back();
+}
+
+cmd::CommandBucket<int> & CommandResources::get_delete_bucket(uint32_t currentResource)
+{
+    auto & resource_delete_buckets = delete_buckets[currentResource];
+
+    for (auto & delete_bucket: resource_delete_buckets)
+    {
+        if (delete_bucket.size() < delete_bucket.capacity())
+        {
+            return delete_bucket;
+        }
+    }
+
+    LOG_DEBUG("Creating a new delete bucket for resource frame {} with capacity {}",
+              currentResource,
+              max_calls_per_bucket * (resource_delete_buckets.size() + 1));
+
+    resource_delete_buckets.emplace_back(max_calls_per_bucket
+                                         * (resource_delete_buckets.size() + 1));
+    return resource_delete_buckets.back();
 }
 
 void CommandResources::getQueues(Device const & device)
@@ -5127,7 +5180,11 @@ bool Renderer::submit_frame()
         return false;
     }
 
-    commands.transfer_buckets[frames.currentResource].Submit();
+    for (auto & transfer_bucket: commands.transfer_buckets[frames.currentResource])
+    {
+        transfer_bucket.Submit();
+        transfer_bucket.Clear();
+    }
 
     result = vkEndCommandBuffer(commands.transfer_commandbuffers[frames.currentResource]);
     if (result != VK_SUCCESS)
@@ -5206,9 +5263,11 @@ bool Renderer::submit_frame()
     frames.currentFrame    = (frames.currentFrame + 1) % frames.MAX_FRAMES_IN_FLIGHT;
     frames.currentResource = (frames.currentResource + 1) % frames.MAX_BUFFERED_RESOURCES;
 
-    commands.transfer_buckets[frames.currentResource].Clear();
-    commands.delete_buckets[frames.currentResource].Submit();
-    commands.delete_buckets[frames.currentResource].Clear();
+    for (auto & delete_bucket: commands.delete_buckets[frames.currentResource])
+    {
+        delete_bucket.Submit();
+        delete_bucket.Clear();
+    }
 
     return true;
 }
@@ -5216,7 +5275,7 @@ bool Renderer::submit_frame()
 ErrorCode Renderer::draw(DrawParameters const & args)
 {
     // get bucket
-    auto & bucket = pipelines.draw_buckets[args.pipeline];
+    auto & bucket = pipelines.get_draw_bucket(args.pipeline);
 
     // get vertex_buffers
     std::vector<VkBuffer> vk_buffers;
@@ -5306,6 +5365,8 @@ ErrorCode Renderer::draw(DrawParameters const & args)
         vk_vertex_buffers_size + vk_vertex_buffer_offsets_size + vk_descriptorsets_size
             + dynamic_offsets_size + args.push_constant_size + scissor_size + viewport_size);
 
+    assert(command != nullptr);
+
     char * command_memory = cmd::commandPacket::GetAuxiliaryMemory(command);
 
     command->commandbuffer   = commands.draw_commandbuffers[frames.currentResource];
@@ -5346,8 +5407,7 @@ ErrorCode Renderer::draw(DrawParameters const & args)
     // scissor
     if (args.scissor)
     {
-        command->scissor = reinterpret_cast<VkRect2D *>(command_memory
-                                                            + scissor_offset);
+        command->scissor = reinterpret_cast<VkRect2D *>(command_memory + scissor_offset);
         memcpy(command->scissor, args.scissor, scissor_size);
     }
     else
@@ -5358,8 +5418,7 @@ ErrorCode Renderer::draw(DrawParameters const & args)
     // viewport
     if (args.viewport)
     {
-        command->viewport = reinterpret_cast<VkViewport *>(command_memory
-                                                            + viewport_offset);
+        command->viewport = reinterpret_cast<VkViewport *>(command_memory + viewport_offset);
         memcpy(command->viewport, args.viewport, viewport_size);
     }
     else
@@ -5486,10 +5545,11 @@ std::optional<VkDeviceSize> Renderer::getDynamicOffset(UniformHandle const & han
 void Renderer::delete_uniforms(size_t uniform_count, UniformHandle const * uniform_handles)
 {
     LOG_INFO("Deleting Uniforms");
-    auto & bucket = commands.delete_buckets[frames.currentResource];
+    auto & bucket = commands.get_delete_bucket(frames.currentResource);
 
     DeleteUniforms * delete_command = bucket.AddCommand<DeleteUniforms>(
         0, uniform_count + sizeof(UniformHandle));
+    assert(delete_command != nullptr);
 
     char * command_memory = cmd::commandPacket::GetAuxiliaryMemory(delete_command);
 
@@ -5559,7 +5619,7 @@ void Renderer::update_buffer(BufferHandle const & buffer_handle, VkDeviceSize si
                   buffer_handle);
     }
 
-    auto & bucket = commands.transfer_buckets[frames.currentResource];
+    auto & bucket = commands.get_transfer_bucket(frames.currentResource);
 
     Copy * vertex_command         = bucket.AddCommand<Copy>(0, 0);
     vertex_command->commandbuffer = commands.transfer_commandbuffers[frames.currentResource];
@@ -5577,7 +5637,7 @@ void Renderer::delete_buffers(size_t buffer_count, BufferHandle const * buffer_h
 {
     LOG_INFO("Deleting Buffers");
 
-    auto & bucket = commands.delete_buckets[frames.currentResource];
+    auto & bucket = commands.get_delete_bucket(frames.currentResource);
 
     size_t buffer_size = buffer_count * sizeof(VkBuffer);
     size_t memory_size = buffer_count * sizeof(VkDeviceMemory);
@@ -5689,7 +5749,7 @@ std::optional<TextureHandle> Renderer::create_texture(size_t       width,
 
     Sampler texture = opt_texture.value();
 
-    auto & bucket = commands.transfer_buckets[frames.currentResource];
+    auto & bucket = commands.get_transfer_bucket(frames.currentResource);
 
     SetImageLayout * dst_optimal_command = bucket.AddCommand<SetImageLayout>(0, 0);
     dst_optimal_command->commandbuffer   = commands.transfer_commandbuffers[frames.currentResource];
@@ -5739,7 +5799,7 @@ void Renderer::delete_textures(size_t texture_count, TextureHandle const * textu
 {
     LOG_INFO("Deleting Textures");
 
-    auto & bucket = commands.delete_buckets[frames.currentResource];
+    auto & bucket = commands.get_delete_bucket(frames.currentResource);
 
     size_t sampler_offset = 0;
     size_t sampler_size   = texture_count * sizeof(VkSampler);
@@ -5852,8 +5912,11 @@ ErrorCode Renderer::createCommandbuffer(uint32_t image_index)
                                   VK_PIPELINE_BIND_POINT_GRAPHICS,
                                   pipelines.pipelines[pipeline_handle].vk_pipeline);
 
-                pipelines.draw_buckets[pipeline_handle].Submit();
-                pipelines.draw_buckets[pipeline_handle].Clear();
+                for (auto & draw_bucket: pipelines.draw_buckets[pipeline_handle])
+                {
+                    draw_bucket.Submit();
+                    draw_bucket.Clear();
+                }
             }
             if (sp_handle != subpasses.size() - 1)
             {
@@ -5875,7 +5938,7 @@ void Renderer::copyBuffer(VkBuffer     srcBuffer,
                           VkDeviceSize dstOffset,
                           VkDeviceSize size)
 {
-    auto & bucket = commands.transfer_buckets[frames.currentResource];
+    auto & bucket = commands.get_transfer_bucket(frames.currentResource);
 
     Copy * vertex_command         = bucket.AddCommand<Copy>(0, 0);
     vertex_command->commandbuffer = commands.transfer_commandbuffers[frames.currentResource];

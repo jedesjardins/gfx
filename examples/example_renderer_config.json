@@ -1,7 +1,5 @@
 {
 	"window_name": "Example Window",
-	"max_updated_objects": 7,
-	"max_deleted_objects": 15,
 	"attachments":
 	[
 		{
@@ -181,8 +179,7 @@
 			"uniform_layouts": ["ul_camera_matrix", "ul_texture"],
 			"push_constants": ["pc_model_matrix"],
 			"renderpass": "rp_main_render_pass",
-			"subpass": "sp_first_subpass",
-			"max_drawn_objects": 3
+			"subpass": "sp_first_subpass"
 		},
 		{
 			"name": "simple_texture_shader",
@@ -193,8 +190,7 @@
 			"uniform_layouts": ["ul_camera_matrix", "ul_texture"],
 			"push_constants": ["pc_model_matrix"],
 			"renderpass": "rp_main_render_pass",
-			"subpass": "sp_first_subpass",
-			"max_drawn_objects": 1
+			"subpass": "sp_first_subpass"
 		}
 	]
 }
