@@ -19,7 +19,7 @@
 			"is_swapchain_image": true,
 			"format": "color",
 			"usage": ["COLOR_ATTACHMENT"],
-			"multisampled": false
+			"multisamples": 1
 		}
 	],
 	"renderpasses":
