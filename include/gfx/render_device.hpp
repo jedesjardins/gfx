@@ -424,33 +424,11 @@ struct RenderConfig
 //  COMMANDS
 //
 
-struct SetScissor
-{
-    static cmd::BackendDispatchFunction const DISPATCH_FUNCTION;
-
-    VkCommandBuffer commandbuffer;
-    VkRect2D        scissor;
-};
-static_assert(std::is_pod<SetScissor>::value == true, "SetScissor must be a POD.");
-
-void setScissor(void const * data);
-
-struct SetViewport
-{
-    static cmd::BackendDispatchFunction const DISPATCH_FUNCTION;
-
-    VkCommandBuffer commandbuffer;
-    VkViewport      viewport;
-};
-static_assert(std::is_pod<SetViewport>::value == true, "SetViewport must be a POD.");
-
-void setViewport(void const * data);
-
 struct Draw
 {
     static cmd::BackendDispatchFunction const DISPATCH_FUNCTION;
 
-    VkCommandBuffer    commandbuffer;
+    VkCommandBuffer commandbuffer;
     VkPipelineLayout * pipeline_layout;
 
     size_t         vertex_buffer_count;
@@ -468,6 +446,10 @@ struct Draw
     VkDescriptorSet * descriptor_sets;
     size_t            dynamic_offset_count;
     uint32_t *        dynamic_offsets;
+
+    VkViewport * viewport;
+
+    VkRect2D * scissor;
 };
 static_assert(std::is_pod<Draw>::value == true, "Draw must be a POD.");
 
@@ -997,10 +979,6 @@ public:
 
     bool submit_frame();
 
-    ErrorCode set_scissor(PipelineHandle const & pipeline, VkRect2D const & scissor);
-
-    ErrorCode set_viewport(PipelineHandle const & pipeline, VkViewport const & scissor);
-
     ErrorCode draw(DrawParameters const & args);
 
     std::optional<AttachmentHandle>    get_attachment_handle(std::string const & attachment_name);
@@ -1054,7 +1032,7 @@ public:
 private:
     std::optional<VkDescriptorSet> getUniform(UniformHandle const & handle);
 
-    std::optional<VkDeviceSize> getDynamicOffset(UniformHandle const &  handle);
+    std::optional<VkDeviceSize> getDynamicOffset(UniformHandle const & handle);
 
     ErrorCode createCommandbuffer(uint32_t image_index);
 
@@ -2764,27 +2742,19 @@ void RenderConfig::init()
 //  DRAW COMMANDS
 //
 
-void setScissor(void const * data)
-{
-    SetScissor const * realdata = reinterpret_cast<SetScissor const *>(data);
-
-    vkCmdSetScissor(realdata->commandbuffer, 0, 1, &realdata->scissor);
-}
-
-cmd::BackendDispatchFunction const SetScissor::DISPATCH_FUNCTION = &setScissor;
-
-void setViewport(void const * data)
-{
-    SetViewport const * realdata = reinterpret_cast<SetViewport const *>(data);
-
-    vkCmdSetViewport(realdata->commandbuffer, 0, 1, &realdata->viewport);
-}
-
-cmd::BackendDispatchFunction const SetViewport::DISPATCH_FUNCTION = &setViewport;
-
 void draw(void const * data)
 {
     Draw const * realdata = reinterpret_cast<Draw const *>(data);
+
+    if (realdata->scissor != nullptr)
+    {
+        vkCmdSetScissor(realdata->commandbuffer, 0, 1, realdata->scissor);
+    }
+
+    if (realdata->viewport != nullptr)
+    {
+        vkCmdSetViewport(realdata->commandbuffer, 0, 1, realdata->viewport);
+    }
 
     if (realdata->push_constant_size != 0)
     {
@@ -5243,28 +5213,6 @@ bool Renderer::submit_frame()
     return true;
 }
 
-ErrorCode Renderer::set_scissor(PipelineHandle const & pipeline, VkRect2D const & scissor)
-{
-    auto & bucket = pipelines.draw_buckets[pipeline];
-
-    SetScissor * command   = bucket.AddCommand<SetScissor>(0, 0);
-    command->commandbuffer = commands.draw_commandbuffers[frames.currentResource];
-    command->scissor       = scissor;
-
-    return ErrorCode::NONE;
-}
-
-ErrorCode Renderer::set_viewport(PipelineHandle const & pipeline, VkViewport const & viewport)
-{
-    auto & bucket = pipelines.draw_buckets[pipeline];
-
-    SetViewport * command  = bucket.AddCommand<SetViewport>(0, 0);
-    command->commandbuffer = commands.draw_commandbuffers[frames.currentResource];
-    command->viewport      = viewport;
-
-    return ErrorCode::NONE;
-}
-
 ErrorCode Renderer::draw(DrawParameters const & args)
 {
     // get bucket
@@ -5339,29 +5287,52 @@ ErrorCode Renderer::draw(DrawParameters const & args)
 
     size_t push_constant_offset = dynamic_offsets_offset + dynamic_offsets_size;
 
-    Draw * command = bucket.AddCommand<Draw>(0,
-                                             vk_vertex_buffers_size + vk_vertex_buffer_offsets_size
-                                                 + vk_descriptorsets_size + dynamic_offsets_size
-                                                 + args.push_constant_size);
+    size_t scissor_offset = push_constant_offset + args.push_constant_size;
+    size_t scissor_size   = 0;
+    if (args.scissor)
+    {
+        scissor_size = sizeof(VkRect2D);
+    }
+
+    size_t viewport_offset = scissor_offset + scissor_size;
+    size_t viewport_size   = 0;
+    if (args.viewport)
+    {
+        viewport_size = sizeof(VkViewport);
+    }
+
+    Draw * command = bucket.AddCommand<Draw>(
+        0,
+        vk_vertex_buffers_size + vk_vertex_buffer_offsets_size + vk_descriptorsets_size
+            + dynamic_offsets_size + args.push_constant_size + scissor_size + viewport_size);
 
     char * command_memory = cmd::commandPacket::GetAuxiliaryMemory(command);
 
     command->commandbuffer   = commands.draw_commandbuffers[frames.currentResource];
     command->pipeline_layout = &pipelines.pipelines[args.pipeline].vk_pipeline_layout;
 
+    // vertex buffers and offsets
     command->vertex_buffer_count   = args.vertex_buffer_count;
     command->vertex_buffer_offsets = reinterpret_cast<VkDeviceSize *>(
         command_memory + vk_vertex_buffer_offsets_offset);
     command->vertex_buffers = reinterpret_cast<VkBuffer *>(command_memory
                                                            + vk_vertex_buffers_offset);
 
+    memcpy(command->vertex_buffers, vk_buffers.data(), vk_vertex_buffers_size);
+    memcpy(
+        command->vertex_buffer_offsets, args.vertex_buffer_offsets, vk_vertex_buffer_offsets_size);
+
+    // index buffer, offset, and count
     command->index_count         = args.index_count;
     command->index_buffer_offset = args.index_buffer_offset;
     command->index_buffer        = opt_index_buffer.value().buffer_handle();
 
+    // push_constant size and data
     command->push_constant_size = args.push_constant_size;
     command->push_constant_data = reinterpret_cast<void *>(command_memory + push_constant_offset);
+    memcpy(command->push_constant_data, args.push_constant_data, args.push_constant_size);
 
+    // descriptor sets and dynamic offsets
     command->descriptor_set_count = args.uniform_count;
     command->descriptor_sets      = reinterpret_cast<VkDescriptorSet *>(command_memory
                                                                    + vk_descriptorsets_offset);
@@ -5369,14 +5340,32 @@ ErrorCode Renderer::draw(DrawParameters const & args)
     command->dynamic_offsets      = reinterpret_cast<uint32_t *>(command_memory
                                                             + dynamic_offsets_offset);
 
-    memcpy(command->vertex_buffers, vk_buffers.data(), vk_vertex_buffers_size);
-    memcpy(
-        command->vertex_buffer_offsets, args.vertex_buffer_offsets, vk_vertex_buffer_offsets_size);
-
-    memcpy(command->push_constant_data, args.push_constant_data, args.push_constant_size);
-
     memcpy(command->descriptor_sets, descriptorsets.data(), vk_descriptorsets_size);
     memcpy(command->dynamic_offsets, dynamic_offsets.data(), dynamic_offsets_size);
+
+    // scissor
+    if (args.scissor)
+    {
+        command->scissor = reinterpret_cast<VkRect2D *>(command_memory
+                                                            + scissor_offset);
+        memcpy(command->scissor, args.scissor, scissor_size);
+    }
+    else
+    {
+        command->scissor = nullptr;
+    }
+
+    // viewport
+    if (args.viewport)
+    {
+        command->viewport = reinterpret_cast<VkViewport *>(command_memory
+                                                            + viewport_offset);
+        memcpy(command->viewport, args.viewport, viewport_size);
+    }
+    else
+    {
+        command->viewport = nullptr;
+    }
 
     return ErrorCode::NONE;
 }
@@ -5386,7 +5375,8 @@ std::optional<AttachmentHandle> Renderer::get_attachment_handle(std::string cons
     return images.get_attachment_handle(attachment_name);
 }
 
-std::optional<UniformLayoutHandle> Renderer::get_uniform_layout_handle(std::string const & layout_name)
+std::optional<UniformLayoutHandle> Renderer::get_uniform_layout_handle(
+    std::string const & layout_name)
 {
     auto handle_iter = uniforms.uniform_layout_handles.find(layout_name);
     if (handle_iter == uniforms.uniform_layout_handles.end())
@@ -5409,8 +5399,8 @@ std::optional<PipelineHandle> Renderer::get_pipeline_handle(std::string const & 
 }
 
 std::optional<UniformHandle> Renderer::new_uniform(UniformLayoutHandle const & layout_handle,
-                                                   VkDeviceSize        size,
-                                                   void *              data_ptr)
+                                                   VkDeviceSize                size,
+                                                   void *                      data_ptr)
 {
     LOG_INFO("Creating a new Uniform");
     auto & uniform_collection = uniforms.uniform_collections[layout_handle];
@@ -5434,7 +5424,7 @@ std::optional<UniformHandle> Renderer::new_uniform(UniformLayoutHandle const & l
 }
 
 std::optional<UniformHandle> Renderer::new_uniform(UniformLayoutHandle const & layout_handle,
-                                                   TextureHandle       const & texture_handle)
+                                                   TextureHandle const &       texture_handle)
 {
     LOG_INFO("Creating a new Uniform");
     auto opt_sampler = images.get_texture(texture_handle);
