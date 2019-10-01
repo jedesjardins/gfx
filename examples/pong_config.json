@@ -66,7 +66,7 @@
 			[
 				{
 					"src_subpass": "EXTERNAL_SUBPASS",
-					"dst_subpass": 0,
+					"dst_subpass": "sp_first_subpass",
 					"src_stage_mask": ["COLOR_ATTACHMENT_OUTPUT"],
 					"dst_stage_mask": ["COLOR_ATTACHMENT_OUTPUT"],
 					"dst_access_mask":

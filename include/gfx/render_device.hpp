@@ -2164,21 +2164,28 @@ VkPipelineStageFlagBits initStageFlags(rapidjson::Value & document)
     return stage_flags;
 }
 
-uint32_t initSubpassIndex(rapidjson::Value & document)
+std::optional<uint32_t> initSubpassIndex(
+    rapidjson::Value &                                     document,
+    std::unordered_map<std::string, SubpassHandle> const & subpass_handles)
 {
-    assert(document.IsInt() || document.IsString());
+    assert(document.IsString());
 
-    if (document.IsInt())
+    char const * subpass = document.GetString();
+
+    if (strcmp(subpass, "EXTERNAL_SUBPASS") == 0)
     {
-        return document.GetInt();
-    }
-    else if (document.IsString())
-    {
-        assert(strcmp(document.GetString(), "EXTERNAL_SUBPASS") == 0);
         return VK_SUBPASS_EXTERNAL;
     }
+    else
+    {
+        auto iter = subpass_handles.find(subpass);
+        if (iter != subpass_handles.end())
+        {
+            return iter->second;
+        }
+    }
 
-    return 0;
+    return std::nullopt;
 }
 
 VkDescriptorSetLayoutBinding initVkDescriptorSetLayoutBinding(rapidjson::Value & document)
@@ -2227,7 +2234,9 @@ VkAccessFlagBits initAccessFlags(rapidjson::Value & document)
     return access_flags;
 }
 
-VkSubpassDependency initDependency(rapidjson::Value & document)
+VkSubpassDependency initDependency(
+    rapidjson::Value &                                     document,
+    std::unordered_map<std::string, SubpassHandle> const & subpass_handles)
 {
     assert(document.IsObject());
 
@@ -2235,12 +2244,12 @@ VkSubpassDependency initDependency(rapidjson::Value & document)
 
     if (document.HasMember("src_subpass"))
     {
-        dependency.srcSubpass = initSubpassIndex(document["src_subpass"]);
+        dependency.srcSubpass = initSubpassIndex(document["src_subpass"], subpass_handles).value();
     }
 
     if (document.HasMember("dst_subpass"))
     {
-        dependency.dstSubpass = initSubpassIndex(document["dst_subpass"]);
+        dependency.dstSubpass = initSubpassIndex(document["dst_subpass"], subpass_handles).value();
     }
 
     if (document.HasMember("src_stage_mask"))
@@ -2487,7 +2496,7 @@ void RenderpassConfig::init(rapidjson::Value & document)
 
     for (auto & spd: document["subpass_dependencies"].GetArray())
     {
-        subpass_dependencies.push_back(initDependency(spd));
+        subpass_dependencies.push_back(initDependency(spd, subpass_handles));
     }
 }
 
