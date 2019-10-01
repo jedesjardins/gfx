@@ -261,14 +261,14 @@ struct SamplerCollection
     std::vector<VkDescriptorSet> descriptor_sets;
     IndexAllocator               free_uniform_slots;
 
-    std::optional<UniformHandle>   createUniform(VkDevice &  logical_device,
+    std::optional<UniformHandle>   createUniform(VkDevice const&  logical_device,
                                                  uint32_t    binding,
                                                  VkImageView view,
                                                  VkSampler   sampler);
     std::optional<VkDescriptorSet> getUniform(UniformHandle handle);
     std::optional<VkDeviceSize>    getDynamicOffset(UniformHandle handle);
     void                           destroyUniform(UniformHandle handle);
-    void                           destroy(VkDevice & logical_device);
+    void                           destroy(VkDevice const & logical_device);
 };
 
 struct DynamicBufferCollection
@@ -290,7 +290,7 @@ struct DynamicBufferCollection
 
     void destroyUniform(UniformHandle handle);
 
-    void destroy(VkDevice & logical_device);
+    void destroy(VkDevice const & logical_device);
 };
 
 using UniformVariant = std::variant<DynamicBufferCollection, SamplerCollection>;
@@ -606,9 +606,34 @@ namespace module
  *
  * Instance, Device, Logical Device, Queues, etc.
  */
-struct Device
+class Device
 {
 public:
+    explicit Device(GLFWwindow * window_ptr);
+
+    bool init(RenderConfig & render_config);
+    void quit();
+
+    VkDevice const &              get_logical_device() const;
+    VkPhysicalDevice const &      get_physical_device() const;
+    VkFormat const &              get_color_format() const;
+    VkFormat const &              get_depth_format() const;
+    VkExtent2D const &            get_extent() const;
+    uint32_t const &              get_image_count() const;
+    VkSampleCountFlagBits const & get_max_msaa_samples() const;
+    VkImageView const &           get_swapchain_image_view(size_t index) const;
+    VkSwapchainKHR const &        get_swapchain() const;
+    PhysicalDeviceInfo const &    get_device_info() const;
+    GLFWwindow * const            get_window() const;
+    VkPresentModeKHR const &      get_present_mode() const;
+    VkColorSpaceKHR const &       get_color_space() const;
+
+    bool createSwapChain();
+    void destroySwapChain();
+
+    void updateSwapChainSupport();
+
+private:
     GLFWwindow * window{nullptr};
 
     VkInstance instance{VK_NULL_HANDLE};
@@ -642,17 +667,6 @@ public:
     std::vector<char const *>       required_extensions{};
     const std::vector<const char *> required_device_extensions = {VK_KHR_SWAPCHAIN_EXTENSION_NAME};
 
-    explicit Device(GLFWwindow * window_ptr);
-
-    bool init(RenderConfig & render_config);
-    void quit();
-
-    bool createSwapChain();
-    void destroySwapChain();
-
-    void updateSwapChainSupport();
-
-private:
     void checkValidationLayerSupport();
 
     void getRequiredExtensions();
@@ -715,7 +729,7 @@ private:
     std::optional<VkFormat> findSupportedFormat(const std::vector<VkFormat> & candidates,
                                                 VkImageTiling                 tiling,
                                                 VkFormatFeatureFlags          features);
-}; // struct Device
+}; // class Device
 
 /*
  * Holds semaphores, fences, current frame/resource indices etc.
@@ -1646,7 +1660,7 @@ std::optional<VkDeviceSize> DynamicBufferCollection::getDynamicOffset(UniformHan
     return uniforms[handle.uniform_id].offset;
 }
 
-void DynamicBufferCollection::destroy(VkDevice & logical_device)
+void DynamicBufferCollection::destroy(VkDevice const & logical_device)
 {
     for (auto & mapped_buffer: uniform_buffers)
     {
@@ -1654,10 +1668,10 @@ void DynamicBufferCollection::destroy(VkDevice & logical_device)
     }
 }
 
-std::optional<UniformHandle> SamplerCollection::createUniform(VkDevice &  logical_device,
-                                                              uint32_t    binding,
-                                                              VkImageView view,
-                                                              VkSampler   sampler)
+std::optional<UniformHandle> SamplerCollection::createUniform(VkDevice const & logical_device,
+                                                              uint32_t         binding,
+                                                              VkImageView      view,
+                                                              VkSampler        sampler)
 {
     int64_t descriptor_set_index = free_uniform_slots.acquire();
     if (descriptor_set_index < 0)
@@ -1700,7 +1714,7 @@ std::optional<VkDeviceSize> SamplerCollection::getDynamicOffset(UniformHandle ha
 void SamplerCollection::destroyUniform(UniformHandle)
 {}
 
-void SamplerCollection::destroy(VkDevice & logical_device)
+void SamplerCollection::destroy(VkDevice const & logical_device)
 {}
 
 //
@@ -3025,6 +3039,71 @@ void Device::quit()
     }
 }
 
+VkDevice const & Device::get_logical_device() const
+{
+    return logical_device;
+}
+
+VkPhysicalDevice const & Device::get_physical_device() const
+{
+    return physical_device;
+}
+
+VkFormat const & Device::get_color_format() const
+{
+    return swapchain_image_format;
+}
+
+VkFormat const & Device::get_depth_format() const
+{
+    return depth_format;
+}
+
+VkExtent2D const & Device::get_extent() const
+{
+    return swapchain_extent;
+}
+
+uint32_t const & Device::get_image_count() const
+{
+    return swapchain_image_count;
+}
+
+VkSampleCountFlagBits const & Device::get_max_msaa_samples() const
+{
+    return physical_device_info.max_msaa_samples;
+}
+
+VkImageView const & Device::get_swapchain_image_view(size_t index) const
+{
+    return swapchain_image_views[index];
+}
+
+VkSwapchainKHR const & Device::get_swapchain() const
+{
+    return swapchain;
+}
+
+PhysicalDeviceInfo const & Device::get_device_info() const
+{
+    return physical_device_info;
+}
+
+GLFWwindow * const Device::get_window() const
+{
+    return window;
+}
+
+VkPresentModeKHR const & Device::get_present_mode() const
+{
+    return present_mode;
+}
+
+VkColorSpaceKHR const & Device::get_color_space() const
+{
+    return swapchain_color_space;
+}
+
 bool Device::createSwapChain()
 {
     if (chooseSwapChainConfig() != ErrorCode::NONE)
@@ -3049,9 +3128,9 @@ bool Device::createSwapChain()
 
 void Device::destroySwapChain()
 {
-    for (size_t i = 0; i < swapchain_image_views.size(); i++)
+    for (VkImageView & image_view: swapchain_image_views)
     {
-        vkDestroyImageView(logical_device, swapchain_image_views[i], nullptr);
+        vkDestroyImageView(logical_device, image_view, nullptr);
     }
 
     if (swapchain != VK_NULL_HANDLE)
@@ -3752,7 +3831,7 @@ void ImageResources::quit(Device & device)
 
     for (auto & sampler_iter: samplers)
     {
-        sampler_iter.second.destroy(device.logical_device);
+        sampler_iter.second.destroy(device.get_logical_device());
     }
 
     samplers.clear();
@@ -3797,7 +3876,7 @@ ErrorCode ImageResources::create_attachment(Device &                 device,
 
     if (attachment_config.format == Format::USE_COLOR)
     {
-        format = device.swapchain_image_format;
+        format = device.get_color_format();
         usage  = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
         aspect = VK_IMAGE_ASPECT_COLOR_BIT;
         // final_layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL; // subpass dependencies handle
@@ -3805,20 +3884,19 @@ ErrorCode ImageResources::create_attachment(Device &                 device,
     }
     else if (attachment_config.format == Format::USE_DEPTH)
     {
-        format = device.depth_format;
+        format = device.get_depth_format();
         usage  = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
         aspect = VK_IMAGE_ASPECT_DEPTH_BIT;
         // final_layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL; // subpass dependencies
         // handle this
     }
 
-    auto samples = std::min(attachment_config.multisamples,
-                            device.physical_device_info.max_msaa_samples);
+    auto samples = std::min(attachment_config.multisamples, device.get_max_msaa_samples());
 
-    auto opt_handle = create_texture(device.physical_device,
-                                     device.logical_device,
-                                     device.swapchain_extent.width,
-                                     device.swapchain_extent.height,
+    auto opt_handle = create_texture(device.get_physical_device(),
+                                     device.get_logical_device(),
+                                     device.get_extent().width,
+                                     device.get_extent().height,
                                      1,
                                      samples,
                                      format,
@@ -3841,7 +3919,7 @@ void ImageResources::destroy_attachments(Device & device)
 {
     for (TextureHandle attachment: attachments)
     {
-        samplers[attachment].destroy(device.logical_device);
+        samplers[attachment].destroy(device.get_logical_device());
     }
 }
 
@@ -3981,13 +4059,13 @@ void RenderPassResources::quit(Device & device)
     {
         for (auto & framebuffer: buffered_framebuffers)
         {
-            vkDestroyFramebuffer(device.logical_device, framebuffer, nullptr);
+            vkDestroyFramebuffer(device.get_logical_device(), framebuffer, nullptr);
         }
     }
 
     for (auto & render_pass: render_passes)
     {
-        vkDestroyRenderPass(device.logical_device, render_pass, nullptr);
+        vkDestroyRenderPass(device.get_logical_device(), render_pass, nullptr);
     }
 }
 
@@ -4000,7 +4078,7 @@ void RenderPassResources::recreateFramebuffers(Device & device, ImageResources &
 
         for (auto & framebuffer: framebuffers[fb_i])
         {
-            vkDestroyFramebuffer(device.logical_device, framebuffer, nullptr);
+            vkDestroyFramebuffer(device.get_logical_device(), framebuffer, nullptr);
         }
 
         createFramebuffer(
@@ -4038,15 +4116,15 @@ ErrorCode RenderPassResources::createRenderPasses(Device & device, ImageResource
 
             if (attachment_config.format == Format::USE_COLOR)
             {
-                description.format = device.swapchain_image_format;
+                description.format = device.get_color_format();
             }
             else if (attachment_config.format == Format::USE_DEPTH)
             {
-                description.format = device.depth_format;
+                description.format = device.get_depth_format();
             }
 
             description.samples = std::min(attachment_config.multisamples,
-                                           device.physical_device_info.max_msaa_samples);
+                                           device.get_max_msaa_samples());
 
             sorted_descriptions[attachment_index] = description;
             sorted_names[attachment_index]        = attachment_name;
@@ -4097,7 +4175,7 @@ ErrorCode RenderPassResources::createRenderPasses(Device & device, ImageResource
             .pDependencies = render_pass_config.subpass_dependencies.data()};
 
         VK_CHECK_RESULT(
-            vkCreateRenderPass(device.logical_device, &renderPassInfo, nullptr, &render_pass),
+            vkCreateRenderPass(device.get_logical_device(), &renderPassInfo, nullptr, &render_pass),
             "Unable to create VkRenderPass");
 
         auto error = createFramebuffer(
@@ -4118,9 +4196,9 @@ ErrorCode RenderPassResources::createFramebuffer(Device &                     de
                                                  VkRenderPass const &         render_pass,
                                                  std::vector<VkFramebuffer> & framebuffers)
 {
-    framebuffers.resize(device.swapchain_image_count);
+    framebuffers.resize(device.get_image_count());
 
-    for (size_t i = 0; i < device.swapchain_image_count; ++i)
+    for (size_t i = 0; i < device.get_image_count(); ++i)
     {
         auto & framebuffer = framebuffers[i];
 
@@ -4142,7 +4220,7 @@ ErrorCode RenderPassResources::createFramebuffer(Device &                     de
 
             if (attachment_config.is_swapchain_image)
             {
-                fb_attachments[attachment_index] = device.swapchain_image_views[i];
+                fb_attachments[attachment_index] = device.get_swapchain_image_view(i);
             }
             else
             {
@@ -4170,13 +4248,13 @@ ErrorCode RenderPassResources::createFramebuffer(Device &                     de
             .renderPass      = render_pass,
             .attachmentCount = static_cast<uint32_t>(fb_attachments.size()),
             .pAttachments    = fb_attachments.data(),
-            .width           = device.swapchain_extent.width,
-            .height          = device.swapchain_extent.height,
+            .width           = device.get_extent().width,
+            .height          = device.get_extent().height,
             .layers          = 1};
 
-        VK_CHECK_RESULT(
-            vkCreateFramebuffer(device.logical_device, &framebufferInfo, nullptr, &framebuffer),
-            "Unable to create VkFramebuffer");
+        VK_CHECK_RESULT(vkCreateFramebuffer(
+                            device.get_logical_device(), &framebufferInfo, nullptr, &framebuffer),
+                        "Unable to create VkFramebuffer");
     }
 
     return ErrorCode::NONE;
@@ -4211,17 +4289,17 @@ void UniformResources::quit(Device & device)
 {
     for (auto & uniform_layout: uniform_layouts)
     {
-        vkDestroyDescriptorSetLayout(device.logical_device, uniform_layout, nullptr);
+        vkDestroyDescriptorSetLayout(device.get_logical_device(), uniform_layout, nullptr);
     }
 
     for (auto & pool: pools)
     {
-        vkDestroyDescriptorPool(device.logical_device, pool, nullptr);
+        vkDestroyDescriptorPool(device.get_logical_device(), pool, nullptr);
     }
 
     for (auto & collection: uniform_collections)
     {
-        std::visit([&](auto && collection) { collection.destroy(device.logical_device); },
+        std::visit([&](auto && collection) { collection.destroy(device.get_logical_device()); },
                    collection);
     }
 }
@@ -4241,7 +4319,7 @@ ErrorCode UniformResources::createUniformLayouts(Device & device, BufferResource
             .pBindings    = &uniform_layout_info};
 
         VK_CHECK_RESULT(vkCreateDescriptorSetLayout(
-                            device.logical_device, &layoutInfo, nullptr, &uniform_layout),
+                            device.get_logical_device(), &layoutInfo, nullptr, &uniform_layout),
                         "Unable to create VkDescriptorSetLayout");
 
         if (uniform_layout_info.descriptorType == VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC
@@ -4265,7 +4343,7 @@ ErrorCode UniformResources::createUniformLayouts(Device & device, BufferResource
                 .maxSets       = static_cast<uint32_t>(descriptor_count)};
 
             VK_CHECK_RESULT(
-                vkCreateDescriptorPool(device.logical_device, &poolInfo, nullptr, &pool),
+                vkCreateDescriptorPool(device.get_logical_device(), &poolInfo, nullptr, &pool),
                 "Unable to create VkDescriptorPool");
 
             std::vector<MappedBuffer> uniform_buffers; //{descriptor_count};
@@ -4319,9 +4397,9 @@ ErrorCode UniformResources::createUniformLayouts(Device & device, BufferResource
                 .descriptorSetCount = static_cast<uint32_t>(descriptor_sets.size()),
                 .pSetLayouts        = layouts.data()};
 
-            VK_CHECK_RESULT(
-                vkAllocateDescriptorSets(device.logical_device, &allocInfo, descriptor_sets.data()),
-                "Unable to allocate VkDescriptorSets");
+            VK_CHECK_RESULT(vkAllocateDescriptorSets(
+                                device.get_logical_device(), &allocInfo, descriptor_sets.data()),
+                            "Unable to allocate VkDescriptorSets");
 
             for (size_t ds_i = 0; ds_i < descriptor_sets.size(); ++ds_i)
             {
@@ -4330,8 +4408,8 @@ ErrorCode UniformResources::createUniformLayouts(Device & device, BufferResource
                 auto bufferInfo = VkDescriptorBufferInfo{
                     .buffer = uniform_buffer.buffer_handle(),
                     .offset = 0,
-                    .range  = device.physical_device_info.properties.limits
-                                 .minUniformBufferOffsetAlignment};
+                    .range
+                    = device.get_device_info().properties.limits.minUniformBufferOffsetAlignment};
 
                 auto descriptorWrite = VkWriteDescriptorSet{
                     .sType            = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
@@ -4344,7 +4422,8 @@ ErrorCode UniformResources::createUniformLayouts(Device & device, BufferResource
                     .pImageInfo       = nullptr,
                     .pTexelBufferView = nullptr};
 
-                vkUpdateDescriptorSets(device.logical_device, 1, &descriptorWrite, 0, nullptr);
+                vkUpdateDescriptorSets(
+                    device.get_logical_device(), 1, &descriptorWrite, 0, nullptr);
             }
 
             uniform_collection = DynamicBufferCollection{
@@ -4378,7 +4457,7 @@ ErrorCode UniformResources::createUniformLayouts(Device & device, BufferResource
                 .maxSets       = static_cast<uint32_t>(descriptor_count)};
 
             VK_CHECK_RESULT(
-                vkCreateDescriptorPool(device.logical_device, &poolInfo, nullptr, &pool),
+                vkCreateDescriptorPool(device.get_logical_device(), &poolInfo, nullptr, &pool),
                 "Unable to create VkDescriptorPool");
 
             std::vector<VkDescriptorSet> descriptor_sets;
@@ -4393,9 +4472,9 @@ ErrorCode UniformResources::createUniformLayouts(Device & device, BufferResource
                 .descriptorSetCount = static_cast<uint32_t>(descriptor_sets.size()),
                 .pSetLayouts        = layouts.data()};
 
-            VK_CHECK_RESULT(
-                vkAllocateDescriptorSets(device.logical_device, &allocInfo, descriptor_sets.data()),
-                "Unable to allocate VkDescriptorSets");
+            VK_CHECK_RESULT(vkAllocateDescriptorSets(
+                                device.get_logical_device(), &allocInfo, descriptor_sets.data()),
+                            "Unable to allocate VkDescriptorSets");
 
             uniform_collection = SamplerCollection{.descriptor_sets    = descriptor_sets,
                                                    .free_uniform_slots = IndexAllocator()};
@@ -4487,7 +4566,7 @@ void PipelineResources::quit(Device & device)
 {
     for (auto & shader: shaders)
     {
-        vkDestroyShaderModule(device.logical_device, shader, nullptr);
+        vkDestroyShaderModule(device.get_logical_device(), shader, nullptr);
     }
 
     destroy_pipelines(device);
@@ -4497,8 +4576,8 @@ void PipelineResources::destroy_pipelines(Device & device)
 {
     for (auto & pipeline: pipelines)
     {
-        vkDestroyPipeline(device.logical_device, pipeline.vk_pipeline, nullptr);
-        vkDestroyPipelineLayout(device.logical_device, pipeline.vk_pipeline_layout, nullptr);
+        vkDestroyPipeline(device.get_logical_device(), pipeline.vk_pipeline, nullptr);
+        vkDestroyPipelineLayout(device.get_logical_device(), pipeline.vk_pipeline_layout, nullptr);
     }
 }
 
@@ -4512,7 +4591,7 @@ ErrorCode PipelineResources::createShaderModule(Device &                  device
         .pCode    = reinterpret_cast<const uint32_t *>(code.data())};
 
     VK_CHECK_RESULT(
-        vkCreateShaderModule(device.logical_device, &createInfo, nullptr, &shaderModule),
+        vkCreateShaderModule(device.get_logical_device(), &createInfo, nullptr, &shaderModule),
         "Unable to create VkShaderModule");
 
     return ErrorCode::NONE;
@@ -4618,12 +4697,12 @@ ErrorCode PipelineResources::create_pipeline(Device &               device,
 
     auto viewport = VkViewport{.x        = 0.0f,
                                .y        = 0.0f,
-                               .width    = (float)device.swapchain_extent.width,
-                               .height   = (float)device.swapchain_extent.height,
+                               .width    = (float)device.get_extent().width,
+                               .height   = (float)device.get_extent().height,
                                .minDepth = 0.0f,
                                .maxDepth = 1.0f};
 
-    auto scissor = VkRect2D{.offset = {0, 0}, .extent = device.swapchain_extent};
+    auto scissor = VkRect2D{.offset = {0, 0}, .extent = device.get_extent()};
 
     auto viewportState = VkPipelineViewportStateCreateInfo{
         .sType         = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO,
@@ -4647,8 +4726,7 @@ ErrorCode PipelineResources::create_pipeline(Device &               device,
         .depthBiasSlopeFactor    = 0.0f  // Optional
     };
 
-    auto samples = std::min(subpass_info.multisamples,
-                            device.physical_device_info.max_msaa_samples);
+    auto samples = std::min(subpass_info.multisamples, device.get_max_msaa_samples());
 
     auto multisampling = VkPipelineMultisampleStateCreateInfo{
         .sType                 = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO,
@@ -4722,10 +4800,11 @@ ErrorCode PipelineResources::create_pipeline(Device &               device,
         .pushConstantRangeCount = static_cast<uint32_t>(pushConstantRanges.size()),
         .pPushConstantRanges    = pushConstantRanges.data()};
 
-    VK_CHECK_RESULT(
-        vkCreatePipelineLayout(
-            device.logical_device, &pipelineLayoutInfo, nullptr, &pipeline.vk_pipeline_layout),
-        "Unable to create VkPipelineLayout");
+    VK_CHECK_RESULT(vkCreatePipelineLayout(device.get_logical_device(),
+                                           &pipelineLayoutInfo,
+                                           nullptr,
+                                           &pipeline.vk_pipeline_layout),
+                    "Unable to create VkPipelineLayout");
 
     // push this pipeline handle into the map of commandbuckets
 
@@ -4756,7 +4835,7 @@ ErrorCode PipelineResources::create_pipeline(Device &               device,
         .basePipelineIndex   = -1              // Optional
     };
 
-    VK_CHECK_RESULT(vkCreateGraphicsPipelines(device.logical_device,
+    VK_CHECK_RESULT(vkCreateGraphicsPipelines(device.get_logical_device(),
                                               VK_NULL_HANDLE,
                                               1,
                                               &pipelineInfo,
@@ -4799,28 +4878,29 @@ void CommandResources::quit(Device & device)
         transfer_buckets[i].Clear();
     }
 
-    vkDestroyCommandPool(device.logical_device, command_pool, nullptr);
+    vkDestroyCommandPool(device.get_logical_device(), command_pool, nullptr);
 }
 
 void CommandResources::getQueues(Device & device)
 {
     vkGetDeviceQueue(
-        device.logical_device, device.physical_device_info.present_queue, 0, &present_queue);
+        device.get_logical_device(), device.get_device_info().present_queue, 0, &present_queue);
     vkGetDeviceQueue(
-        device.logical_device, device.physical_device_info.graphics_queue, 0, &graphics_queue);
+        device.get_logical_device(), device.get_device_info().graphics_queue, 0, &graphics_queue);
     vkGetDeviceQueue(
-        device.logical_device, device.physical_device_info.transfer_queue, 0, &transfer_queue);
+        device.get_logical_device(), device.get_device_info().transfer_queue, 0, &transfer_queue);
 }
 
 ErrorCode CommandResources::createCommandPool(Device & device)
 {
     auto poolInfo = VkCommandPoolCreateInfo{
         .sType            = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
-        .queueFamilyIndex = static_cast<uint32_t>(device.physical_device_info.graphics_queue),
+        .queueFamilyIndex = static_cast<uint32_t>(device.get_device_info().graphics_queue),
         .flags            = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT};
 
-    VK_CHECK_RESULT(vkCreateCommandPool(device.logical_device, &poolInfo, nullptr, &command_pool),
-                    "Unable to create VkCommandPool");
+    VK_CHECK_RESULT(
+        vkCreateCommandPool(device.get_logical_device(), &poolInfo, nullptr, &command_pool),
+        "Unable to create VkCommandPool");
 
     return ErrorCode::NONE;
 }
@@ -4837,9 +4917,9 @@ ErrorCode CommandResources::createCommandbuffers(Device & device)
         .level              = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
         .commandBufferCount = (uint32_t)draw_commandbuffers.size()};
 
-    VK_CHECK_RESULT(
-        vkAllocateCommandBuffers(device.logical_device, &allocInfo, draw_commandbuffers.data()),
-        "Unable to allocate VkCommandBuffer");
+    VK_CHECK_RESULT(vkAllocateCommandBuffers(
+                        device.get_logical_device(), &allocInfo, draw_commandbuffers.data()),
+                    "Unable to allocate VkCommandBuffer");
 
     transfer_commandbuffers.resize(MAX_BUFFERED_RESOURCES);
 
@@ -4849,9 +4929,9 @@ ErrorCode CommandResources::createCommandbuffers(Device & device)
         .level              = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
         .commandBufferCount = (uint32_t)transfer_commandbuffers.size()};
 
-    VK_CHECK_RESULT(
-        vkAllocateCommandBuffers(device.logical_device, &allocInfo, transfer_commandbuffers.data()),
-        "Unable to allocate VkCommandBuffer");
+    VK_CHECK_RESULT(vkAllocateCommandBuffers(
+                        device.get_logical_device(), &allocInfo, transfer_commandbuffers.data()),
+                    "Unable to allocate VkCommandBuffer");
 
     return ErrorCode::NONE;
 }
@@ -4865,7 +4945,7 @@ void BufferResources::quit(Device & device)
 {
     for (auto & buffer_iter: buffers)
     {
-        buffer_iter.second.destroy(device.logical_device);
+        buffer_iter.second.destroy(device.get_logical_device());
     }
 
     buffers.clear();
@@ -4880,11 +4960,12 @@ std::optional<BufferHandle> BufferResources::create_buffer(Device &             
 
     Buffer & buffer = buffers[handle];
 
-    if (buffer.create(device.physical_device, device.logical_device, size, usage, properties)
+    if (buffer.create(
+            device.get_physical_device(), device.get_logical_device(), size, usage, properties)
         != ErrorCode::NONE)
     {
         LOG_ERROR("Couldn't create buffer, cleaning up..");
-        buffer.destroy(device.logical_device);
+        buffer.destroy(device.get_logical_device());
         return std::nullopt;
     }
 
@@ -4894,7 +4975,7 @@ std::optional<BufferHandle> BufferResources::create_buffer(Device &             
 
     if (properties & (VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT))
     {
-        buffer.map(device.logical_device, 0, size, &mapped_memory[handle]);
+        buffer.map(device.get_logical_device(), 0, size, &mapped_memory[handle]);
     }
 
     return handle;
@@ -4956,7 +5037,7 @@ bool Renderer::init(RenderConfig & render_config)
         return false;
     }
 
-    if (!frames.init(render_config, device.logical_device))
+    if (!frames.init(render_config, device.get_logical_device()))
     {
         LOG_ERROR("Failed to initialize FrameResources in Renderer");
         return false;
@@ -5010,28 +5091,28 @@ void Renderer::quit()
     buffers.quit(device);
     render_passes.quit(device);
     images.quit(device);
-    frames.quit(device.logical_device);
+    frames.quit(device.get_logical_device());
     device.quit();
 }
 
 void Renderer::wait_for_idle()
 {
     LOG_INFO("Waiting for Graphics Card to become Idle");
-    vkDeviceWaitIdle(device.logical_device);
+    vkDeviceWaitIdle(device.get_logical_device());
 }
 
 bool Renderer::submit_frame()
 {
     LOG_DEBUG("Drawing frame");
-    vkWaitForFences(device.logical_device,
+    vkWaitForFences(device.get_logical_device(),
                     1,
                     &frames.in_flight_fences[frames.currentFrame],
                     VK_TRUE,
                     std::numeric_limits<uint64_t>::max());
 
     // DRAW OPERATIONS
-    auto result = vkAcquireNextImageKHR(device.logical_device,
-                                        device.swapchain,
+    auto result = vkAcquireNextImageKHR(device.get_logical_device(),
+                                        device.get_swapchain(),
                                         std::numeric_limits<uint64_t>::max(),
                                         frames.image_available_semaphores[frames.currentFrame],
                                         VK_NULL_HANDLE,
@@ -5042,8 +5123,8 @@ bool Renderer::submit_frame()
         LOG_DEBUG("Swapchain is out of date, found in vkAcquireNextImageKHR");
         changeSwapChain();
 
-        vkAcquireNextImageKHR(device.logical_device,
-                              device.swapchain,
+        vkAcquireNextImageKHR(device.get_logical_device(),
+                              device.get_swapchain(),
                               std::numeric_limits<uint64_t>::max(),
                               frames.image_available_semaphores[frames.currentFrame],
                               VK_NULL_HANDLE,
@@ -5110,7 +5191,7 @@ bool Renderer::submit_frame()
         .signalSemaphoreCount = 1,
         .pSignalSemaphores    = signalSemaphores};
 
-    vkResetFences(device.logical_device, 1, &frames.in_flight_fences[frames.currentFrame]);
+    vkResetFences(device.get_logical_device(), 1, &frames.in_flight_fences[frames.currentFrame]);
 
     if (vkQueueSubmit(
             commands.graphics_queue, 1, &submitInfo, frames.in_flight_fences[frames.currentFrame])
@@ -5120,7 +5201,7 @@ bool Renderer::submit_frame()
         return false;
     }
 
-    VkSwapchainKHR swapChains[] = {device.swapchain};
+    VkSwapchainKHR swapChains[] = {device.get_swapchain()};
 
     auto presentInfo = VkPresentInfoKHR{.sType              = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR,
                                         .waitSemaphoreCount = 1,
@@ -5370,7 +5451,7 @@ std::optional<UniformHandle> Renderer::new_uniform(UniformLayoutHandle layout_ha
 
     auto & sampler_collection = std::get<SamplerCollection>(uniform_collection);
 
-    auto opt_uniform_handle = sampler_collection.createUniform(device.logical_device,
+    auto opt_uniform_handle = sampler_collection.createUniform(device.get_logical_device(),
                                                                uniform_layout_info.binding,
                                                                sampler.view_handle(),
                                                                sampler.sampler_handle());
@@ -5510,7 +5591,7 @@ void Renderer::delete_buffers(size_t buffer_count, BufferHandle * buffer_handles
     VkBuffer *       buffer_iter    = reinterpret_cast<VkBuffer *>(command_memory);
     VkDeviceMemory * memory_iter = reinterpret_cast<VkDeviceMemory *>(command_memory + buffer_size);
 
-    delete_command->logical_device = device.logical_device;
+    delete_command->logical_device = device.get_logical_device();
     delete_command->buffer_count   = buffer_count;
     delete_command->buffers        = buffer_iter;
     delete_command->memories       = memory_iter;
@@ -5581,8 +5662,8 @@ std::optional<TextureHandle> Renderer::create_texture(size_t       width,
     }
 
     auto opt_texture_handle = images.create_texture(
-        device.physical_device,
-        device.logical_device,
+        device.get_physical_device(),
+        device.get_logical_device(),
         width,
         height,
         1,
@@ -5685,7 +5766,7 @@ void Renderer::delete_textures(size_t texture_count, TextureHandle * texture_han
     VkDeviceMemory * memory_iter  = reinterpret_cast<VkDeviceMemory *>(command_memory
                                                                       + memory_offset);
 
-    delete_command->logical_device = device.logical_device;
+    delete_command->logical_device = device.get_logical_device();
     delete_command->texture_count  = texture_count;
     delete_command->samplers       = sampler_iter;
     delete_command->views          = view_iter;
@@ -5756,7 +5837,7 @@ ErrorCode Renderer::createCommandbuffer(uint32_t image_index)
             .renderPass        = render_passes.render_passes[rp_handle],
             .framebuffer       = render_passes.framebuffers[rp_handle][image_index],
             .renderArea.offset = {0, 0},
-            .renderArea.extent = device.swapchain_extent,
+            .renderArea.extent = device.get_extent(),
             .clearValueCount   = static_cast<uint32_t>(clearValues.size()),
             .pClearValues      = clearValues.data()};
 
@@ -5818,30 +5899,30 @@ void Renderer::changeSwapChain()
     int width = 0, height = 0;
     while (width == 0 || height == 0)
     {
-        glfwGetFramebufferSize(device.window, &width, &height);
+        glfwGetFramebufferSize(device.get_window(), &width, &height);
         glfwWaitEvents();
     }
 
-    vkDeviceWaitIdle(device.logical_device);
+    vkDeviceWaitIdle(device.get_logical_device());
 
-    VkPresentModeKHR last_present_mode           = device.present_mode;
-    VkFormat         last_swapchain_image_format = device.swapchain_image_format;
-    VkColorSpaceKHR  last_swapchain_color_space  = device.swapchain_color_space;
-    VkExtent2D       last_swapchain_extent       = device.swapchain_extent;
-    VkFormat         last_depth_format           = device.depth_format;
-    uint32_t         last_imageCount             = device.imageCount;
+    VkPresentModeKHR last_present_mode           = device.get_present_mode();
+    VkFormat         last_swapchain_image_format = device.get_color_format();
+    VkColorSpaceKHR  last_swapchain_color_space  = device.get_color_space();
+    VkExtent2D       last_swapchain_extent       = device.get_extent();
+    VkFormat         last_depth_format           = device.get_depth_format();
+    uint32_t         last_imageCount             = device.get_image_count();
 
     device.destroySwapChain();
     device.updateSwapChainSupport();
     device.createSwapChain();
 
-    assert(last_present_mode == device.present_mode);
-    assert(last_swapchain_image_format == device.swapchain_image_format);
-    assert(last_swapchain_color_space == device.swapchain_color_space);
-    assert(last_depth_format == device.depth_format);
-    assert(last_imageCount == device.imageCount);
+    assert(last_present_mode == device.get_present_mode());
+    assert(last_swapchain_image_format == device.get_color_format());
+    assert(last_swapchain_color_space == device.get_color_space());
+    assert(last_depth_format == device.get_depth_format());
+    assert(last_imageCount == device.get_image_count());
 
-    if (last_swapchain_extent != device.swapchain_extent)
+    if (last_swapchain_extent != device.get_extent())
     {
         LOG_DEBUG("Extent doesn't match");
     }
