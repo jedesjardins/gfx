@@ -313,6 +313,8 @@ struct AttachmentConfig
     VkImageUsageFlags     usage;
     VkSampleCountFlagBits multisamples;
     bool                  is_swapchain_image;
+    bool                  use_swapchain_size;
+    VkExtent2D            extent;
 
     void init(rapidjson::Value & document);
 
@@ -789,6 +791,7 @@ public:
     std::vector<std::vector<VkFramebuffer>>           framebuffers;
     std::vector<std::vector<VkClearValue>>            clear_values;
     std::vector<VkSampleCountFlagBits>                samples;
+    std::vector<VkExtent2D>                           extents;
 
     bool init(RenderConfig &         render_config,
               Device const &         device,
@@ -805,7 +808,8 @@ private:
                                 ImageResources const &       image_resources,
                                 RenderpassConfig const &     config,
                                 VkRenderPass const &         render_pass,
-                                std::vector<VkFramebuffer> & framebuffers);
+                                std::vector<VkFramebuffer> & framebuffers,
+                                VkExtent2D &                 extent);
 }; // struct RenderPassResources
 
 class BufferResources
@@ -2188,6 +2192,21 @@ std::optional<uint32_t> initSubpassIndex(
     return std::nullopt;
 }
 
+VkExtent2D initVkExtent2D(rapidjson::Value & document)
+{
+    VkExtent2D extent{};
+    assert(document.IsObject());
+    assert(document.HasMember("width") && document["width"].IsUint());
+    extent.width = document["width"].GetUint();
+
+    assert(document.HasMember("height") && document["height"].IsUint());
+    extent.height = document["height"].GetUint();
+
+    LOG_DEBUG("Read extent {} {}", extent.width, extent.height);
+
+    return extent;
+}
+
 VkDescriptorSetLayoutBinding initVkDescriptorSetLayoutBinding(rapidjson::Value & document)
 {
     assert(document.IsObject());
@@ -2400,6 +2419,18 @@ void AttachmentConfig::init(rapidjson::Value & document)
     else
     {
         is_swapchain_image = false;
+    }
+
+    if (!is_swapchain_image && document.HasMember("size"))
+    {
+        use_swapchain_size = false;
+
+        assert(document["size"].IsObject());
+        extent = initVkExtent2D(document["size"]);
+    }
+    else
+    {
+        use_swapchain_size = true;
     }
 }
 
@@ -3841,11 +3872,21 @@ ErrorCode ImageResources::create_attachment(Device const &           device,
     VkImageUsageFlags  usage = attachment_config.usage;
     VkImageAspectFlags aspect;
     VkImageLayout      final_layout;
+    VkExtent2D         extent;
+
+    if (attachment_config.use_swapchain_size)
+    {
+        extent = device.get_extent();
+    }
+    else
+    {
+        extent = attachment_config.extent;
+    }
 
     if (attachment_config.format == Format::USE_COLOR)
     {
         format = device.get_color_format();
-        usage  = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+        usage |= VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
         aspect = VK_IMAGE_ASPECT_COLOR_BIT;
         // final_layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL; // subpass dependencies handle
         // this
@@ -3853,7 +3894,7 @@ ErrorCode ImageResources::create_attachment(Device const &           device,
     else if (attachment_config.format == Format::USE_DEPTH)
     {
         format = device.get_depth_format();
-        usage  = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
+        usage |= VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
         aspect = VK_IMAGE_ASPECT_DEPTH_BIT;
         // final_layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL; // subpass dependencies
         // handle this
@@ -3863,13 +3904,13 @@ ErrorCode ImageResources::create_attachment(Device const &           device,
 
     auto opt_handle = create_texture(device.get_physical_device(),
                                      device.get_logical_device(),
-                                     device.get_extent().width,
-                                     device.get_extent().height,
+                                     extent.width,
+                                     extent.height,
                                      1,
                                      samples,
                                      format,
                                      VK_IMAGE_TILING_OPTIMAL,
-                                     VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT | usage,
+                                     usage,
                                      VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
                                      aspect);
 
@@ -4020,6 +4061,7 @@ bool RenderPassResources::init(RenderConfig &         render_config,
     framebuffers.resize(render_pass_configs.size());
     clear_values.resize(render_pass_configs.size());
     samples.resize(render_pass_configs.size());
+    extents.resize(render_pass_configs.size());
 
     return createRenderPasses(device, image_resources) == ErrorCode::NONE;
 }
@@ -4047,6 +4089,7 @@ void RenderPassResources::recreate_framebuffers(Device const &         device,
     {
         auto & render_pass_config = render_pass_configs[fb_i];
         auto & render_pass        = render_passes[fb_i];
+        auto & extent             = extents[fb_i];
 
         for (auto & framebuffer: framebuffers[fb_i])
         {
@@ -4054,7 +4097,7 @@ void RenderPassResources::recreate_framebuffers(Device const &         device,
         }
 
         createFramebuffer(
-            device, image_resources, render_pass_config, render_pass, framebuffers[fb_i]);
+            device, image_resources, render_pass_config, render_pass, framebuffers[fb_i], extent);
     }
 }
 
@@ -4065,6 +4108,7 @@ ErrorCode RenderPassResources::createRenderPasses(Device const &         device,
     {
         auto & render_pass_config = render_pass_configs[rp_i];
         auto & render_pass        = render_passes[rp_i];
+        auto & extent             = extents[rp_i];
 
         auto & clear_value_list = clear_values[rp_i];
         clear_value_list.reserve(render_pass_config.clear_values.size());
@@ -4152,7 +4196,7 @@ ErrorCode RenderPassResources::createRenderPasses(Device const &         device,
             "Unable to create VkRenderPass");
 
         auto error = createFramebuffer(
-            device, image_resources, render_pass_config, render_pass, framebuffers[rp_i]);
+            device, image_resources, render_pass_config, render_pass, framebuffers[rp_i], extent);
         if (error != ErrorCode::NONE)
         {
             return error;
@@ -4167,7 +4211,8 @@ ErrorCode RenderPassResources::createFramebuffer(Device const &               de
                                                  ImageResources const &       image_resources,
                                                  RenderpassConfig const &     config,
                                                  VkRenderPass const &         render_pass,
-                                                 std::vector<VkFramebuffer> & framebuffers)
+                                                 std::vector<VkFramebuffer> & framebuffers,
+                                                 VkExtent2D &                 extent)
 {
     framebuffers.resize(device.get_image_count());
 
@@ -4194,9 +4239,19 @@ ErrorCode RenderPassResources::createFramebuffer(Device const &               de
             if (attachment_config.is_swapchain_image)
             {
                 fb_attachments[attachment_index] = device.get_swapchain_image_view(i);
+                extent                           = device.get_extent();
             }
             else
             {
+                if (attachment_config.use_swapchain_size)
+                {
+                    extent = device.get_extent();
+                }
+                else
+                {
+                    extent = attachment_config.extent;
+                }
+
                 auto opt_attachment_handle = image_resources.get_texture_handle(attachment_handle);
                 if (!opt_attachment_handle)
                 {
@@ -4221,8 +4276,8 @@ ErrorCode RenderPassResources::createFramebuffer(Device const &               de
             .renderPass      = render_pass,
             .attachmentCount = static_cast<uint32_t>(fb_attachments.size()),
             .pAttachments    = fb_attachments.data(),
-            .width           = device.get_extent().width,
-            .height          = device.get_extent().height,
+            .width           = extent.width,
+            .height          = extent.height,
             .layers          = 1};
 
         VK_CHECK_RESULT(vkCreateFramebuffer(
@@ -4622,10 +4677,11 @@ ErrorCode PipelineResources::create_pipeline(Device const &         device,
                                              Pipeline &             pipeline,
                                              PipelineConfig const & pipeline_config)
 {
-    auto   render_pass_handle = render_passes.render_pass_handles[pipeline_config.renderpass];
-    auto & render_pass_config = render_passes.render_pass_configs[render_pass_handle];
-    auto   subpass_handle     = render_pass_config.subpass_handles[pipeline_config.subpass];
-    auto   subpass_info       = render_pass_config.subpasses[subpass_handle];
+    auto         render_pass_handle = render_passes.render_pass_handles[pipeline_config.renderpass];
+    auto &       render_pass_config = render_passes.render_pass_configs[render_pass_handle];
+    auto         subpass_handle     = render_pass_config.subpass_handles[pipeline_config.subpass];
+    auto const & subpass_info       = render_pass_config.subpasses[subpass_handle];
+    auto const & extent             = render_passes.extents[render_pass_handle];
 
     LOG_DEBUG("Pipeline {} uses fragment shader {}, handle {}",
               pipeline_handle,
@@ -4671,8 +4727,8 @@ ErrorCode PipelineResources::create_pipeline(Device const &         device,
 
     auto viewport = VkViewport{.x        = 0.0f,
                                .y        = 0.0f,
-                               .width    = (float)device.get_extent().width,
-                               .height   = (float)device.get_extent().height,
+                               .width    = static_cast<float>(extent.width),
+                               .height   = static_cast<float>(extent.height),
                                .minDepth = 0.0f,
                                .maxDepth = 1.0f};
 
@@ -5887,7 +5943,7 @@ ErrorCode Renderer::createCommandbuffer(uint32_t image_index)
             .renderPass        = render_passes.render_passes[rp_handle],
             .framebuffer       = render_passes.framebuffers[rp_handle][image_index],
             .renderArea.offset = {0, 0},
-            .renderArea.extent = device.get_extent(),
+            .renderArea.extent = render_passes.extents[rp_handle],
             .clearValueCount   = static_cast<uint32_t>(clearValues.size()),
             .pClearValues      = clearValues.data()};
 
