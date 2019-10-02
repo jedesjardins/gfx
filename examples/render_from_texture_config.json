@@ -48,7 +48,14 @@
 							"attachment_name": "a_color",
 							"layout": "COLOR_ATTACHMENT_OPTIMAL"
 						}
-					]
+					],
+					"color_resolve_attachments": [],
+					"depth_stencil_attachment": {
+						"attachment_name": "UNUSED",
+						"layout": "UNDEFINED"
+					},
+					"input_attachments": [],
+					"preserve_attachments": []
 				}
 			],
 			"subpass_dependencies":

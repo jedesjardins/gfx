@@ -68,11 +68,13 @@
 							"layout": "COLOR_ATTACHMENT_OPTIMAL"
 						}
 					],
-					"resolve_attachment":
-					{
+					"color_resolve_attachments":
+					[
+						{
 						"attachment_name": "a_screen_color",
 						"layout": "COLOR_ATTACHMENT_OPTIMAL"
-					},
+						}
+					],
 					"depth_stencil_attachment":
 					{
 						"attachment_name": "a_depth",

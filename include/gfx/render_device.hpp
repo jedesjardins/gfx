@@ -325,10 +325,9 @@ struct AttachmentConfig
 struct SubpassInfo
 {
     std::vector<VkAttachmentReference> color_attachments;
-
-    bool                  has_color_resolve_attachment;
-    VkAttachmentReference color_resolve_attachment;
-    bool                  has_depth_stencil_attachment;
+    std::vector<VkAttachmentReference> color_resolve_attachments;
+    std::vector<VkAttachmentReference> input_attachments;
+    std::vector<uint32_t> preserve_attachments;
     VkAttachmentReference depth_stencil_attachment;
 
     VkSampleCountFlagBits multisamples;
@@ -1164,16 +1163,7 @@ bool operator!=(VkAttachmentReference const & lhs, VkAttachmentReference const &
 
 bool operator==(SubpassInfo const & lhs, SubpassInfo const & rhs)
 {
-    if (lhs.color_resolve_attachment != rhs.color_resolve_attachment)
-    {
-        return false;
-    }
-
-    if (lhs.depth_stencil_attachment != rhs.depth_stencil_attachment)
-    {
-        return false;
-    }
-
+    // color attachments
     if (lhs.color_attachments.size() != rhs.color_attachments.size())
     {
         return false;
@@ -1185,6 +1175,54 @@ bool operator==(SubpassInfo const & lhs, SubpassInfo const & rhs)
         {
             return false;
         }
+    }
+
+    // color resolve attachments
+    if (lhs.color_resolve_attachments.size() != rhs.color_resolve_attachments.size())
+    {
+        return false;
+    }
+
+    for (uint32_t i = 0; i < lhs.color_resolve_attachments.size(); ++i)
+    {
+        if (lhs.color_resolve_attachments[i] != rhs.color_resolve_attachments[i])
+        {
+            return false;
+        }
+    }
+
+    // preserve attachments
+    if (lhs.preserve_attachments.size() != rhs.preserve_attachments.size())
+    {
+        return false;
+    }
+
+    for (uint32_t i = 0; i < lhs.preserve_attachments.size(); ++i)
+    {
+        if (lhs.preserve_attachments[i] != rhs.preserve_attachments[i])
+        {
+            return false;
+        }
+    }
+
+    // input attachments
+    if (lhs.input_attachments.size() != rhs.input_attachments.size())
+    {
+        return false;
+    }
+
+    for (uint32_t i = 0; i < lhs.input_attachments.size(); ++i)
+    {
+        if (lhs.input_attachments[i] != rhs.input_attachments[i])
+        {
+            return false;
+        }
+    }
+
+    // depth attachment
+    if (lhs.depth_stencil_attachment != rhs.depth_stencil_attachment)
+    {
+        return true;
     }
 
     return true;
@@ -2076,13 +2114,17 @@ VkAttachmentReference initAttachmentReference(
 
     assert(document.HasMember("attachment_name"));
     assert(document["attachment_name"].IsString());
-    reference.attachment = attachment_indices[document["attachment_name"].GetString()];
 
-    /*
-    assert(document.HasMember("attachment_index"));
-    assert(document["attachment_index"].IsInt());
-    reference.attachment = document["attachment_index"].GetInt();
-    */
+    auto attachment_index_iter = attachment_indices.find(document["attachment_name"].GetString());
+    if (attachment_index_iter != attachment_indices.end())
+    {
+        reference.attachment = attachment_index_iter->second;
+    }
+    else
+    {
+        assert(strcmp(document["attachment_name"].GetString(), "UNUSED") == 0);
+        reference.attachment = VK_ATTACHMENT_UNUSED;
+    }
 
     assert(document.HasMember("layout"));
     assert(document["layout"].IsString());
@@ -2458,26 +2500,56 @@ void SubpassInfo::init(rapidjson::Value &                        document,
         }
     }
 
-    if (document.HasMember("resolve_attachment"))
+    if (document.HasMember("color_resolve_attachments"))
     {
-        has_color_resolve_attachment = true;
-        color_resolve_attachment     = initAttachmentReference(document["resolve_attachment"],
-                                                           attachment_indices);
+        assert(document["color_resolve_attachments"].IsArray());
+        for (auto & cra: document["color_resolve_attachments"].GetArray())
+        {
+            color_resolve_attachments.push_back(initAttachmentReference(cra, attachment_indices));
+        }
     }
-    else
+
+    assert(color_attachments.size() == color_resolve_attachments.size() || color_resolve_attachments.size() == 0);
+
+    if (document.HasMember("input_attachments"))
     {
-        has_color_resolve_attachment = false;
+        assert(document["input_attachments"].IsArray());
+        for (auto & ia: document["input_attachments"].GetArray())
+        {
+            input_attachments.push_back(initAttachmentReference(ia, attachment_indices));
+        }
+    }
+
+    if (document.HasMember("preserve_attachments"))
+    {
+        assert(document["preserve_attachments"].IsArray());
+        for (auto & pa: document["preserve_attachments"].GetArray())
+        {
+            assert(pa.IsString());
+
+            auto attachment_index_iter = attachment_indices.find(pa.GetString());
+            if (attachment_index_iter != attachment_indices.end())
+            {
+                preserve_attachments.push_back(attachment_index_iter->second);
+            }
+            else
+            {
+                LOG_ERROR("Couldn't find index in framebuffer for preserve attachment {}", pa.GetString());
+            }
+        }
     }
 
     if (document.HasMember("depth_stencil_attachment"))
     {
-        has_depth_stencil_attachment = true;
-        depth_stencil_attachment     = initAttachmentReference(document["depth_stencil_attachment"],
+        depth_stencil_attachment = initAttachmentReference(document["depth_stencil_attachment"],
                                                            attachment_indices);
     }
     else
     {
-        has_depth_stencil_attachment = false;
+        depth_stencil_attachment = VkAttachmentReference{
+            .attachment = VK_ATTACHMENT_UNUSED,
+            .layout = VK_IMAGE_LAYOUT_UNDEFINED
+        };
     }
 }
 
@@ -4166,16 +4238,25 @@ ErrorCode RenderPassResources::createRenderPasses(Device const &         device,
                 VkSubpassDescription{.pipelineBindPoint    = VK_PIPELINE_BIND_POINT_GRAPHICS,
                                      .colorAttachmentCount = static_cast<uint32_t>(
                                          subpass_info.color_attachments.size()),
-                                     .pColorAttachments = subpass_info.color_attachments.data()});
+                                     .pColorAttachments = subpass_info.color_attachments.data(),
+                                     .pDepthStencilAttachment = &subpass_info.depth_stencil_attachment
+                                 });
 
-            if (subpass_info.has_color_resolve_attachment)
+            if (subpass_info.color_resolve_attachments.size() > 0)
             {
-                subpasses.back().pResolveAttachments = &subpass_info.color_resolve_attachment;
+                subpasses.back().pResolveAttachments = subpass_info.color_resolve_attachments.data();
             }
 
-            if (subpass_info.has_depth_stencil_attachment)
+            if (subpass_info.preserve_attachments.size() > 0)
             {
-                subpasses.back().pDepthStencilAttachment = &subpass_info.depth_stencil_attachment;
+                subpasses.back().preserveAttachmentCount = subpass_info.preserve_attachments.size();
+                subpasses.back().pPreserveAttachments = subpass_info.preserve_attachments.data();
+            }
+
+            if (subpass_info.input_attachments.size() > 0)
+            {
+                subpasses.back().inputAttachmentCount = subpass_info.input_attachments.size();
+                subpasses.back().pInputAttachments = subpass_info.input_attachments.data();
             }
         }
 
