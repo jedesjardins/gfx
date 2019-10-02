@@ -53,6 +53,14 @@
 						"COLOR_ATTACHMENT_READ",
 						"COLOR_ATTACHMENT_WRITE"
 					]
+				},
+				{
+					"src_subpass": "EXTERNAL_SUBPASS",
+					"dst_subpass": "sp_first_subpass",
+					"src_stage_mask": ["TRANSFER"],
+					"dst_stage_mask": ["VERTEX_INPUT"],
+					"src_access_mask": ["TRANSFER_WRITE"],
+					"dst_access_mask": ["VERTEX_ATTRIBUTE_READ", "INDEX_READ"]
 				}
 			]
 		}

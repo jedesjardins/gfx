@@ -58,6 +58,7 @@ set(SOURCES_SINGLE_FILE
 	pong.cpp
 	mul_vbs.cpp
 	resize.cpp
+	render_from_texture.cpp
 )
 
 # get base names of each file (strips off .cpp)

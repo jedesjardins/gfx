@@ -313,6 +313,8 @@ struct AttachmentConfig
     VkImageUsageFlags     usage;
     VkSampleCountFlagBits multisamples;
     bool                  is_swapchain_image;
+    bool                  use_swapchain_size;
+    VkExtent2D            extent;
 
     void init(rapidjson::Value & document);
 
@@ -323,10 +325,9 @@ struct AttachmentConfig
 struct SubpassInfo
 {
     std::vector<VkAttachmentReference> color_attachments;
-
-    bool                  has_color_resolve_attachment;
-    VkAttachmentReference color_resolve_attachment;
-    bool                  has_depth_stencil_attachment;
+    std::vector<VkAttachmentReference> color_resolve_attachments;
+    std::vector<VkAttachmentReference> input_attachments;
+    std::vector<uint32_t> preserve_attachments;
     VkAttachmentReference depth_stencil_attachment;
 
     VkSampleCountFlagBits multisamples;
@@ -789,6 +790,7 @@ public:
     std::vector<std::vector<VkFramebuffer>>           framebuffers;
     std::vector<std::vector<VkClearValue>>            clear_values;
     std::vector<VkSampleCountFlagBits>                samples;
+    std::vector<VkExtent2D>                           extents;
 
     bool init(RenderConfig &         render_config,
               Device const &         device,
@@ -805,7 +807,8 @@ private:
                                 ImageResources const &       image_resources,
                                 RenderpassConfig const &     config,
                                 VkRenderPass const &         render_pass,
-                                std::vector<VkFramebuffer> & framebuffers);
+                                std::vector<VkFramebuffer> & framebuffers,
+                                VkExtent2D &                 extent);
 }; // struct RenderPassResources
 
 class BufferResources
@@ -1160,16 +1163,7 @@ bool operator!=(VkAttachmentReference const & lhs, VkAttachmentReference const &
 
 bool operator==(SubpassInfo const & lhs, SubpassInfo const & rhs)
 {
-    if (lhs.color_resolve_attachment != rhs.color_resolve_attachment)
-    {
-        return false;
-    }
-
-    if (lhs.depth_stencil_attachment != rhs.depth_stencil_attachment)
-    {
-        return false;
-    }
-
+    // color attachments
     if (lhs.color_attachments.size() != rhs.color_attachments.size())
     {
         return false;
@@ -1181,6 +1175,54 @@ bool operator==(SubpassInfo const & lhs, SubpassInfo const & rhs)
         {
             return false;
         }
+    }
+
+    // color resolve attachments
+    if (lhs.color_resolve_attachments.size() != rhs.color_resolve_attachments.size())
+    {
+        return false;
+    }
+
+    for (uint32_t i = 0; i < lhs.color_resolve_attachments.size(); ++i)
+    {
+        if (lhs.color_resolve_attachments[i] != rhs.color_resolve_attachments[i])
+        {
+            return false;
+        }
+    }
+
+    // preserve attachments
+    if (lhs.preserve_attachments.size() != rhs.preserve_attachments.size())
+    {
+        return false;
+    }
+
+    for (uint32_t i = 0; i < lhs.preserve_attachments.size(); ++i)
+    {
+        if (lhs.preserve_attachments[i] != rhs.preserve_attachments[i])
+        {
+            return false;
+        }
+    }
+
+    // input attachments
+    if (lhs.input_attachments.size() != rhs.input_attachments.size())
+    {
+        return false;
+    }
+
+    for (uint32_t i = 0; i < lhs.input_attachments.size(); ++i)
+    {
+        if (lhs.input_attachments[i] != rhs.input_attachments[i])
+        {
+            return false;
+        }
+    }
+
+    // depth attachment
+    if (lhs.depth_stencil_attachment != rhs.depth_stencil_attachment)
+    {
+        return true;
     }
 
     return true;
@@ -2072,13 +2114,17 @@ VkAttachmentReference initAttachmentReference(
 
     assert(document.HasMember("attachment_name"));
     assert(document["attachment_name"].IsString());
-    reference.attachment = attachment_indices[document["attachment_name"].GetString()];
 
-    /*
-    assert(document.HasMember("attachment_index"));
-    assert(document["attachment_index"].IsInt());
-    reference.attachment = document["attachment_index"].GetInt();
-    */
+    auto attachment_index_iter = attachment_indices.find(document["attachment_name"].GetString());
+    if (attachment_index_iter != attachment_indices.end())
+    {
+        reference.attachment = attachment_index_iter->second;
+    }
+    else
+    {
+        assert(strcmp(document["attachment_name"].GetString(), "UNUSED") == 0);
+        reference.attachment = VK_ATTACHMENT_UNUSED;
+    }
 
     assert(document.HasMember("layout"));
     assert(document["layout"].IsString());
@@ -2186,6 +2232,21 @@ std::optional<uint32_t> initSubpassIndex(
     }
 
     return std::nullopt;
+}
+
+VkExtent2D initVkExtent2D(rapidjson::Value & document)
+{
+    VkExtent2D extent{};
+    assert(document.IsObject());
+    assert(document.HasMember("width") && document["width"].IsUint());
+    extent.width = document["width"].GetUint();
+
+    assert(document.HasMember("height") && document["height"].IsUint());
+    extent.height = document["height"].GetUint();
+
+    LOG_DEBUG("Read extent {} {}", extent.width, extent.height);
+
+    return extent;
 }
 
 VkDescriptorSetLayoutBinding initVkDescriptorSetLayoutBinding(rapidjson::Value & document)
@@ -2401,6 +2462,18 @@ void AttachmentConfig::init(rapidjson::Value & document)
     {
         is_swapchain_image = false;
     }
+
+    if (!is_swapchain_image && document.HasMember("size"))
+    {
+        use_swapchain_size = false;
+
+        assert(document["size"].IsObject());
+        extent = initVkExtent2D(document["size"]);
+    }
+    else
+    {
+        use_swapchain_size = true;
+    }
 }
 
 void SubpassInfo::init(rapidjson::Value &                        document,
@@ -2427,26 +2500,56 @@ void SubpassInfo::init(rapidjson::Value &                        document,
         }
     }
 
-    if (document.HasMember("resolve_attachment"))
+    if (document.HasMember("color_resolve_attachments"))
     {
-        has_color_resolve_attachment = true;
-        color_resolve_attachment     = initAttachmentReference(document["resolve_attachment"],
-                                                           attachment_indices);
+        assert(document["color_resolve_attachments"].IsArray());
+        for (auto & cra: document["color_resolve_attachments"].GetArray())
+        {
+            color_resolve_attachments.push_back(initAttachmentReference(cra, attachment_indices));
+        }
     }
-    else
+
+    assert(color_attachments.size() == color_resolve_attachments.size() || color_resolve_attachments.size() == 0);
+
+    if (document.HasMember("input_attachments"))
     {
-        has_color_resolve_attachment = false;
+        assert(document["input_attachments"].IsArray());
+        for (auto & ia: document["input_attachments"].GetArray())
+        {
+            input_attachments.push_back(initAttachmentReference(ia, attachment_indices));
+        }
+    }
+
+    if (document.HasMember("preserve_attachments"))
+    {
+        assert(document["preserve_attachments"].IsArray());
+        for (auto & pa: document["preserve_attachments"].GetArray())
+        {
+            assert(pa.IsString());
+
+            auto attachment_index_iter = attachment_indices.find(pa.GetString());
+            if (attachment_index_iter != attachment_indices.end())
+            {
+                preserve_attachments.push_back(attachment_index_iter->second);
+            }
+            else
+            {
+                LOG_ERROR("Couldn't find index in framebuffer for preserve attachment {}", pa.GetString());
+            }
+        }
     }
 
     if (document.HasMember("depth_stencil_attachment"))
     {
-        has_depth_stencil_attachment = true;
-        depth_stencil_attachment     = initAttachmentReference(document["depth_stencil_attachment"],
+        depth_stencil_attachment = initAttachmentReference(document["depth_stencil_attachment"],
                                                            attachment_indices);
     }
     else
     {
-        has_depth_stencil_attachment = false;
+        depth_stencil_attachment = VkAttachmentReference{
+            .attachment = VK_ATTACHMENT_UNUSED,
+            .layout = VK_IMAGE_LAYOUT_UNDEFINED
+        };
     }
 }
 
@@ -3841,11 +3944,21 @@ ErrorCode ImageResources::create_attachment(Device const &           device,
     VkImageUsageFlags  usage = attachment_config.usage;
     VkImageAspectFlags aspect;
     VkImageLayout      final_layout;
+    VkExtent2D         extent;
+
+    if (attachment_config.use_swapchain_size)
+    {
+        extent = device.get_extent();
+    }
+    else
+    {
+        extent = attachment_config.extent;
+    }
 
     if (attachment_config.format == Format::USE_COLOR)
     {
         format = device.get_color_format();
-        usage  = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+        usage |= VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
         aspect = VK_IMAGE_ASPECT_COLOR_BIT;
         // final_layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL; // subpass dependencies handle
         // this
@@ -3853,7 +3966,7 @@ ErrorCode ImageResources::create_attachment(Device const &           device,
     else if (attachment_config.format == Format::USE_DEPTH)
     {
         format = device.get_depth_format();
-        usage  = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
+        usage |= VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
         aspect = VK_IMAGE_ASPECT_DEPTH_BIT;
         // final_layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL; // subpass dependencies
         // handle this
@@ -3863,13 +3976,13 @@ ErrorCode ImageResources::create_attachment(Device const &           device,
 
     auto opt_handle = create_texture(device.get_physical_device(),
                                      device.get_logical_device(),
-                                     device.get_extent().width,
-                                     device.get_extent().height,
+                                     extent.width,
+                                     extent.height,
                                      1,
                                      samples,
                                      format,
                                      VK_IMAGE_TILING_OPTIMAL,
-                                     VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT | usage,
+                                     usage,
                                      VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
                                      aspect);
 
@@ -4020,6 +4133,7 @@ bool RenderPassResources::init(RenderConfig &         render_config,
     framebuffers.resize(render_pass_configs.size());
     clear_values.resize(render_pass_configs.size());
     samples.resize(render_pass_configs.size());
+    extents.resize(render_pass_configs.size());
 
     return createRenderPasses(device, image_resources) == ErrorCode::NONE;
 }
@@ -4047,6 +4161,7 @@ void RenderPassResources::recreate_framebuffers(Device const &         device,
     {
         auto & render_pass_config = render_pass_configs[fb_i];
         auto & render_pass        = render_passes[fb_i];
+        auto & extent             = extents[fb_i];
 
         for (auto & framebuffer: framebuffers[fb_i])
         {
@@ -4054,7 +4169,7 @@ void RenderPassResources::recreate_framebuffers(Device const &         device,
         }
 
         createFramebuffer(
-            device, image_resources, render_pass_config, render_pass, framebuffers[fb_i]);
+            device, image_resources, render_pass_config, render_pass, framebuffers[fb_i], extent);
     }
 }
 
@@ -4065,6 +4180,7 @@ ErrorCode RenderPassResources::createRenderPasses(Device const &         device,
     {
         auto & render_pass_config = render_pass_configs[rp_i];
         auto & render_pass        = render_passes[rp_i];
+        auto & extent             = extents[rp_i];
 
         auto & clear_value_list = clear_values[rp_i];
         clear_value_list.reserve(render_pass_config.clear_values.size());
@@ -4122,16 +4238,25 @@ ErrorCode RenderPassResources::createRenderPasses(Device const &         device,
                 VkSubpassDescription{.pipelineBindPoint    = VK_PIPELINE_BIND_POINT_GRAPHICS,
                                      .colorAttachmentCount = static_cast<uint32_t>(
                                          subpass_info.color_attachments.size()),
-                                     .pColorAttachments = subpass_info.color_attachments.data()});
+                                     .pColorAttachments = subpass_info.color_attachments.data(),
+                                     .pDepthStencilAttachment = &subpass_info.depth_stencil_attachment
+                                 });
 
-            if (subpass_info.has_color_resolve_attachment)
+            if (subpass_info.color_resolve_attachments.size() > 0)
             {
-                subpasses.back().pResolveAttachments = &subpass_info.color_resolve_attachment;
+                subpasses.back().pResolveAttachments = subpass_info.color_resolve_attachments.data();
             }
 
-            if (subpass_info.has_depth_stencil_attachment)
+            if (subpass_info.preserve_attachments.size() > 0)
             {
-                subpasses.back().pDepthStencilAttachment = &subpass_info.depth_stencil_attachment;
+                subpasses.back().preserveAttachmentCount = subpass_info.preserve_attachments.size();
+                subpasses.back().pPreserveAttachments = subpass_info.preserve_attachments.data();
+            }
+
+            if (subpass_info.input_attachments.size() > 0)
+            {
+                subpasses.back().inputAttachmentCount = subpass_info.input_attachments.size();
+                subpasses.back().pInputAttachments = subpass_info.input_attachments.data();
             }
         }
 
@@ -4152,7 +4277,7 @@ ErrorCode RenderPassResources::createRenderPasses(Device const &         device,
             "Unable to create VkRenderPass");
 
         auto error = createFramebuffer(
-            device, image_resources, render_pass_config, render_pass, framebuffers[rp_i]);
+            device, image_resources, render_pass_config, render_pass, framebuffers[rp_i], extent);
         if (error != ErrorCode::NONE)
         {
             return error;
@@ -4167,7 +4292,8 @@ ErrorCode RenderPassResources::createFramebuffer(Device const &               de
                                                  ImageResources const &       image_resources,
                                                  RenderpassConfig const &     config,
                                                  VkRenderPass const &         render_pass,
-                                                 std::vector<VkFramebuffer> & framebuffers)
+                                                 std::vector<VkFramebuffer> & framebuffers,
+                                                 VkExtent2D &                 extent)
 {
     framebuffers.resize(device.get_image_count());
 
@@ -4194,9 +4320,19 @@ ErrorCode RenderPassResources::createFramebuffer(Device const &               de
             if (attachment_config.is_swapchain_image)
             {
                 fb_attachments[attachment_index] = device.get_swapchain_image_view(i);
+                extent                           = device.get_extent();
             }
             else
             {
+                if (attachment_config.use_swapchain_size)
+                {
+                    extent = device.get_extent();
+                }
+                else
+                {
+                    extent = attachment_config.extent;
+                }
+
                 auto opt_attachment_handle = image_resources.get_texture_handle(attachment_handle);
                 if (!opt_attachment_handle)
                 {
@@ -4221,8 +4357,8 @@ ErrorCode RenderPassResources::createFramebuffer(Device const &               de
             .renderPass      = render_pass,
             .attachmentCount = static_cast<uint32_t>(fb_attachments.size()),
             .pAttachments    = fb_attachments.data(),
-            .width           = device.get_extent().width,
-            .height          = device.get_extent().height,
+            .width           = extent.width,
+            .height          = extent.height,
             .layers          = 1};
 
         VK_CHECK_RESULT(vkCreateFramebuffer(
@@ -4622,10 +4758,11 @@ ErrorCode PipelineResources::create_pipeline(Device const &         device,
                                              Pipeline &             pipeline,
                                              PipelineConfig const & pipeline_config)
 {
-    auto   render_pass_handle = render_passes.render_pass_handles[pipeline_config.renderpass];
-    auto & render_pass_config = render_passes.render_pass_configs[render_pass_handle];
-    auto   subpass_handle     = render_pass_config.subpass_handles[pipeline_config.subpass];
-    auto   subpass_info       = render_pass_config.subpasses[subpass_handle];
+    auto         render_pass_handle = render_passes.render_pass_handles[pipeline_config.renderpass];
+    auto &       render_pass_config = render_passes.render_pass_configs[render_pass_handle];
+    auto         subpass_handle     = render_pass_config.subpass_handles[pipeline_config.subpass];
+    auto const & subpass_info       = render_pass_config.subpasses[subpass_handle];
+    auto const & extent             = render_passes.extents[render_pass_handle];
 
     LOG_DEBUG("Pipeline {} uses fragment shader {}, handle {}",
               pipeline_handle,
@@ -4671,8 +4808,8 @@ ErrorCode PipelineResources::create_pipeline(Device const &         device,
 
     auto viewport = VkViewport{.x        = 0.0f,
                                .y        = 0.0f,
-                               .width    = (float)device.get_extent().width,
-                               .height   = (float)device.get_extent().height,
+                               .width    = static_cast<float>(extent.width),
+                               .height   = static_cast<float>(extent.height),
                                .minDepth = 0.0f,
                                .maxDepth = 1.0f};
 
@@ -5876,22 +6013,6 @@ ErrorCode Renderer::createCommandbuffer(uint32_t image_index)
         vkBeginCommandBuffer(commands.draw_commandbuffers[frames.currentResource], &beginInfo),
         "Unable to begin VkCommandBuffer recording");
 
-    // memory barrier for copy commands
-    auto barrier = VkMemoryBarrier{.sType         = VK_STRUCTURE_TYPE_MEMORY_BARRIER,
-                                   .srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT,
-                                   .dstAccessMask = VK_ACCESS_VERTEX_ATTRIBUTE_READ_BIT};
-
-    vkCmdPipelineBarrier(commandbuffer,
-                         VK_PIPELINE_STAGE_TRANSFER_BIT,
-                         VK_PIPELINE_STAGE_VERTEX_INPUT_BIT,
-                         0,
-                         1,
-                         &barrier,
-                         0,
-                         nullptr,
-                         0,
-                         nullptr);
-
     for (RenderpassHandle const & rp_handle: render_passes.renderpass_order)
     {
         LOG_TRACE("Drawing Renderpass {}", rp_handle);
@@ -5903,7 +6024,7 @@ ErrorCode Renderer::createCommandbuffer(uint32_t image_index)
             .renderPass        = render_passes.render_passes[rp_handle],
             .framebuffer       = render_passes.framebuffers[rp_handle][image_index],
             .renderArea.offset = {0, 0},
-            .renderArea.extent = device.get_extent(),
+            .renderArea.extent = render_passes.extents[rp_handle],
             .clearValueCount   = static_cast<uint32_t>(clearValues.size()),
             .pClearValues      = clearValues.data()};
 
