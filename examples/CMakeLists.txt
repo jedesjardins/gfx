@@ -70,8 +70,11 @@ set(TARGETS_SINGLE_FILE ${BASENAMES_SINGLE_FILE} )
 add_compile_definitions(RESOURCE_PATH="${CMAKE_CURRENT_SOURCE_DIR}/")
 message(STATUS "current source dir: ${CMAKE_CURRENT_SOURCE_DIR}")
 
+add_library(common STATIC ${CMAKE_CURRENT_LIST_DIR}/common.cpp)
+target_include_directories(common PUBLIC $<BUILD_INTERFACE:${stb_SOURCE_DIR}>)
+target_link_libraries(common JED::gfx JED::log)
+
 foreach(name ${TARGETS_SINGLE_FILE})
     add_executable(${name} ${CMAKE_CURRENT_LIST_DIR}/${name}.cpp)
-    target_include_directories(${name} PUBLIC $<BUILD_INTERFACE:${stb_SOURCE_DIR}>)
-    target_link_libraries(${name} JED::gfx JED::log glm)
+    target_link_libraries(${name} common glm)
 endforeach()
