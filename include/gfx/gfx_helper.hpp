@@ -44,8 +44,6 @@
         }                                           \
     } while (0)
 
-std::vector<char> readFile(std::string const & filename);
-
 namespace gfx
 {
 
@@ -56,7 +54,8 @@ enum class ErrorCode
     NONE,
     VULKAN_ERROR,
     API_ERROR,
-    JSON_ERROR
+    JSON_ERROR,
+    FILE_ERROR
 };
 
 enum class Format

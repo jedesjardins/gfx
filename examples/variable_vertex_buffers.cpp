@@ -398,6 +398,8 @@ std::optional<gfx::TextureHandle> create_texture(gfx::Renderer & renderer,
     return texture;
 }
 
+gfx::ErrorCode readFile(char const * file_name, std::vector<char> & buffer);
+
 int main()
 {
     get_console_sink()->set_level(spdlog::level::warn);
@@ -417,8 +419,8 @@ int main()
 
     auto render_device = gfx::Renderer{window};
 
-    auto render_config = gfx::RenderConfig{.config_filename = RESOURCE_PATH
-                                           "example_renderer_config.json"};
+    auto render_config = gfx::RenderConfig{
+        .read_file = readFile, .config_filename = RESOURCE_PATH "example_renderer_config.json"};
 
     render_config.init();
 

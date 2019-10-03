@@ -7,7 +7,6 @@
 #include <vector>
 #include <array>
 #include <set>
-#include <fstream>
 #include <variant>
 #include <optional>
 #include <unordered_map>
@@ -700,7 +699,7 @@ private:
                                  std::vector<char> const & code,
                                  VkShaderModule &          shaderModule);
 
-    ErrorCode createShaders(Device const & device);
+    ErrorCode createShaders(Device const & device, ReadFileFn read_file);
 
     ErrorCode create_pipelines(Device const &        device,
                                RenderPassResources & render_passes,
@@ -869,29 +868,6 @@ private:
 #endif
 
 #ifdef JED_GFX_IMPLEMENTATION
-
-std::vector<char> readFile(std::string const & filename)
-{
-    
-    LOG_DEBUG("Reading file {}", filename);
-    std::ifstream file(filename, std::ios::ate | std::ios::binary);
-
-    if (!file.is_open())
-    {
-        LOG_ERROR("Failed to open file {}", filename);
-        return {};
-    }
-
-    size_t            fileSize = (size_t)file.tellg();
-    std::vector<char> buffer(fileSize);
-
-    file.seekg(0);
-    file.read(buffer.data(), fileSize);
-
-    file.close();
-
-    return buffer;
-}
 
 namespace gfx
 {
@@ -3169,7 +3145,7 @@ bool PipelineResources::init(RenderConfig &        render_config,
                   iter.second);
     }
 
-    if (createShaders(device) != ErrorCode::NONE)
+    if (createShaders(device, render_config.read_file) != ErrorCode::NONE)
     {
         return false;
     }
@@ -3259,15 +3235,19 @@ ErrorCode PipelineResources::createShaderModule(Device const &            device
     return ErrorCode::NONE;
 }
 
-ErrorCode PipelineResources::createShaders(Device const & device)
+ErrorCode PipelineResources::createShaders(Device const & device, ReadFileFn read_file)
 {
     for (size_t i = 0; i < shaders.size(); ++i)
     {
         auto & shader = shaders[i];
 
-        auto shaderCode = readFile(shader_files[i]);
+        std::vector<char> shader_code;
 
-        auto error = createShaderModule(device, shaderCode, shader);
+        read_file(shader_files[i].c_str(), shader_code);
+
+        //auto shaderCode = readFile(shader_files[i]);
+
+        auto error = createShaderModule(device, shader_code, shader);
 
         if (error != ErrorCode::NONE)
         {

@@ -23,6 +23,8 @@ std::vector<glm::vec3> color_vec{{1.f, 0.f, 0.f}, {0.f, 1.f, 0.f}, {0.f, 0.f, 1.
 
 std::vector<uint32_t> indices{0, 1, 2};
 
+gfx::ErrorCode readFile(char const * file_name, std::vector<char> & buffer);
+
 int main()
 {
     get_console_sink()->set_level(spdlog::level::info);
@@ -42,7 +44,8 @@ int main()
 
     auto render_device = gfx::Renderer{window};
 
-    auto render_config = gfx::RenderConfig{.config_filename = RESOURCE_PATH "mul_vbs.json"};
+    auto render_config = gfx::RenderConfig{.read_file       = readFile,
+                                           .config_filename = RESOURCE_PATH "mul_vbs.json"};
 
     render_config.init();
 

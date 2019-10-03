@@ -29,6 +29,8 @@ struct POS_UV
     glm::vec2 uv;
 };
 
+gfx::ErrorCode readFile(char const * file_name, std::vector<char> & buffer);
+
 int main()
 {
     get_console_sink()->set_level(spdlog::level::warn);
@@ -50,8 +52,8 @@ int main()
 
     auto renderer = gfx::Renderer{window};
 
-    auto render_config = gfx::RenderConfig{.config_filename = RESOURCE_PATH
-                                           "render_from_texture_config.json"};
+    auto render_config = gfx::RenderConfig{
+        .read_file = readFile, .config_filename = RESOURCE_PATH "render_from_texture_config.json"};
 
     render_config.init();
 

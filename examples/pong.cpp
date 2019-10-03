@@ -536,6 +536,8 @@ void key_callback(GLFWwindow * window, int key, int scancode, int action, int mo
     }
 }
 
+gfx::ErrorCode readFile(char const * file_name, std::vector<char> & buffer);
+
 int main()
 {
     get_console_sink()->set_level(spdlog::level::info);
@@ -557,7 +559,8 @@ int main()
 
     auto render_device = gfx::Renderer{window};
 
-    auto render_config = gfx::RenderConfig{.config_filename = RESOURCE_PATH "pong_config.json"};
+    auto render_config = gfx::RenderConfig{.read_file       = readFile,
+                                           .config_filename = RESOURCE_PATH "pong_config.json"};
 
     render_config.init();
 

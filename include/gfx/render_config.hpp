@@ -80,8 +80,12 @@ struct UniformConfig
     VkDescriptorSetLayoutBinding layout_binding;
 };
 
+using ReadFileFn = ErrorCode (*)(char const * file_name, std::vector<char> & buffer);
+
 struct RenderConfig
 {
+    ReadFileFn read_file;
+
     char const * config_filename;
 
     char const * window_name;
@@ -119,7 +123,6 @@ struct RenderConfig
 
 namespace gfx
 {
-
 bool operator==(VkExtent2D const & lhs, VkExtent2D const & rhs)
 {
     return (lhs.width == rhs.width) && (lhs.height == rhs.height);
@@ -1253,7 +1256,16 @@ void RenderConfig::init()
 
     rj::Document document;
 
-    auto config_json = readFile(config_filename);
+    std::vector<char> config_json;
+
+    if (read_file == nullptr)
+    {
+        LOG_ERROR("ReadFileFn was not defined");
+    }
+
+    read_file(config_filename, config_json);
+
+    // auto config_json = readFile(config_filename);
     config_json.push_back('\0');
 
     if (document.Parse(config_json.data()).HasParseError())
