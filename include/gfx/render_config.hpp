@@ -1282,8 +1282,6 @@ void RenderConfig::init()
         assert(a["name"].IsString());
 
         gfx::init(a, attachment_configs[a["name"].GetString()]);
-
-        // attachment_configs[a["name"].GetString()].init(a);
     }
 
     assert(document.HasMember("renderpasses"));
@@ -1329,8 +1327,6 @@ void RenderConfig::init()
         assert(ul.IsObject());
         assert(ul.HasMember("name"));
         assert(ul["name"].IsString());
-
-        // uniform_layout_infos[ul["name"].GetString()] = initVkDescriptorSetLayoutBinding(ul);
 
         gfx::init(ul, uniform_configs[ul["name"].GetString()]);
     }
