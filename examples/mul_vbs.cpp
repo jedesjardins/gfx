@@ -1,22 +1,10 @@
 
+#include "log/logger.hpp"
+#include "gfx/renderer.hpp"
+#include "cmd/cmd.hpp"
+
 #include <vulkan/vulkan.h>
 #include <GLFW/glfw3.h>
-
-#define JED_LOG_IMPLEMENTATION
-#include "log/logger.hpp"
-#undef JED_LOG_IMPLEMENTATION
-
-#define JED_GFX_IMPLEMENTATION
-#include "gfx/render_device.hpp"
-#undef JED_GFX_IMPLEMENTATION
-
-#define JED_CMD_IMPLEMENTATION
-#include "cmd/cmd.hpp"
-#undef JED_CMD_IMPLEMENTATION
-
-#define STB_IMAGE_IMPLEMENTATION
-#include "stb_image.h"
-#undef STB_IMAGE_IMPLEMENTATION
 
 #define GLM_FORCE_RADIANS
 #define GLM_FORCE_DEPTH_ZERO_TO_ONE
