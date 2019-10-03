@@ -20,7 +20,7 @@
 			"multisamples": 1
 		}
 	],
-	"renderpasses":
+	"render_passes":
 	[
 		{
 			"name": "rp_first_render_pass",
@@ -122,7 +122,7 @@
 			]
 		}
 	],
-	"renderpass_order": [
+	"render_pass_order": [
 		"rp_first_render_pass", "rp_second_render_pass"
 	],
 	"shaders":
@@ -205,7 +205,7 @@
 			"vertex_attributes": ["va_pos_only"],
 			"uniform_layouts": [],
 			"push_constants": [],
-			"renderpass": "rp_first_render_pass",
+			"render_pass": "rp_first_render_pass",
 			"subpass": "sp_first_subpass"
 		},
 		{
@@ -216,7 +216,7 @@
 			"vertex_attributes": ["va_pos", "va_uv"],
 			"uniform_layouts": ["ul_texture"],
 			"push_constants": [],
-			"renderpass": "rp_second_render_pass",
+			"render_pass": "rp_second_render_pass",
 			"subpass": "sp_second_subpass",
 			"dynamic_state": ["VIEWPORT"]
 		}

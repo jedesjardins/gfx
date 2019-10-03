@@ -24,15 +24,15 @@ class Memory
 {
 public:
     template <typename T>
-    ErrorCode allocateAndBind(VkPhysicalDevice      physical_device,
-                              VkDevice              logical_device,
-                              VkMemoryPropertyFlags properties,
-                              T                     object_handle)
+    ErrorCode allocate_and_bind(VkPhysicalDevice      physical_device,
+                                VkDevice              logical_device,
+                                VkMemoryPropertyFlags properties,
+                                T                     object_handle)
     {
         VkMemoryRequirements requirements;
-        getMemoryRequirements(logical_device, object_handle, requirements);
+        get_memory_requirements(logical_device, object_handle, requirements);
 
-        auto opt_memory_type = findMemoryType(
+        auto opt_memory_type = find_memory_type(
             physical_device, requirements.memoryTypeBits, properties);
 
         if (!opt_memory_type)
@@ -47,7 +47,7 @@ public:
         VK_CHECK_RESULT(vkAllocateMemory(logical_device, &allocInfo, nullptr, &vk_memory),
                         "Unable to allocate VkDeviceMemory");
 
-        return bindMemory(logical_device, object_handle);
+        return bind_memory(logical_device, object_handle);
     }
 
     ErrorCode map(VkDevice logical_device, VkDeviceSize offset, VkDeviceSize size, void ** data);
@@ -60,21 +60,21 @@ protected:
     VkDeviceMemory vk_memory{VK_NULL_HANDLE};
 
 private:
-    std::optional<uint32_t> findMemoryType(VkPhysicalDevice      physical_device,
-                                           uint32_t              typeFilter,
-                                           VkMemoryPropertyFlags properties);
+    std::optional<uint32_t> find_memory_type(VkPhysicalDevice      physical_device,
+                                             uint32_t              typeFilter,
+                                             VkMemoryPropertyFlags properties);
 
-    void getMemoryRequirements(VkDevice               logical_device,
-                               VkBuffer               buffer,
-                               VkMemoryRequirements & requirements);
+    void get_memory_requirements(VkDevice               logical_device,
+                                 VkBuffer               buffer,
+                                 VkMemoryRequirements & requirements);
 
-    void getMemoryRequirements(VkDevice               logical_device,
-                               VkImage                image,
-                               VkMemoryRequirements & requirements);
+    void get_memory_requirements(VkDevice               logical_device,
+                                 VkImage                image,
+                                 VkMemoryRequirements & requirements);
 
-    ErrorCode bindMemory(VkDevice logical_device, VkBuffer buffer);
+    ErrorCode bind_memory(VkDevice logical_device, VkBuffer buffer);
 
-    ErrorCode bindMemory(VkDevice logical_device, VkImage image);
+    ErrorCode bind_memory(VkDevice logical_device, VkImage image);
 };
 
 class Image: public Memory
@@ -182,13 +182,13 @@ struct SamplerCollection
     std::vector<VkDescriptorSet> descriptor_sets;
     IndexAllocator               free_uniform_slots;
 
-    std::optional<UniformHandle>   createUniform(VkDevice const & logical_device,
-                                                 uint32_t         binding,
-                                                 VkImageView      view,
-                                                 VkSampler        sampler);
-    std::optional<VkDescriptorSet> getUniform(UniformHandle handle);
-    std::optional<VkDeviceSize>    getDynamicOffset(UniformHandle handle);
-    void                           destroyUniform(UniformHandle handle);
+    std::optional<UniformHandle>   create_uniform(VkDevice const & logical_device,
+                                                  uint32_t         binding,
+                                                  VkImageView      view,
+                                                  VkSampler        sampler);
+    std::optional<VkDescriptorSet> get_uniform(UniformHandle handle);
+    std::optional<VkDeviceSize>    get_dynamic_offset(UniformHandle handle);
+    void                           destroy_uniform(UniformHandle handle);
     void                           destroy(VkDevice const & logical_device);
 };
 
@@ -201,15 +201,15 @@ struct DynamicBufferCollection
     IndexAllocator                    free_uniform_buffer_slots;
     IndexAllocator                    free_uniform_slots;
 
-    std::optional<UniformHandle> createUniform(VkDeviceSize size, void * data_ptr);
+    std::optional<UniformHandle> create_uniform(VkDeviceSize size, void * data_ptr);
 
-    void updateUniform(UniformHandle handle, VkDeviceSize size, void * data_ptr);
+    void update_uniform(UniformHandle handle, VkDeviceSize size, void * data_ptr);
 
-    std::optional<VkDescriptorSet> getUniform(UniformHandle handle);
+    std::optional<VkDescriptorSet> get_uniform(UniformHandle handle);
 
-    std::optional<VkDeviceSize> getDynamicOffset(UniformHandle handle);
+    std::optional<VkDeviceSize> get_dynamic_offset(UniformHandle handle);
 
-    void destroyUniform(UniformHandle handle);
+    void destroy_uniform(UniformHandle handle);
 
     void destroy(VkDevice const & logical_device);
 };
@@ -406,10 +406,10 @@ public:
     VkPresentModeKHR const &      get_present_mode() const;
     VkColorSpaceKHR const &       get_color_space() const;
 
-    bool createSwapChain();
-    void destroySwapChain();
+    bool create_swapchain();
+    void destroy_swapchain();
 
-    void updateSwapChainSupport();
+    void update_swapchain_support();
 
 private:
     GLFWwindow * window{nullptr};
@@ -445,68 +445,69 @@ private:
     std::vector<char const *>       required_extensions{};
     const std::vector<const char *> required_device_extensions = {VK_KHR_SWAPCHAIN_EXTENSION_NAME};
 
-    void checkValidationLayerSupport();
+    void check_validation_layer_support();
 
-    void getRequiredExtensions();
+    void get_required_extensions();
 
     // INSTANCE
-    ErrorCode createInstance(char const * window_name);
+    ErrorCode create_instance(char const * window_name);
 
     // VALIDATION LAYER DEBUG MESSAGER
     static VKAPI_ATTR VkBool32 VKAPI_CALL
-                               debugCallback(VkDebugUtilsMessageSeverityFlagBitsEXT       messageSeverity,
-                                             VkDebugUtilsMessageTypeFlagsEXT              messageType,
-                                             const VkDebugUtilsMessengerCallbackDataEXT * pCallbackData,
-                                             void *                                       pUserData);
+                               debug_callback(VkDebugUtilsMessageSeverityFlagBitsEXT       messageSeverity,
+                                              VkDebugUtilsMessageTypeFlagsEXT              messageType,
+                                              const VkDebugUtilsMessengerCallbackDataEXT * pCallbackData,
+                                              void *                                       pUserData);
 
-    ErrorCode createDebugMessenger();
+    ErrorCode create_debug_messenger();
 
-    ErrorCode createDebugUtilsMessengerEXT(const VkDebugUtilsMessengerCreateInfoEXT * pCreateInfo,
-                                           const VkAllocationCallbacks *              pAllocator,
-                                           VkDebugUtilsMessengerEXT * pDebugMessenger);
+    ErrorCode create_debug_utils_messenger_ext(
+        const VkDebugUtilsMessengerCreateInfoEXT * pCreateInfo,
+        const VkAllocationCallbacks *              pAllocator,
+        VkDebugUtilsMessengerEXT *                 pDebugMessenger);
 
-    void cleanupDebugUtilsMessengerEXT(VkDebugUtilsMessengerEXT      debugMessenger,
-                                       const VkAllocationCallbacks * pAllocator);
+    void cleanup_debug_utils_messenger_ext(VkDebugUtilsMessengerEXT      debugMessenger,
+                                           const VkAllocationCallbacks * pAllocator);
 
     // SURFACE
-    ErrorCode createSurface();
+    ErrorCode create_surface();
 
-    bool pickPhysicalDevice();
+    bool pick_physical_device();
 
-    bool isDeviceSuitable(VkPhysicalDevice device, PhysicalDeviceInfo & device_info);
+    bool is_device_suitable(VkPhysicalDevice device, PhysicalDeviceInfo & device_info);
 
-    void findQueueFamilies(VkPhysicalDevice device, PhysicalDeviceInfo & device_info);
+    void find_queue_families(VkPhysicalDevice device, PhysicalDeviceInfo & device_info);
 
-    bool checkDeviceExtensionSupport(VkPhysicalDevice device, PhysicalDeviceInfo & device_info);
+    bool check_device_extension_support(VkPhysicalDevice device, PhysicalDeviceInfo & device_info);
 
-    void querySwapChainSupport(VkPhysicalDevice device, PhysicalDeviceInfo & device_info);
+    void query_swapchain_support(VkPhysicalDevice device, PhysicalDeviceInfo & device_info);
 
-    void getMaxUsableSampleCount();
+    void get_max_usable_sample_count();
 
     // LOGICAL DEVICE
-    ErrorCode createLogicalDevice();
+    ErrorCode create_logical_device();
 
-    ErrorCode chooseSwapChainConfig();
+    ErrorCode choose_swapchain_config();
 
-    ErrorCode createSwapChainKHR();
+    ErrorCode create_swapchain_khr();
 
-    VkSurfaceFormatKHR chooseSwapSurfaceFormat(
+    VkSurfaceFormatKHR choose_swap_surface_format(
         std::vector<VkSurfaceFormatKHR> const & availableFormats);
 
-    VkPresentModeKHR chooseSwapPresentMode(
+    VkPresentModeKHR choose_swap_present_mode(
         const std::vector<VkPresentModeKHR> & availablePresentModes);
 
-    VkExtent2D chooseSwapExtent(VkSurfaceCapabilitiesKHR const & capabilities);
+    VkExtent2D choose_swap_extent(VkSurfaceCapabilitiesKHR const & capabilities);
 
-    void getSwapChainImages();
+    void get_swapchain_images();
 
-    ErrorCode createSwapChainImageViews();
+    ErrorCode create_swapchain_image_views();
 
-    std::optional<VkFormat> findDepthFormat();
+    std::optional<VkFormat> find_depth_format();
 
-    std::optional<VkFormat> findSupportedFormat(const std::vector<VkFormat> & candidates,
-                                                VkImageTiling                 tiling,
-                                                VkFormatFeatureFlags          features);
+    std::optional<VkFormat> find_supported_format(const std::vector<VkFormat> & candidates,
+                                                  VkImageTiling                 tiling,
+                                                  VkFormatFeatureFlags          features);
 }; // class Device
 
 /*
@@ -578,13 +579,13 @@ private:
 struct RenderPassResources
 {
 public:
-    std::vector<RenderpassHandle> renderpass_order;
+    std::vector<RenderPassHandle> render_pass_order;
 
-    std::unordered_map<RenderpassHandle, std::vector<std::vector<PipelineHandle>>>
-        per_renderpass_subpass_pipelines;
+    std::unordered_map<RenderPassHandle, std::vector<std::vector<PipelineHandle>>>
+        per_render_pass_subpass_pipelines;
 
-    std::unordered_map<std::string, RenderpassHandle> render_pass_handles;
-    std::vector<RenderpassConfig>                     render_pass_configs;
+    std::unordered_map<std::string, RenderPassHandle> render_pass_handles;
+    std::vector<RenderPassConfig>                     render_pass_configs;
     std::vector<VkRenderPass>                         render_passes;
     std::vector<std::vector<VkFramebuffer>>           framebuffers;
     std::vector<std::vector<VkClearValue>>            clear_values;
@@ -604,7 +605,7 @@ private:
     // FRAMEBUFFER
     ErrorCode createFramebuffer(Device const &               device,
                                 ImageResources const &       image_resources,
-                                RenderpassConfig const &     config,
+                                RenderPassConfig const &     config,
                                 VkRenderPass const &         render_pass,
                                 std::vector<VkFramebuffer> & framebuffers,
                                 VkExtent2D &                 extent);
@@ -652,7 +653,7 @@ public:
     void quit(Device const & device);
 
 private:
-    ErrorCode createUniformLayouts(Device const & device, BufferResources & buffers);
+    ErrorCode create_uniform_layouts(Device const & device, BufferResources & buffers);
 }; // struct UniformResources
 
 struct Pipeline
@@ -695,11 +696,11 @@ public:
     cmd::CommandBucket<int> & get_draw_bucket(PipelineHandle const & pipeline);
 
 private:
-    ErrorCode createShaderModule(Device const &            device,
+    ErrorCode create_shader_module(Device const &            device,
                                  std::vector<char> const & code,
                                  VkShaderModule &          shaderModule);
 
-    ErrorCode createShaders(Device const & device, ReadFileFn read_file);
+    ErrorCode create_shaders(Device const & device, ReadFileFn read_file);
 
     ErrorCode create_pipelines(Device const &        device,
                                RenderPassResources & render_passes,
@@ -742,11 +743,11 @@ public:
     cmd::CommandBucket<int> & get_delete_bucket(uint32_t currentResource);
 
 private:
-    void getQueues(Device const & device);
+    void get_queues(Device const & device);
 
-    ErrorCode createCommandPool(Device const & device);
+    ErrorCode create_command_pool(Device const & device);
 
-    ErrorCode createCommandbuffers(Device const & device);
+    ErrorCode create_command_buffers(Device const & device);
 }; // struct CommandResources
 
 }; // namespace module
@@ -811,7 +812,7 @@ public:
                 using T = std::decay_t<decltype(collection)>;
                 if constexpr (std::is_same_v<T, DynamicBufferCollection>)
                 {
-                    collection.updateUniform(handle, std::forward<Args>(args)...);
+                    collection.update_uniform(handle, std::forward<Args>(args)...);
                 }
             },
             uniform_collection);
@@ -839,19 +840,19 @@ public:
     void delete_textures(size_t sampler_count, TextureHandle const * sampler_handles);
 
 private:
-    std::optional<VkDescriptorSet> getUniform(UniformHandle const & handle);
+    std::optional<VkDescriptorSet> get_uniform(UniformHandle const & handle);
 
-    std::optional<VkDeviceSize> getDynamicOffset(UniformHandle const & handle);
+    std::optional<VkDeviceSize> get_dynamic_offset(UniformHandle const & handle);
 
-    ErrorCode createCommandbuffer(uint32_t image_index);
+    ErrorCode create_command_buffer(uint32_t image_index);
 
-    void copyBuffer(VkBuffer     srcBuffer,
+    void copy_buffer(VkBuffer     srcBuffer,
                     VkDeviceSize srcOffset,
                     VkBuffer     dstBuffer,
                     VkDeviceSize dstOffset,
                     VkDeviceSize size);
 
-    void changeSwapChain();
+    void change_swapchain();
 
     module::Device              device;
     module::FrameResources      frames;
@@ -926,9 +927,9 @@ VkDeviceMemory Memory::memory_handle()
     return vk_memory;
 }
 
-std::optional<uint32_t> Memory::findMemoryType(VkPhysicalDevice      physical_device,
-                                               uint32_t              typeFilter,
-                                               VkMemoryPropertyFlags properties)
+std::optional<uint32_t> Memory::find_memory_type(VkPhysicalDevice      physical_device,
+                                                 uint32_t              typeFilter,
+                                                 VkMemoryPropertyFlags properties)
 {
     VkPhysicalDeviceMemoryProperties memProperties;
     vkGetPhysicalDeviceMemoryProperties(physical_device, &memProperties);
@@ -946,21 +947,21 @@ std::optional<uint32_t> Memory::findMemoryType(VkPhysicalDevice      physical_de
     return std::nullopt;
 }
 
-void Memory::getMemoryRequirements(VkDevice               logical_device,
-                                   VkBuffer               buffer,
-                                   VkMemoryRequirements & requirements)
+void Memory::get_memory_requirements(VkDevice               logical_device,
+                                     VkBuffer               buffer,
+                                     VkMemoryRequirements & requirements)
 {
     vkGetBufferMemoryRequirements(logical_device, buffer, &requirements);
 }
 
-void Memory::getMemoryRequirements(VkDevice               logical_device,
-                                   VkImage                image,
-                                   VkMemoryRequirements & requirements)
+void Memory::get_memory_requirements(VkDevice               logical_device,
+                                     VkImage                image,
+                                     VkMemoryRequirements & requirements)
 {
     vkGetImageMemoryRequirements(logical_device, image, &requirements);
 }
 
-ErrorCode Memory::bindMemory(VkDevice logical_device, VkBuffer buffer)
+ErrorCode Memory::bind_memory(VkDevice logical_device, VkBuffer buffer)
 {
     VK_CHECK_RESULT(vkBindBufferMemory(logical_device, buffer, vk_memory, 0),
                     "Unable to bind VkDeviceMemory to VkBuffer");
@@ -968,7 +969,7 @@ ErrorCode Memory::bindMemory(VkDevice logical_device, VkBuffer buffer)
     return ErrorCode::NONE;
 }
 
-ErrorCode Memory::bindMemory(VkDevice logical_device, VkImage image)
+ErrorCode Memory::bind_memory(VkDevice logical_device, VkImage image)
 {
     VK_CHECK_RESULT(vkBindImageMemory(logical_device, image, vk_memory, 0),
                     "Unable to bind VkDeviceMemory to VkImage");
@@ -1006,7 +1007,7 @@ ErrorCode Image::create(VkPhysicalDevice      physical_device,
     VK_CHECK_RESULT(vkCreateImage(logical_device, &imageInfo, nullptr, &vk_image),
                     "Unable to create VkImage");
 
-    ErrorCode error = allocateAndBind(physical_device, logical_device, properties, vk_image);
+    ErrorCode error = allocate_and_bind(physical_device, logical_device, properties, vk_image);
     if (error != ErrorCode::NONE)
     {
         LOG_ERROR("Couldn't bind device memory to VkImage {}", static_cast<void *>(vk_image));
@@ -1126,7 +1127,7 @@ ErrorCode Buffer::create(VkPhysicalDevice      physical_device,
     VK_CHECK_RESULT(vkCreateBuffer(logical_device, &bufferInfo, nullptr, &vk_buffer),
                     "Unable to create VkBuffer");
 
-    return allocateAndBind(physical_device, logical_device, properties, vk_buffer);
+    return allocate_and_bind(physical_device, logical_device, properties, vk_buffer);
 }
 
 void Buffer::destroy(VkDevice logical_device)
@@ -1216,8 +1217,8 @@ void IndexAllocator::release(int32_t released_index)
  * Returns a UniformHandle to the DynamicBuffer Uniform (which holds the index of it's
  * descriptorset, and the offset into it's Uniform Buffer)
  */
-std::optional<UniformHandle> DynamicBufferCollection::createUniform(VkDeviceSize size,
-                                                                    void *       data_ptr)
+std::optional<UniformHandle> DynamicBufferCollection::create_uniform(VkDeviceSize size,
+                                                                     void *       data_ptr)
 {
     // this is the "block" in the Uniform Buffer
     auto uniform_buffer_slot = free_uniform_buffer_slots.acquire();
@@ -1250,9 +1251,9 @@ std::optional<UniformHandle> DynamicBufferCollection::createUniform(VkDeviceSize
  * Acquires a new uniform buffer slot
  * UniformHandle (and DynamicBufferUniform slot) stays the same
  */
-void DynamicBufferCollection::updateUniform(UniformHandle handle,
-                                            VkDeviceSize  size,
-                                            void *        data_ptr)
+void DynamicBufferCollection::update_uniform(UniformHandle handle,
+                                             VkDeviceSize  size,
+                                             void *        data_ptr)
 {
     auto & uniform = uniforms[handle.uniform_id];
 
@@ -1282,7 +1283,7 @@ void DynamicBufferCollection::updateUniform(UniformHandle handle,
  * Release the DynamicBufferUniform slot
  * Release the Uniform Buffer "block"
  */
-void DynamicBufferCollection::destroyUniform(UniformHandle handle)
+void DynamicBufferCollection::destroy_uniform(UniformHandle handle)
 {
     DynamicBufferUniform & uniform = uniforms[handle.uniform_id];
     free_uniform_slots.release(handle.uniform_id);
@@ -1291,7 +1292,7 @@ void DynamicBufferCollection::destroyUniform(UniformHandle handle)
     free_uniform_buffer_slots.release(uniform_buffer_slot);
 }
 
-std::optional<VkDescriptorSet> DynamicBufferCollection::getUniform(UniformHandle handle)
+std::optional<VkDescriptorSet> DynamicBufferCollection::get_uniform(UniformHandle handle)
 {
     if (uniforms.size() > handle.uniform_id)
     {
@@ -1303,7 +1304,7 @@ std::optional<VkDescriptorSet> DynamicBufferCollection::getUniform(UniformHandle
     }
 }
 
-std::optional<VkDeviceSize> DynamicBufferCollection::getDynamicOffset(UniformHandle handle)
+std::optional<VkDeviceSize> DynamicBufferCollection::get_dynamic_offset(UniformHandle handle)
 {
     return uniforms[handle.uniform_id].offset;
 }
@@ -1316,10 +1317,10 @@ void DynamicBufferCollection::destroy(VkDevice const & logical_device)
     }
 }
 
-std::optional<UniformHandle> SamplerCollection::createUniform(VkDevice const & logical_device,
-                                                              uint32_t         binding,
-                                                              VkImageView      view,
-                                                              VkSampler        sampler)
+std::optional<UniformHandle> SamplerCollection::create_uniform(VkDevice const & logical_device,
+                                                               uint32_t         binding,
+                                                               VkImageView      view,
+                                                               VkSampler        sampler)
 {
     int64_t descriptor_set_index = free_uniform_slots.acquire();
     if (descriptor_set_index < 0)
@@ -1349,17 +1350,17 @@ std::optional<UniformHandle> SamplerCollection::createUniform(VkDevice const & l
     return UniformHandle{.uniform_id = static_cast<uint64_t>(descriptor_set_index)};
 }
 
-std::optional<VkDescriptorSet> SamplerCollection::getUniform(UniformHandle handle)
+std::optional<VkDescriptorSet> SamplerCollection::get_uniform(UniformHandle handle)
 {
     return descriptor_sets[handle.uniform_id];
 }
 
-std::optional<VkDeviceSize> SamplerCollection::getDynamicOffset(UniformHandle handle)
+std::optional<VkDeviceSize> SamplerCollection::get_dynamic_offset(UniformHandle handle)
 {
     return std::nullopt;
 }
 
-void SamplerCollection::destroyUniform(UniformHandle)
+void SamplerCollection::destroy_uniform(UniformHandle)
 {}
 
 void SamplerCollection::destroy(VkDevice const & logical_device)
@@ -1549,7 +1550,7 @@ void deleteUniforms(void const * data)
 
         // delete the uniforms somehow here...
         std::visit(
-            [uniform_handle](auto && collection) { collection.destroyUniform(uniform_handle); },
+            [uniform_handle](auto && collection) { collection.destroy_uniform(uniform_handle); },
             uniform_collection);
     }
     LOG_TRACE("Exiting deleteUniforms");
@@ -1578,44 +1579,44 @@ Device::Device(GLFWwindow * window_ptr): window{window_ptr}
 
 bool Device::init(RenderConfig & render_config)
 {
-// clang-format off
+    // clang-format off
     #ifndef NDEBUG
-    checkValidationLayerSupport();
+    check_validation_layer_support();
     #endif
     // clang-format on
-    getRequiredExtensions();
+    get_required_extensions();
 
-    if (createInstance(render_config.window_name) != ErrorCode::NONE)
+    if (create_instance(render_config.window_name) != ErrorCode::NONE)
     {
         return false;
     }
 
-    if (use_validation && createDebugMessenger() != ErrorCode::NONE)
+    if (use_validation && create_debug_messenger() != ErrorCode::NONE)
     {
         return false;
     }
 
-    if (createSurface() != ErrorCode::NONE)
+    if (create_surface() != ErrorCode::NONE)
     {
         return false;
     }
 
-    if (!pickPhysicalDevice())
+    if (!pick_physical_device())
     {
         return false;
     }
 
-    if (createLogicalDevice() != ErrorCode::NONE)
+    if (create_logical_device() != ErrorCode::NONE)
     {
         return false;
     }
 
-    return createSwapChain();
+    return create_swapchain();
 }
 
 void Device::quit()
 {
-    destroySwapChain();
+    destroy_swapchain();
 
     if (logical_device != VK_NULL_HANDLE)
     {
@@ -1629,7 +1630,7 @@ void Device::quit()
 
     if (use_validation && debug_messager != VK_NULL_HANDLE)
     {
-        cleanupDebugUtilsMessengerEXT(debug_messager, nullptr);
+        cleanup_debug_utils_messenger_ext(debug_messager, nullptr);
     }
 
     if (instance != VK_NULL_HANDLE)
@@ -1703,21 +1704,21 @@ VkColorSpaceKHR const & Device::get_color_space() const
     return swapchain_color_space;
 }
 
-bool Device::createSwapChain()
+bool Device::create_swapchain()
 {
-    if (chooseSwapChainConfig() != ErrorCode::NONE)
+    if (choose_swapchain_config() != ErrorCode::NONE)
     {
         return false;
     }
 
-    if (createSwapChainKHR() != ErrorCode::NONE)
+    if (create_swapchain_khr() != ErrorCode::NONE)
     {
         return false;
     }
 
-    getSwapChainImages();
+    get_swapchain_images();
 
-    if (createSwapChainImageViews() != ErrorCode::NONE)
+    if (create_swapchain_image_views() != ErrorCode::NONE)
     {
         return false;
     }
@@ -1725,7 +1726,7 @@ bool Device::createSwapChain()
     return true;
 }
 
-void Device::destroySwapChain()
+void Device::destroy_swapchain()
 {
     for (VkImageView & image_view: swapchain_image_views)
     {
@@ -1738,12 +1739,12 @@ void Device::destroySwapChain()
     }
 }
 
-void Device::updateSwapChainSupport()
+void Device::update_swapchain_support()
 {
-    querySwapChainSupport(physical_device, physical_device_info);
+    query_swapchain_support(physical_device, physical_device_info);
 }
 
-void Device::checkValidationLayerSupport()
+void Device::check_validation_layer_support()
 {
     uint32_t layerCount{0};
     vkEnumerateInstanceLayerProperties(&layerCount, nullptr);
@@ -1772,7 +1773,7 @@ void Device::checkValidationLayerSupport()
     validation_supported = true;
 }
 
-void Device::getRequiredExtensions()
+void Device::get_required_extensions()
 {
     uint32_t      glfwExtensionCount = 0;
     const char ** glfwExtensions{nullptr};
@@ -1789,9 +1790,9 @@ void Device::getRequiredExtensions()
 }
 
 // INSTANCE
-ErrorCode Device::createInstance(char const * window_name)
+ErrorCode Device::create_instance(char const * window_name)
 {
-// clang-format off
+    // clang-format off
     #ifdef NDEBUG
     use_validation = false;
     #else
@@ -1834,7 +1835,7 @@ ErrorCode Device::createInstance(char const * window_name)
 
 // VALIDATION LAYER DEBUG MESSAGER
 VKAPI_ATTR VkBool32 VKAPI_CALL
-                    Device::debugCallback(VkDebugUtilsMessageSeverityFlagBitsEXT       messageSeverity,
+                    Device::debug_callback(VkDebugUtilsMessageSeverityFlagBitsEXT       messageSeverity,
                       VkDebugUtilsMessageTypeFlagsEXT              messageType,
                       const VkDebugUtilsMessengerCallbackDataEXT * pCallbackData,
                       void *                                       pUserData)
@@ -1859,7 +1860,7 @@ VKAPI_ATTR VkBool32 VKAPI_CALL
     return VK_FALSE;
 }
 
-ErrorCode Device::createDebugMessenger()
+ErrorCode Device::create_debug_messenger()
 {
     auto createInfo = VkDebugUtilsMessengerCreateInfoEXT{
         .sType           = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT,
@@ -1869,14 +1870,14 @@ ErrorCode Device::createDebugMessenger()
         .messageType = VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT
                        | VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT
                        | VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT,
-        .pfnUserCallback = debugCallback,
+        .pfnUserCallback = debug_callback,
         .pUserData       = nullptr // Optional
     };
 
-    return createDebugUtilsMessengerEXT(&createInfo, nullptr, &debug_messager);
+    return create_debug_utils_messenger_ext(&createInfo, nullptr, &debug_messager);
 }
 
-ErrorCode Device::createDebugUtilsMessengerEXT(
+ErrorCode Device::create_debug_utils_messenger_ext(
     const VkDebugUtilsMessengerCreateInfoEXT * pCreateInfo,
     const VkAllocationCallbacks *              pAllocator,
     VkDebugUtilsMessengerEXT *                 pDebugMessenger)
@@ -1898,7 +1899,7 @@ ErrorCode Device::createDebugUtilsMessengerEXT(
     return ErrorCode::NONE;
 }
 
-void Device::cleanupDebugUtilsMessengerEXT(VkDebugUtilsMessengerEXT      debugMessenger,
+void Device::cleanup_debug_utils_messenger_ext(VkDebugUtilsMessengerEXT      debugMessenger,
                                            const VkAllocationCallbacks * pAllocator)
 {
     auto func = (PFN_vkDestroyDebugUtilsMessengerEXT)vkGetInstanceProcAddr(
@@ -1910,7 +1911,7 @@ void Device::cleanupDebugUtilsMessengerEXT(VkDebugUtilsMessengerEXT      debugMe
 }
 
 // SURFACE
-ErrorCode Device::createSurface()
+ErrorCode Device::create_surface()
 {
     VK_CHECK_RESULT(glfwCreateWindowSurface(instance, window, nullptr, &surface),
                     "Unable to create VkSurfaceKHR");
@@ -1918,7 +1919,7 @@ ErrorCode Device::createSurface()
     return ErrorCode::NONE;
 }
 
-bool Device::pickPhysicalDevice()
+bool Device::pick_physical_device()
 {
     uint32_t deviceCount = 0;
     vkEnumeratePhysicalDevices(instance, &deviceCount, nullptr);
@@ -1936,11 +1937,11 @@ bool Device::pickPhysicalDevice()
     {
         PhysicalDeviceInfo device_info;
 
-        if (isDeviceSuitable(device, device_info))
+        if (is_device_suitable(device, device_info))
         {
             physical_device      = device;
             physical_device_info = device_info;
-            getMaxUsableSampleCount();
+            get_max_usable_sample_count();
             break;
         }
     }
@@ -1952,23 +1953,23 @@ bool Device::pickPhysicalDevice()
     return true;
 }
 
-bool Device::isDeviceSuitable(VkPhysicalDevice device, PhysicalDeviceInfo & device_info)
+bool Device::is_device_suitable(VkPhysicalDevice device, PhysicalDeviceInfo & device_info)
 {
-    findQueueFamilies(device, device_info);
+    find_queue_families(device, device_info);
 
     if (!device_info.queues_complete())
     {
         return false;
     }
 
-    checkDeviceExtensionSupport(device, device_info);
+    check_device_extension_support(device, device_info);
 
     if (!device_info.has_required_extensions)
     {
         return false;
     }
 
-    querySwapChainSupport(device, device_info);
+    query_swapchain_support(device, device_info);
 
     if (!device_info.swapchain_adequate())
     {
@@ -1980,7 +1981,7 @@ bool Device::isDeviceSuitable(VkPhysicalDevice device, PhysicalDeviceInfo & devi
     return device_info.features.samplerAnisotropy == VK_TRUE;
 }
 
-void Device::findQueueFamilies(VkPhysicalDevice device, PhysicalDeviceInfo & device_info)
+void Device::find_queue_families(VkPhysicalDevice device, PhysicalDeviceInfo & device_info)
 {
     uint32_t queueFamilyCount = 0;
     vkGetPhysicalDeviceQueueFamilyProperties(device, &queueFamilyCount, nullptr);
@@ -2027,7 +2028,7 @@ void Device::findQueueFamilies(VkPhysicalDevice device, PhysicalDeviceInfo & dev
     }
 }
 
-bool Device::checkDeviceExtensionSupport(VkPhysicalDevice device, PhysicalDeviceInfo & device_info)
+bool Device::check_device_extension_support(VkPhysicalDevice device, PhysicalDeviceInfo & device_info)
 {
     uint32_t extensionCount;
     vkEnumerateDeviceExtensionProperties(device, nullptr, &extensionCount, nullptr);
@@ -2047,7 +2048,7 @@ bool Device::checkDeviceExtensionSupport(VkPhysicalDevice device, PhysicalDevice
     return device_info.has_required_extensions = requiredExtensions.empty();
 }
 
-void Device::querySwapChainSupport(VkPhysicalDevice device, PhysicalDeviceInfo & device_info)
+void Device::query_swapchain_support(VkPhysicalDevice device, PhysicalDeviceInfo & device_info)
 {
     vkGetPhysicalDeviceSurfaceCapabilitiesKHR(device, surface, &device_info.capabilities);
 
@@ -2072,7 +2073,7 @@ void Device::querySwapChainSupport(VkPhysicalDevice device, PhysicalDeviceInfo &
     }
 }
 
-void Device::getMaxUsableSampleCount()
+void Device::get_max_usable_sample_count()
 {
     vkGetPhysicalDeviceProperties(physical_device, &physical_device_info.properties);
 
@@ -2114,7 +2115,7 @@ void Device::getMaxUsableSampleCount()
 }
 
 // LOGICAL DEVICE
-ErrorCode Device::createLogicalDevice()
+ErrorCode Device::create_logical_device()
 {
     // create queue info for graphics and present queues
     std::vector<VkDeviceQueueCreateInfo> queueCreateInfos;
@@ -2166,15 +2167,15 @@ ErrorCode Device::createLogicalDevice()
     return ErrorCode::NONE;
 }
 
-ErrorCode Device::chooseSwapChainConfig()
+ErrorCode Device::choose_swapchain_config()
 {
-    present_mode = chooseSwapPresentMode(physical_device_info.presentModes);
+    present_mode = choose_swap_present_mode(physical_device_info.presentModes);
 
-    VkSurfaceFormatKHR surface_format = chooseSwapSurfaceFormat(physical_device_info.formats);
+    VkSurfaceFormatKHR surface_format = choose_swap_surface_format(physical_device_info.formats);
     swapchain_image_format            = surface_format.format;
     swapchain_color_space             = surface_format.colorSpace;
-    swapchain_extent                  = chooseSwapExtent(physical_device_info.capabilities);
-    auto opt_depth_format             = findDepthFormat();
+    swapchain_extent                  = choose_swap_extent(physical_device_info.capabilities);
+    auto opt_depth_format             = find_depth_format();
     if (!opt_depth_format)
     {
         LOG_ERROR("Couldn't find a depth format");
@@ -2194,7 +2195,7 @@ ErrorCode Device::chooseSwapChainConfig()
 }
 
 // SWAPCHAIN
-ErrorCode Device::createSwapChainKHR()
+ErrorCode Device::create_swapchain_khr()
 {
     auto createInfo = VkSwapchainCreateInfoKHR{
         .sType            = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR,
@@ -2235,7 +2236,7 @@ ErrorCode Device::createSwapChainKHR()
     return ErrorCode::NONE;
 }
 
-VkSurfaceFormatKHR Device::chooseSwapSurfaceFormat(
+VkSurfaceFormatKHR Device::choose_swap_surface_format(
     std::vector<VkSurfaceFormatKHR> const & availableFormats)
 {
     // surface has no preferred format so we can choose whatever we want
@@ -2260,7 +2261,7 @@ VkSurfaceFormatKHR Device::chooseSwapSurfaceFormat(
     }
 }
 
-VkPresentModeKHR Device::chooseSwapPresentMode(
+VkPresentModeKHR Device::choose_swap_present_mode(
     const std::vector<VkPresentModeKHR> & availablePresentModes)
 {
     if (std::any_of(availablePresentModes.cbegin(),
@@ -2275,7 +2276,7 @@ VkPresentModeKHR Device::chooseSwapPresentMode(
     return VK_PRESENT_MODE_FIFO_KHR;
 }
 
-VkExtent2D Device::chooseSwapExtent(VkSurfaceCapabilitiesKHR const & capabilities)
+VkExtent2D Device::choose_swap_extent(VkSurfaceCapabilitiesKHR const & capabilities)
 {
     if (capabilities.currentExtent.width != std::numeric_limits<uint32_t>::max())
     {
@@ -2303,7 +2304,7 @@ VkExtent2D Device::chooseSwapExtent(VkSurfaceCapabilitiesKHR const & capabilitie
     }
 }
 
-void Device::getSwapChainImages()
+void Device::get_swapchain_images()
 {
     vkGetSwapchainImagesKHR(logical_device, swapchain, &swapchain_image_count, nullptr);
     assert(swapchain_image_count == imageCount);
@@ -2313,7 +2314,7 @@ void Device::getSwapChainImages()
         logical_device, swapchain, &swapchain_image_count, swapchain_images.data());
 }
 
-ErrorCode Device::createSwapChainImageViews()
+ErrorCode Device::create_swapchain_image_views()
 {
     swapchain_image_views.resize(swapchain_images.size());
 
@@ -2338,15 +2339,15 @@ ErrorCode Device::createSwapChainImageViews()
     return ErrorCode::NONE;
 }
 
-std::optional<VkFormat> Device::findDepthFormat()
+std::optional<VkFormat> Device::find_depth_format()
 {
-    return findSupportedFormat(
+    return find_supported_format(
         {VK_FORMAT_D32_SFLOAT, VK_FORMAT_D32_SFLOAT_S8_UINT, VK_FORMAT_D24_UNORM_S8_UINT},
         VK_IMAGE_TILING_OPTIMAL,
         VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT);
 }
 
-std::optional<VkFormat> Device::findSupportedFormat(const std::vector<VkFormat> & candidates,
+std::optional<VkFormat> Device::find_supported_format(const std::vector<VkFormat> & candidates,
                                                     VkImageTiling                 tiling,
                                                     VkFormatFeatureFlags          features)
 {
@@ -2638,23 +2639,23 @@ bool RenderPassResources::init(RenderConfig &         render_config,
                                Device const &         device,
                                ImageResources const & image_resources)
 {
-    for (auto & iter: render_config.renderpass_configs)
+    for (auto & iter: render_config.render_pass_configs)
     {
-        RenderpassHandle handle         = render_pass_configs.size();
+        RenderPassHandle handle         = render_pass_configs.size();
         render_pass_handles[iter.first] = render_pass_configs.size();
         render_pass_configs.push_back(iter.second);
 
-        LOG_DEBUG("Added Renderpass Handle {} for Renderpass {}", handle, iter.first);
+        LOG_DEBUG("Added Render Pass Handle {} for Render Pass {}", handle, iter.first);
     }
 
-    for (auto & iter: render_config.renderpass_order)
+    for (auto & iter: render_config.render_pass_order)
     {
-        LOG_DEBUG("Added Renderpass {} to draw ordering", iter);
+        LOG_DEBUG("Added Render Pass {} to draw ordering", iter);
         auto rp_handle = render_pass_handles[iter];
         auto sp_count  = render_pass_configs[rp_handle].subpasses.size();
 
-        renderpass_order.push_back(rp_handle);
-        per_renderpass_subpass_pipelines[rp_handle].resize(sp_count);
+        render_pass_order.push_back(rp_handle);
+        per_render_pass_subpass_pipelines[rp_handle].resize(sp_count);
     }
 
     render_passes.resize(render_pass_configs.size());
@@ -2818,7 +2819,7 @@ ErrorCode RenderPassResources::createRenderPasses(Device const &         device,
 // FRAMEBUFFER
 ErrorCode RenderPassResources::createFramebuffer(Device const &               device,
                                                  ImageResources const &       image_resources,
-                                                 RenderpassConfig const &     config,
+                                                 RenderPassConfig const &     config,
                                                  VkRenderPass const &         render_pass,
                                                  std::vector<VkFramebuffer> & framebuffers,
                                                  VkExtent2D &                 extent)
@@ -2919,7 +2920,7 @@ bool UniformResources::init(RenderConfig &    render_config,
     pools.resize(uniform_layout_infos.size());
     uniform_collections.resize(uniform_layout_infos.size());
 
-    return createUniformLayouts(device, buffers) == ErrorCode::NONE;
+    return create_uniform_layouts(device, buffers) == ErrorCode::NONE;
 }
 
 void UniformResources::quit(Device const & device)
@@ -2941,7 +2942,7 @@ void UniformResources::quit(Device const & device)
     }
 }
 
-ErrorCode UniformResources::createUniformLayouts(Device const & device, BufferResources & buffers)
+ErrorCode UniformResources::create_uniform_layouts(Device const & device, BufferResources & buffers)
 {
     for (size_t ul_i = 0; ul_i < uniform_layout_infos.size(); ++ul_i)
     {
@@ -3145,7 +3146,7 @@ bool PipelineResources::init(RenderConfig &        render_config,
                   iter.second);
     }
 
-    if (createShaders(device, render_config.read_file) != ErrorCode::NONE)
+    if (create_shaders(device, render_config.read_file) != ErrorCode::NONE)
     {
         return false;
     }
@@ -3219,7 +3220,7 @@ void PipelineResources::destroy_pipelines(Device const & device)
     }
 }
 
-ErrorCode PipelineResources::createShaderModule(Device const &            device,
+ErrorCode PipelineResources::create_shader_module(Device const &            device,
                                                 std::vector<char> const & code,
                                                 VkShaderModule &          shaderModule)
 {
@@ -3235,7 +3236,7 @@ ErrorCode PipelineResources::createShaderModule(Device const &            device
     return ErrorCode::NONE;
 }
 
-ErrorCode PipelineResources::createShaders(Device const & device, ReadFileFn read_file)
+ErrorCode PipelineResources::create_shaders(Device const & device, ReadFileFn read_file)
 {
     for (size_t i = 0; i < shaders.size(); ++i)
     {
@@ -3245,9 +3246,9 @@ ErrorCode PipelineResources::createShaders(Device const & device, ReadFileFn rea
 
         read_file(shader_files[i].c_str(), shader_code);
 
-        //auto shaderCode = readFile(shader_files[i]);
+        // auto shaderCode = readFile(shader_files[i]);
 
-        auto error = createShaderModule(device, shader_code, shader);
+        auto error = create_shader_module(device, shader_code, shader);
 
         if (error != ErrorCode::NONE)
         {
@@ -3290,7 +3291,7 @@ ErrorCode PipelineResources::create_pipeline(Device const &         device,
                                              Pipeline &             pipeline,
                                              PipelineConfig const & pipeline_config)
 {
-    auto         render_pass_handle = render_passes.render_pass_handles[pipeline_config.renderpass];
+    auto         render_pass_handle = render_passes.render_pass_handles[pipeline_config.render_pass];
     auto &       render_pass_config = render_passes.render_pass_configs[render_pass_handle];
     auto         subpass_handle     = render_pass_config.subpass_handles[pipeline_config.subpass];
     auto const & subpass_info       = render_pass_config.subpasses[subpass_handle];
@@ -3451,12 +3452,12 @@ ErrorCode PipelineResources::create_pipeline(Device const &         device,
 
     // push this pipeline handle into the map of commandbuckets
 
-    LOG_DEBUG("Adding Pipeline {} to Renderpass {} at Subpass {}",
+    LOG_DEBUG("Adding Pipeline {} to Render Pass {} at Sub Pass {}",
               pipeline_handle,
               render_pass_handle,
               subpass_handle);
 
-    render_passes.per_renderpass_subpass_pipelines[render_pass_handle][subpass_handle].push_back(
+    render_passes.per_render_pass_subpass_pipelines[render_pass_handle][subpass_handle].push_back(
         pipeline_handle);
 
     auto pipelineInfo = VkGraphicsPipelineCreateInfo{
@@ -3521,14 +3522,14 @@ bool CommandResources::init(RenderConfig & render_config, Device const & device)
         delete_buckets.back().emplace_back(max_calls_per_bucket);
     }
 
-    getQueues(device);
+    get_queues(device);
 
-    if (createCommandPool(device) != ErrorCode::NONE)
+    if (create_command_pool(device) != ErrorCode::NONE)
     {
         return false;
     }
 
-    return createCommandbuffers(device) == ErrorCode::NONE;
+    return create_command_buffers(device) == ErrorCode::NONE;
 }
 
 void CommandResources::quit(Device const & device)
@@ -3589,7 +3590,7 @@ cmd::CommandBucket<int> & CommandResources::get_delete_bucket(uint32_t currentRe
     return resource_delete_buckets.back();
 }
 
-void CommandResources::getQueues(Device const & device)
+void CommandResources::get_queues(Device const & device)
 {
     vkGetDeviceQueue(
         device.get_logical_device(), device.get_device_info().present_queue, 0, &present_queue);
@@ -3599,7 +3600,7 @@ void CommandResources::getQueues(Device const & device)
         device.get_logical_device(), device.get_device_info().transfer_queue, 0, &transfer_queue);
 }
 
-ErrorCode CommandResources::createCommandPool(Device const & device)
+ErrorCode CommandResources::create_command_pool(Device const & device)
 {
     auto poolInfo = VkCommandPoolCreateInfo{
         .sType            = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
@@ -3613,7 +3614,7 @@ ErrorCode CommandResources::createCommandPool(Device const & device)
     return ErrorCode::NONE;
 }
 
-ErrorCode CommandResources::createCommandbuffers(Device const & device)
+ErrorCode CommandResources::create_command_buffers(Device const & device)
 {
     int32_t const MAX_BUFFERED_RESOURCES = 3;
 
@@ -3829,7 +3830,7 @@ bool Renderer::submit_frame()
     if (result == VK_ERROR_OUT_OF_DATE_KHR)
     {
         LOG_DEBUG("Swapchain is out of date, found in vkAcquireNextImageKHR");
-        changeSwapChain();
+        change_swapchain();
 
         vkAcquireNextImageKHR(device.get_logical_device(),
                               device.get_swapchain(),
@@ -3888,7 +3889,7 @@ bool Renderer::submit_frame()
 
     VkSemaphore signalSemaphores[] = {frames.render_finished_semaphores[frames.currentFrame]};
 
-    createCommandbuffer(frames.currentImage);
+    create_command_buffer(frames.currentImage);
 
     auto submitInfo = VkSubmitInfo{
         .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
@@ -3987,7 +3988,7 @@ ErrorCode Renderer::draw(DrawParameters const & args)
     for (size_t i = 0; i < args.uniform_count; ++i)
     {
         auto uniform_handle = args.uniforms[i];
-        auto opt_uniform    = getUniform(uniform_handle);
+        auto opt_uniform    = get_uniform(uniform_handle);
 
         if (opt_uniform.has_value())
         {
@@ -4001,7 +4002,7 @@ ErrorCode Renderer::draw(DrawParameters const & args)
             return ErrorCode::API_ERROR;
         }
 
-        auto opt_offset = getDynamicOffset(uniform_handle);
+        auto opt_offset = get_dynamic_offset(uniform_handle);
 
         if (opt_offset.has_value())
         {
@@ -4150,7 +4151,7 @@ std::optional<UniformHandle> Renderer::new_uniform(UniformLayoutHandle const & l
 
     auto & dynamic_buffer_collection = std::get<DynamicBufferCollection>(uniform_collection);
 
-    auto opt_uniform_handle = dynamic_buffer_collection.createUniform(size, data_ptr);
+    auto opt_uniform_handle = dynamic_buffer_collection.create_uniform(size, data_ptr);
 
     if (opt_uniform_handle)
     {
@@ -4185,10 +4186,10 @@ std::optional<UniformHandle> Renderer::new_uniform(UniformLayoutHandle const & l
 
     auto & sampler_collection = std::get<SamplerCollection>(uniform_collection);
 
-    auto opt_uniform_handle = sampler_collection.createUniform(device.get_logical_device(),
-                                                               uniform_layout_info.binding,
-                                                               sampler.view_handle(),
-                                                               sampler.sampler_handle());
+    auto opt_uniform_handle = sampler_collection.create_uniform(device.get_logical_device(),
+                                                                uniform_layout_info.binding,
+                                                                sampler.view_handle(),
+                                                                sampler.sampler_handle());
 
     if (opt_uniform_handle)
     {
@@ -4198,24 +4199,24 @@ std::optional<UniformHandle> Renderer::new_uniform(UniformLayoutHandle const & l
     return opt_uniform_handle;
 }
 
-std::optional<VkDescriptorSet> Renderer::getUniform(UniformHandle const & handle)
+std::optional<VkDescriptorSet> Renderer::get_uniform(UniformHandle const & handle)
 {
     auto & uniform_collection = uniforms.uniform_collections[handle.uniform_layout_id];
 
     return std::visit(
         [handle](auto && collection) -> std::optional<VkDescriptorSet> {
-            return collection.getUniform(handle);
+            return collection.get_uniform(handle);
         },
         uniform_collection);
 }
 
-std::optional<VkDeviceSize> Renderer::getDynamicOffset(UniformHandle const & handle)
+std::optional<VkDeviceSize> Renderer::get_dynamic_offset(UniformHandle const & handle)
 {
     auto & uniform_collection = uniforms.uniform_collections[handle.uniform_layout_id];
 
     return std::visit(
         [handle](auto && collection) -> std::optional<VkDeviceSize> {
-            return collection.getDynamicOffset(handle);
+            return collection.get_dynamic_offset(handle);
         },
         uniform_collection);
 }
@@ -4533,7 +4534,7 @@ void Renderer::delete_textures(size_t texture_count, TextureHandle const * textu
     }
 }
 
-ErrorCode Renderer::createCommandbuffer(uint32_t image_index)
+ErrorCode Renderer::create_command_buffer(uint32_t image_index)
 {
     auto commandbuffer = commands.draw_commandbuffers[frames.currentResource];
 
@@ -4545,9 +4546,9 @@ ErrorCode Renderer::createCommandbuffer(uint32_t image_index)
         vkBeginCommandBuffer(commands.draw_commandbuffers[frames.currentResource], &beginInfo),
         "Unable to begin VkCommandBuffer recording");
 
-    for (RenderpassHandle const & rp_handle: render_passes.renderpass_order)
+    for (RenderPassHandle const & rp_handle: render_passes.render_pass_order)
     {
-        LOG_TRACE("Drawing Renderpass {}", rp_handle);
+        LOG_TRACE("Drawing Render Pass {}", rp_handle);
 
         auto & clearValues = render_passes.clear_values[rp_handle];
 
@@ -4562,7 +4563,7 @@ ErrorCode Renderer::createCommandbuffer(uint32_t image_index)
 
         vkCmdBeginRenderPass(commandbuffer, &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
 
-        auto & subpasses = render_passes.per_renderpass_subpass_pipelines[rp_handle];
+        auto & subpasses = render_passes.per_render_pass_subpass_pipelines[rp_handle];
 
         for (SubpassHandle sp_handle = 0; sp_handle < subpasses.size(); ++sp_handle)
         {
@@ -4594,7 +4595,7 @@ ErrorCode Renderer::createCommandbuffer(uint32_t image_index)
     return ErrorCode::NONE;
 }
 
-void Renderer::copyBuffer(VkBuffer     srcBuffer,
+void Renderer::copy_buffer(VkBuffer     srcBuffer,
                           VkDeviceSize srcOffset,
                           VkBuffer     dstBuffer,
                           VkDeviceSize dstOffset,
@@ -4616,7 +4617,7 @@ void Renderer::copyBuffer(VkBuffer     srcBuffer,
  * Immediate/Mailbox (not VSync).
  *
  */
-void Renderer::changeSwapChain()
+void Renderer::change_swapchain()
 {
     int width = 0, height = 0;
     while (width == 0 || height == 0)
@@ -4634,9 +4635,9 @@ void Renderer::changeSwapChain()
     VkFormat         last_depth_format           = device.get_depth_format();
     uint32_t         last_imageCount             = device.get_image_count();
 
-    device.destroySwapChain();
-    device.updateSwapChainSupport();
-    device.createSwapChain();
+    device.destroy_swapchain();
+    device.update_swapchain_support();
+    device.create_swapchain();
 
     assert(last_present_mode == device.get_present_mode());
     assert(last_swapchain_image_format == device.get_color_format());

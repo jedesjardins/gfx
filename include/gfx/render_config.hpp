@@ -41,7 +41,7 @@ struct SubpassInfo
     friend bool operator!=(SubpassInfo const & lhs, SubpassInfo const & rhs);
 };
 
-struct RenderpassConfig
+struct RenderPassConfig
 {
     std::unordered_map<std::string, size_t>                  attachments;
     std::unordered_map<std::string, VkAttachmentDescription> descriptions;
@@ -50,8 +50,8 @@ struct RenderpassConfig
     std::vector<SubpassInfo>                                 subpasses;
     std::vector<VkSubpassDependency>                         subpass_dependencies;
 
-    friend bool operator==(RenderpassConfig const & lhs, RenderpassConfig const & rhs);
-    friend bool operator!=(RenderpassConfig const & lhs, RenderpassConfig const & rhs);
+    friend bool operator==(RenderPassConfig const & lhs, RenderPassConfig const & rhs);
+    friend bool operator!=(RenderPassConfig const & lhs, RenderPassConfig const & rhs);
 };
 
 struct PipelineConfig
@@ -65,7 +65,7 @@ struct PipelineConfig
     std::vector<std::string> uniform_layout_names;
     std::vector<std::string> push_constant_names;
 
-    std::string renderpass;
+    std::string render_pass;
     std::string subpass;
 
     bool blendable;
@@ -90,9 +90,9 @@ struct RenderConfig
 
     char const * window_name;
 
-    std::unordered_map<std::string, RenderpassConfig> renderpass_configs;
+    std::unordered_map<std::string, RenderPassConfig> render_pass_configs;
 
-    std::vector<std::string> renderpass_order;
+    std::vector<std::string> render_pass_order;
 
     std::unordered_map<std::string, AttachmentConfig> attachment_configs;
 
@@ -241,7 +241,7 @@ bool operator!=(VkSubpassDependency const & lhs, VkSubpassDependency const & rhs
     return !(lhs == rhs);
 }
 
-bool operator==(RenderpassConfig const & lhs, RenderpassConfig const & rhs)
+bool operator==(RenderPassConfig const & lhs, RenderPassConfig const & rhs)
 {
     if (lhs.subpasses.size() != rhs.subpasses.size())
     {
@@ -272,7 +272,7 @@ bool operator==(RenderpassConfig const & lhs, RenderpassConfig const & rhs)
     return true;
 }
 
-bool operator!=(RenderpassConfig const & lhs, RenderpassConfig const & rhs)
+bool operator!=(RenderPassConfig const & lhs, RenderPassConfig const & rhs)
 {
     return !(lhs == rhs);
 }
@@ -1099,7 +1099,7 @@ void init(rapidjson::Value &                        document,
     }
 }
 
-void init(rapidjson::Value & document, RenderpassConfig & renderpass_config)
+void init(rapidjson::Value & document, RenderPassConfig & render_pass_config)
 {
     assert(document.IsObject());
 
@@ -1113,12 +1113,12 @@ void init(rapidjson::Value & document, RenderpassConfig & renderpass_config)
         assert(ad["attachment_name"].IsString());
         std::string name = ad["attachment_name"].GetString();
 
-        renderpass_config.attachments[name]  = attachment_index++;
-        renderpass_config.descriptions[name] = initAttachmentDescription(ad);
+        render_pass_config.attachments[name]  = attachment_index++;
+        render_pass_config.descriptions[name] = initAttachmentDescription(ad);
 
         if (ad.HasMember("clear_value"))
         {
-            renderpass_config.clear_values[ad["attachment_name"].GetString()] = initClearValue(
+            render_pass_config.clear_values[ad["attachment_name"].GetString()] = initClearValue(
                 ad["clear_value"]);
         }
     }
@@ -1132,13 +1132,13 @@ void init(rapidjson::Value & document, RenderpassConfig & renderpass_config)
         assert(sp.HasMember("name"));
         assert(sp["name"].IsString());
 
-        SubpassHandle handle = renderpass_config.subpasses.size();
+        SubpassHandle handle = render_pass_config.subpasses.size();
 
         SubpassInfo info{};
-        init(sp, info, renderpass_config.attachments);
+        init(sp, info, render_pass_config.attachments);
 
-        renderpass_config.subpass_handles[sp["name"].GetString()] = handle;
-        renderpass_config.subpasses.push_back(info);
+        render_pass_config.subpass_handles[sp["name"].GetString()] = handle;
+        render_pass_config.subpasses.push_back(info);
     }
 
     assert(document.HasMember("subpass_dependencies"));
@@ -1146,8 +1146,8 @@ void init(rapidjson::Value & document, RenderpassConfig & renderpass_config)
 
     for (auto & spd: document["subpass_dependencies"].GetArray())
     {
-        renderpass_config.subpass_dependencies.push_back(
-            initDependency(spd, renderpass_config.subpass_handles));
+        render_pass_config.subpass_dependencies.push_back(
+            initDependency(spd, render_pass_config.subpass_handles));
     }
 }
 
@@ -1197,9 +1197,9 @@ void init(rapidjson::Value &                                   document,
         pipeline_config.push_constant_names.push_back(pci.GetString());
     }
 
-    assert(document.HasMember("renderpass"));
-    assert(document["renderpass"].IsString());
-    pipeline_config.renderpass = document["renderpass"].GetString();
+    assert(document.HasMember("render_pass"));
+    assert(document["render_pass"].IsString());
+    pipeline_config.render_pass = document["render_pass"].GetString();
 
     assert(document.HasMember("subpass"));
     assert(document["subpass"].IsString());
@@ -1301,24 +1301,24 @@ ErrorCode RenderConfig::init(char const * file_name, ReadFileFn read_file_fn)
         gfx::init(a, attachment_configs[a["name"].GetString()]);
     }
 
-    assert(document.HasMember("renderpasses"));
-    assert(document["renderpasses"].IsArray());
+    assert(document.HasMember("render_passes"));
+    assert(document["render_passes"].IsArray());
 
-    for (auto & rp: document["renderpasses"].GetArray())
+    for (auto & rp: document["render_passes"].GetArray())
     {
         assert(rp.IsObject());
         assert(rp.HasMember("name"));
         assert(rp["name"].IsString());
 
-        gfx::init(rp, renderpass_configs[rp["name"].GetString()]);
+        gfx::init(rp, render_pass_configs[rp["name"].GetString()]);
     }
 
-    assert(document.HasMember("renderpass_order"));
-    assert(document["renderpass_order"].IsArray());
-    for (auto & renderpass_name: document["renderpass_order"].GetArray())
+    assert(document.HasMember("render_pass_order"));
+    assert(document["render_pass_order"].IsArray());
+    for (auto & render_pass_name: document["render_pass_order"].GetArray())
     {
-        assert(renderpass_name.IsString());
-        renderpass_order.push_back(renderpass_name.GetString());
+        assert(render_pass_name.IsString());
+        render_pass_order.push_back(render_pass_name.GetString());
     }
 
     assert(document.HasMember("shaders"));

@@ -69,7 +69,7 @@ enum class Format
 //
 
 using CommandbufferHandle   = size_t;
-using RenderpassHandle      = size_t;
+using RenderPassHandle      = size_t;
 using SubpassHandle         = size_t;
 using AttachmentHandle      = size_t;
 using FramebufferHandle     = size_t;
