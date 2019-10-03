@@ -46,7 +46,6 @@
 
 namespace gfx
 {
-
 char const * error_string(VkResult error_code);
 
 enum class ErrorCode

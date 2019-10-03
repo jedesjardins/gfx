@@ -1252,10 +1252,10 @@ void init(rapidjson::Value & document, UniformConfig & uniform_config)
 
 ErrorCode RenderConfig::init(char const * file_name, ReadFileFn read_file_fn)
 {
-	assert(read_file_fn != nullptr);
+    assert(read_file_fn != nullptr);
 
-	config_filename = file_name;
-	read_file = read_file_fn;
+    config_filename = file_name;
+    read_file       = read_file_fn;
 
     namespace rj = rapidjson;
 

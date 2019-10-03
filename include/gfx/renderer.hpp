@@ -697,8 +697,8 @@ public:
 
 private:
     ErrorCode create_shader_module(Device const &            device,
-                                 std::vector<char> const & code,
-                                 VkShaderModule &          shaderModule);
+                                   std::vector<char> const & code,
+                                   VkShaderModule &          shaderModule);
 
     ErrorCode create_shaders(Device const & device, ReadFileFn read_file);
 
@@ -847,10 +847,10 @@ private:
     ErrorCode create_command_buffer(uint32_t image_index);
 
     void copy_buffer(VkBuffer     srcBuffer,
-                    VkDeviceSize srcOffset,
-                    VkBuffer     dstBuffer,
-                    VkDeviceSize dstOffset,
-                    VkDeviceSize size);
+                     VkDeviceSize srcOffset,
+                     VkBuffer     dstBuffer,
+                     VkDeviceSize dstOffset,
+                     VkDeviceSize size);
 
     void change_swapchain();
 
@@ -1836,9 +1836,9 @@ ErrorCode Device::create_instance(char const * window_name)
 // VALIDATION LAYER DEBUG MESSAGER
 VKAPI_ATTR VkBool32 VKAPI_CALL
                     Device::debug_callback(VkDebugUtilsMessageSeverityFlagBitsEXT       messageSeverity,
-                      VkDebugUtilsMessageTypeFlagsEXT              messageType,
-                      const VkDebugUtilsMessengerCallbackDataEXT * pCallbackData,
-                      void *                                       pUserData)
+                       VkDebugUtilsMessageTypeFlagsEXT              messageType,
+                       const VkDebugUtilsMessengerCallbackDataEXT * pCallbackData,
+                       void *                                       pUserData)
 {
     if (messageSeverity == VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT)
     {
@@ -1900,7 +1900,7 @@ ErrorCode Device::create_debug_utils_messenger_ext(
 }
 
 void Device::cleanup_debug_utils_messenger_ext(VkDebugUtilsMessengerEXT      debugMessenger,
-                                           const VkAllocationCallbacks * pAllocator)
+                                               const VkAllocationCallbacks * pAllocator)
 {
     auto func = (PFN_vkDestroyDebugUtilsMessengerEXT)vkGetInstanceProcAddr(
         instance, "vkDestroyDebugUtilsMessengerEXT");
@@ -2028,7 +2028,8 @@ void Device::find_queue_families(VkPhysicalDevice device, PhysicalDeviceInfo & d
     }
 }
 
-bool Device::check_device_extension_support(VkPhysicalDevice device, PhysicalDeviceInfo & device_info)
+bool Device::check_device_extension_support(VkPhysicalDevice     device,
+                                            PhysicalDeviceInfo & device_info)
 {
     uint32_t extensionCount;
     vkEnumerateDeviceExtensionProperties(device, nullptr, &extensionCount, nullptr);
@@ -2348,8 +2349,8 @@ std::optional<VkFormat> Device::find_depth_format()
 }
 
 std::optional<VkFormat> Device::find_supported_format(const std::vector<VkFormat> & candidates,
-                                                    VkImageTiling                 tiling,
-                                                    VkFormatFeatureFlags          features)
+                                                      VkImageTiling                 tiling,
+                                                      VkFormatFeatureFlags          features)
 {
     for (VkFormat format: candidates)
     {
@@ -3221,8 +3222,8 @@ void PipelineResources::destroy_pipelines(Device const & device)
 }
 
 ErrorCode PipelineResources::create_shader_module(Device const &            device,
-                                                std::vector<char> const & code,
-                                                VkShaderModule &          shaderModule)
+                                                  std::vector<char> const & code,
+                                                  VkShaderModule &          shaderModule)
 {
     auto createInfo = VkShaderModuleCreateInfo{
         .sType    = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
@@ -3291,11 +3292,11 @@ ErrorCode PipelineResources::create_pipeline(Device const &         device,
                                              Pipeline &             pipeline,
                                              PipelineConfig const & pipeline_config)
 {
-    auto         render_pass_handle = render_passes.render_pass_handles[pipeline_config.render_pass];
-    auto &       render_pass_config = render_passes.render_pass_configs[render_pass_handle];
-    auto         subpass_handle     = render_pass_config.subpass_handles[pipeline_config.subpass];
-    auto const & subpass_info       = render_pass_config.subpasses[subpass_handle];
-    auto const & extent             = render_passes.extents[render_pass_handle];
+    auto   render_pass_handle = render_passes.render_pass_handles[pipeline_config.render_pass];
+    auto & render_pass_config = render_passes.render_pass_configs[render_pass_handle];
+    auto   subpass_handle     = render_pass_config.subpass_handles[pipeline_config.subpass];
+    auto const & subpass_info = render_pass_config.subpasses[subpass_handle];
+    auto const & extent       = render_passes.extents[render_pass_handle];
 
     LOG_DEBUG("Pipeline {} uses fragment shader {}, handle {}",
               pipeline_handle,
@@ -4596,10 +4597,10 @@ ErrorCode Renderer::create_command_buffer(uint32_t image_index)
 }
 
 void Renderer::copy_buffer(VkBuffer     srcBuffer,
-                          VkDeviceSize srcOffset,
-                          VkBuffer     dstBuffer,
-                          VkDeviceSize dstOffset,
-                          VkDeviceSize size)
+                           VkDeviceSize srcOffset,
+                           VkBuffer     dstBuffer,
+                           VkDeviceSize dstOffset,
+                           VkDeviceSize size)
 {
     auto & bucket = commands.get_transfer_bucket(frames.currentResource);
 
