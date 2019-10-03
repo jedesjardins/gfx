@@ -595,6 +595,39 @@ VkFormat getVkFormat(std::string const & format_name)
     return format->second;
 }
 
+#define CALL_FUNC(var, func) var.func()
+
+#ifdef NDEBUG
+
+#define CHECK_JSON_TYPE(document, type_func)                            \
+    do                                                                  \
+    {                                                                   \
+        if (!CALL_FUNC(document, type_func))                            \
+        {                                                               \
+            LOG_ERROR("Field failed {} check.", #document, #type_func); \
+            return ErrorCode::JSON_ERROR;                               \
+        }                                                               \
+    } while (0)
+
+#define CHECK_JSON_FIELD(document, name, type_func)                               \
+    do                                                                            \
+    {                                                                             \
+        if (!document.HasMember(#name) || !CALL_FUNC(document[#name], type_func)) \
+        {                                                                         \
+            LOG_ERROR("Field {} was missing or {} failed.", #name, #type_func);   \
+            return ErrorCode::JSON_ERROR;                                         \
+        }                                                                         \
+    } while (0)
+#else
+
+#define CHECK_JSON_TYPE(document, type_func) \
+    assert(CALL_FUNC(document, type_func) && "Field failed " #type_func " check.")
+
+#define CHECK_JSON_FIELD(document, name, type_func)                           \
+    assert(document.HasMember(#name) && CALL_FUNC(document[#name], type_func) \
+           && "Field " #name " was missing or " #type_func " failed.")
+#endif
+
 VkAttachmentDescription initAttachmentDescription(rapidjson::Value const & document)
 {
     assert(document.IsObject());
@@ -773,6 +806,8 @@ std::optional<uint32_t> initSubpassIndex(
 
 VkExtent2D initVkExtent2D(rapidjson::Value & document)
 {
+    // CHECK_JSON_TYPE(document["size"], IsObject);
+
     VkExtent2D extent{};
     assert(document.IsObject());
     assert(document.HasMember("width") && document["width"].IsUint());
@@ -832,13 +867,11 @@ VkAccessFlagBits initAccessFlags(rapidjson::Value & document)
     return access_flags;
 }
 
-VkSubpassDependency initDependency(
-    rapidjson::Value &                                     document,
-    std::unordered_map<std::string, SubpassHandle> const & subpass_handles)
+ErrorCode initDependency(rapidjson::Value &                                     document,
+                         VkSubpassDependency &                                  dependency,
+                         std::unordered_map<std::string, SubpassHandle> const & subpass_handles)
 {
-    assert(document.IsObject());
-
-    VkSubpassDependency dependency{};
+    CHECK_JSON_TYPE(document, IsObject);
 
     if (document.HasMember("src_subpass"))
     {
@@ -870,51 +903,42 @@ VkSubpassDependency initDependency(
         dependency.dstAccessMask = initAccessFlags(document["dst_access_mask"]);
     }
 
-    return dependency;
+    return ErrorCode::NONE;
 }
 
-VkPushConstantRange initVkPushConstantRange(rapidjson::Value & document)
+ErrorCode initVkPushConstantRange(rapidjson::Value & document, VkPushConstantRange & push_constant)
 {
-    assert(document.IsObject());
+    CHECK_JSON_TYPE(document, IsObject);
 
-    VkPushConstantRange push_constant;
+    CHECK_JSON_FIELD(document, offset, IsUint);
+    push_constant.offset = document["offset"].IsUint();
 
-    assert(document.HasMember("offset"));
-    assert(document["offset"].IsInt());
-    push_constant.offset = document["offset"].GetInt();
+    CHECK_JSON_FIELD(document, size, IsUint);
+    push_constant.size = document["size"].IsUint();
 
-    assert(document.HasMember("size"));
-    assert(document["size"].IsInt());
-    push_constant.size = document["size"].GetInt();
-
-    assert(document.HasMember("stage"));
-    assert(document["stage"].IsArray());
+    CHECK_JSON_FIELD(document, stage, IsArray);
     push_constant.stageFlags = 0;
     for (auto & stage: document["stage"].GetArray())
     {
-        assert(stage.IsString());
+        CHECK_JSON_TYPE(stage, IsString);
         push_constant.stageFlags |= getVkShaderStageFlagBit(stage.GetString());
     }
 
-    return push_constant;
+    return ErrorCode::NONE;
 }
 
-VkVertexInputBindingDescription initVkVertexInputBindingDescription(rapidjson::Value & document)
+ErrorCode initVkVertexInputBindingDescription(rapidjson::Value &                document,
+                                              VkVertexInputBindingDescription & vertex_binding)
 {
-    assert(document.IsObject());
+    CHECK_JSON_TYPE(document, IsObject);
 
-    VkVertexInputBindingDescription vertex_binding;
-
-    assert(document.HasMember("binding_slot"));
-    assert(document["binding_slot"].IsUint());
+    CHECK_JSON_FIELD(document, binding_slot, IsUint);
     vertex_binding.binding = document["binding_slot"].GetUint();
 
-    assert(document.HasMember("stride"));
-    assert(document["stride"].IsUint());
+    CHECK_JSON_FIELD(document, stride, IsUint);
     vertex_binding.stride = document["stride"].GetUint();
 
-    assert(document.HasMember("input_rate"));
-    assert(document["input_rate"].IsString());
+    CHECK_JSON_FIELD(document, input_rate, IsString);
     std::string input_rate = document["input_rate"].GetString();
     if (strcmp(input_rate.c_str(), "PER_VERTEX") == 0)
     {
@@ -924,47 +948,54 @@ VkVertexInputBindingDescription initVkVertexInputBindingDescription(rapidjson::V
     {
         vertex_binding.inputRate = VK_VERTEX_INPUT_RATE_INSTANCE;
     }
+    else
+    {
+        LOG_ERROR("Vertex Binding input_rate {} not recognized", input_rate);
+        return ErrorCode::JSON_ERROR;
+    }
 
-    return vertex_binding;
+    return ErrorCode::NONE;
 }
 
-VkVertexInputAttributeDescription initVkVertexInputAttributeDescription(
+ErrorCode initVkVertexInputAttributeDescription(
     rapidjson::Value &                                               document,
+    VkVertexInputAttributeDescription &                              attribute,
     std::unordered_map<std::string, VkVertexInputBindingDescription> vertex_bindings)
 {
-    assert(document.IsObject());
+    CHECK_JSON_TYPE(document, IsObject);
 
-    VkVertexInputAttributeDescription attribute;
+    CHECK_JSON_FIELD(document, vertex_binding_name, IsString);
+    auto iter = vertex_bindings.find(document["vertex_binding_name"].GetString());
+    if (iter == vertex_bindings.end())
+    {
+        LOG_ERROR("Couldn't find Vertex Binding {} referenced in Vertex Attribute",
+                  document["vertex_binding_name"].GetString());
+        return ErrorCode::JSON_ERROR;
+    }
+    attribute.binding = iter->second.binding;
 
-    assert(document.HasMember("vertex_binding_name"));
-    assert(document["vertex_binding_name"].IsString());
-    attribute.binding = vertex_bindings[document["vertex_binding_name"].GetString()].binding;
+    CHECK_JSON_FIELD(document, location, IsUint);
+    attribute.location = document["location"].GetUint();
 
-    assert(document.HasMember("location"));
-    assert(document["location"].IsInt());
-    attribute.location = document["location"].GetInt();
+    CHECK_JSON_FIELD(document, offset, IsUint);
+    attribute.offset = document["offset"].GetUint();
 
-    assert(document.HasMember("offset"));
-    assert(document["offset"].IsInt());
-    attribute.offset = document["offset"].GetInt();
-
-    assert(document.HasMember("format"));
-    assert(document["format"].IsString());
+    CHECK_JSON_FIELD(document, format, IsString);
+    // TODO: getVkFormat could error
     attribute.format = getVkFormat(document["format"].GetString());
 
-    return attribute;
+    return ErrorCode::NONE;
 }
 
 //
 // CONFIG STRUCT INITIALIZERS
 //
 
-void init(rapidjson::Value & document, AttachmentConfig & attachment_config)
+ErrorCode init(rapidjson::Value & document, AttachmentConfig & attachment_config)
 {
-    assert(document.IsObject());
+    CHECK_JSON_TYPE(document, IsObject);
 
-    assert(document.HasMember("format"));
-    assert(document["format"].IsString());
+    CHECK_JSON_FIELD(document, format, IsString);
     char const * format_str = document["format"].GetString();
     if (strcmp(format_str, "color") == 0)
     {
@@ -975,18 +1006,17 @@ void init(rapidjson::Value & document, AttachmentConfig & attachment_config)
         attachment_config.format = Format::USE_DEPTH;
     }
 
+    CHECK_JSON_FIELD(document, usage, IsArray);
     attachment_config.usage = static_cast<VkImageUsageFlags>(0);
-    assert(document.HasMember("usage"));
-    assert(document["usage"].IsArray());
     for (auto & usage_bit_name: document["usage"].GetArray())
     {
-        assert(usage_bit_name.IsString());
+        CHECK_JSON_TYPE(usage_bit_name, IsString);
         attachment_config.usage |= getVkImageUsageFlagBits(usage_bit_name.GetString());
     }
 
     if (document.HasMember("multisamples"))
     {
-        assert(document["multisamples"].IsUint());
+        CHECK_JSON_TYPE(document["multisamples"], IsUint);
         attachment_config.multisamples = getVkSampleCountFlagBits(
             document["multisamples"].GetUint());
     }
@@ -997,7 +1027,7 @@ void init(rapidjson::Value & document, AttachmentConfig & attachment_config)
 
     if (document.HasMember("is_swapchain_image"))
     {
-        assert(document["is_swapchain_image"].IsBool());
+        CHECK_JSON_TYPE(document["is_swapchain_image"], IsBool);
         attachment_config.is_swapchain_image = document["is_swapchain_image"].GetBool();
     }
     else
@@ -1009,24 +1039,28 @@ void init(rapidjson::Value & document, AttachmentConfig & attachment_config)
     {
         attachment_config.use_swapchain_size = false;
 
-        assert(document["size"].IsObject());
+        // TODO: change initVkExtent2D to return an error
         attachment_config.extent = initVkExtent2D(document["size"]);
     }
     else
     {
         attachment_config.use_swapchain_size = true;
     }
+
+    return ErrorCode::NONE;
 }
 
-void init(rapidjson::Value &                        document,
-          SubpassInfo &                             subpass_info,
-          std::unordered_map<std::string, size_t> & attachment_indices)
+ErrorCode init(rapidjson::Value &                        document,
+               SubpassInfo &                             subpass_info,
+               std::unordered_map<std::string, size_t> & attachment_indices)
 {
-    assert(document.IsObject());
+    CHECK_JSON_TYPE(document, IsObject);
 
     if (document.HasMember("multisamples"))
     {
-        assert(document["multisamples"].IsUint());
+        CHECK_JSON_TYPE(document["multisamples"], IsUint);
+
+        // TODO: getVkSampleCountFlagBits should return an error
         subpass_info.multisamples = getVkSampleCountFlagBits(document["multisamples"].GetUint());
     }
     else
@@ -1036,9 +1070,11 @@ void init(rapidjson::Value &                        document,
 
     if (document.HasMember("color_attachments"))
     {
-        assert(document["color_attachments"].IsArray());
+        CHECK_JSON_TYPE(document["color_attachments"], IsArray);
+
         for (auto & ca: document["color_attachments"].GetArray())
         {
+            // TODO: initAttachmentReference should return an error
             subpass_info.color_attachments.push_back(
                 initAttachmentReference(ca, attachment_indices));
         }
@@ -1046,9 +1082,11 @@ void init(rapidjson::Value &                        document,
 
     if (document.HasMember("color_resolve_attachments"))
     {
-        assert(document["color_resolve_attachments"].IsArray());
+        CHECK_JSON_TYPE(document["color_resolve_attachments"], IsArray);
+
         for (auto & cra: document["color_resolve_attachments"].GetArray())
         {
+            // TODO: initAttachmentReference should return an error
             subpass_info.color_resolve_attachments.push_back(
                 initAttachmentReference(cra, attachment_indices));
         }
@@ -1056,12 +1094,21 @@ void init(rapidjson::Value &                        document,
 
     assert(subpass_info.color_attachments.size() == subpass_info.color_resolve_attachments.size()
            || subpass_info.color_resolve_attachments.size() == 0);
+    if (subpass_info.color_attachments.size() != subpass_info.color_resolve_attachments.size()
+        && subpass_info.color_resolve_attachments.size() != 0)
+    {
+        LOG_ERROR("Subpass's color_attachments need to map 1-to-1 with it's "
+                  "color_resolve_attachments, or color_resolve_attachments must be empty");
+        return ErrorCode::JSON_ERROR;
+    }
 
     if (document.HasMember("input_attachments"))
     {
-        assert(document["input_attachments"].IsArray());
+        CHECK_JSON_TYPE(document["input_attachments"], IsArray);
+
         for (auto & ia: document["input_attachments"].GetArray())
         {
+            // TODO: initAttachmentReference should return an error
             subpass_info.input_attachments.push_back(
                 initAttachmentReference(ia, attachment_indices));
         }
@@ -1069,10 +1116,11 @@ void init(rapidjson::Value &                        document,
 
     if (document.HasMember("preserve_attachments"))
     {
-        assert(document["preserve_attachments"].IsArray());
+        CHECK_JSON_TYPE(document["preserve_attachments"], IsArray);
+
         for (auto & pa: document["preserve_attachments"].GetArray())
         {
-            assert(pa.IsString());
+            CHECK_JSON_TYPE(pa, IsString);
 
             auto attachment_index_iter = attachment_indices.find(pa.GetString());
             if (attachment_index_iter != attachment_indices.end())
@@ -1081,14 +1129,15 @@ void init(rapidjson::Value &                        document,
             }
             else
             {
-                LOG_ERROR("Couldn't find index in framebuffer for preserve attachment {}",
-                          pa.GetString());
+                LOG_ERROR("Couldn't find preserve_attachment {} in framebuffer", pa.GetString());
+                return ErrorCode::JSON_ERROR;
             }
         }
     }
 
     if (document.HasMember("depth_stencil_attachment"))
     {
+        // TODO: initAttachmentReference should return an error
         subpass_info.depth_stencil_attachment = initAttachmentReference(
             document["depth_stencil_attachment"], attachment_indices);
     }
@@ -1097,117 +1146,126 @@ void init(rapidjson::Value &                        document,
         subpass_info.depth_stencil_attachment = VkAttachmentReference{
             .attachment = VK_ATTACHMENT_UNUSED, .layout = VK_IMAGE_LAYOUT_UNDEFINED};
     }
+
+    return ErrorCode::NONE;
 }
 
-void init(rapidjson::Value & document, RenderPassConfig & render_pass_config)
+ErrorCode init(rapidjson::Value & document, RenderPassConfig & render_pass_config)
 {
-    assert(document.IsObject());
+    CHECK_JSON_TYPE(document, IsObject);
 
-    assert(document.HasMember("framebuffer"));
-    assert(document["framebuffer"].IsArray());
+    CHECK_JSON_FIELD(document, framebuffer, IsArray);
     size_t attachment_index{0};
     for (auto & ad: document["framebuffer"].GetArray())
     {
-        assert(ad.IsObject());
-        assert(ad.HasMember("attachment_name"));
-        assert(ad["attachment_name"].IsString());
+        CHECK_JSON_TYPE(ad, IsObject);
+
+        CHECK_JSON_FIELD(ad, attachment_name, IsString);
         std::string name = ad["attachment_name"].GetString();
 
-        render_pass_config.attachments[name]  = attachment_index++;
+        render_pass_config.attachments[name] = attachment_index++;
+        // TODO: initAttachmentDescription should return an error
         render_pass_config.descriptions[name] = initAttachmentDescription(ad);
 
         if (ad.HasMember("clear_value"))
         {
+            // TODO: initClearValue should return an error
             render_pass_config.clear_values[ad["attachment_name"].GetString()] = initClearValue(
                 ad["clear_value"]);
         }
     }
 
-    assert(document.HasMember("subpasses"));
-    assert(document["subpasses"].IsArray());
-
+    CHECK_JSON_FIELD(document, subpasses, IsArray);
     for (auto & sp: document["subpasses"].GetArray())
     {
         assert(sp.IsObject());
-        assert(sp.HasMember("name"));
-        assert(sp["name"].IsString());
+        CHECK_JSON_FIELD(sp, name, IsString);
 
         SubpassHandle handle = render_pass_config.subpasses.size();
 
         SubpassInfo info{};
-        init(sp, info, render_pass_config.attachments);
+
+        auto error = init(sp, info, render_pass_config.attachments);
+        if (error != ErrorCode::NONE)
+        {
+            LOG_DEBUG("Subpass {} failed to initialize", sp["name"].GetString());
+            return error;
+        }
 
         render_pass_config.subpass_handles[sp["name"].GetString()] = handle;
         render_pass_config.subpasses.push_back(info);
     }
 
-    assert(document.HasMember("subpass_dependencies"));
-    assert(document["subpass_dependencies"].IsArray());
-
-    for (auto & spd: document["subpass_dependencies"].GetArray())
+    CHECK_JSON_FIELD(document, subpass_dependencies, IsArray);
+    auto const & json_dependency_array = document["subpass_dependencies"].GetArray();
+    render_pass_config.subpass_dependencies.resize(json_dependency_array.Size());
+    for (size_t i = 0; i < json_dependency_array.Size(); ++i)
     {
-        render_pass_config.subpass_dependencies.push_back(
-            initDependency(spd, render_pass_config.subpass_handles));
+        auto & sp_d = render_pass_config.subpass_dependencies[i];
+        auto & json_sp_d = json_dependency_array[i];
+
+        auto error = initDependency(json_sp_d,
+                                    sp_d,
+                                    render_pass_config.subpass_handles);
+
+        if (error != ErrorCode::NONE)
+        {
+            LOG_DEBUG("Couldn't read configuration for Subpass Dependency at index {}", i);
+        }
     }
+
+    return ErrorCode::NONE;
 }
 
-void init(rapidjson::Value &                                   document,
-          PipelineConfig &                                     pipeline_config,
-          std::unordered_map<std::string, std::string> const & shader_names)
+ErrorCode init(rapidjson::Value &                                   document,
+               PipelineConfig &                                     pipeline_config,
+               std::unordered_map<std::string, std::string> const & shader_names)
 {
-    assert(document.IsObject());
+    CHECK_JSON_TYPE(document, IsObject);
 
-    assert(document.HasMember("vertex_shader_name"));
-    assert(document["vertex_shader_name"].IsString());
+    CHECK_JSON_FIELD(document, vertex_shader_name, IsString);
     pipeline_config.vertex_shader_name = document["vertex_shader_name"].GetString();
 
-    assert(document.HasMember("fragment_shader_name"));
-    assert(document["fragment_shader_name"].IsString());
+    CHECK_JSON_FIELD(document, fragment_shader_name, IsString);
     pipeline_config.fragment_shader_name = document["fragment_shader_name"].GetString();
 
-    assert(document.HasMember("vertex_bindings"));
-    assert(document["vertex_bindings"].IsArray());
+    CHECK_JSON_FIELD(document, vertex_bindings, IsArray);
     for (auto const & vbi: document["vertex_bindings"].GetArray())
     {
-        assert(vbi.IsString());
+        CHECK_JSON_TYPE(vbi, IsString);
         pipeline_config.vertex_binding_names.push_back(vbi.GetString());
     }
 
-    assert(document.HasMember("vertex_attributes"));
-    assert(document["vertex_attributes"].IsArray());
+    CHECK_JSON_FIELD(document, vertex_attributes, IsArray);
     for (auto const & vai: document["vertex_attributes"].GetArray())
     {
-        assert(vai.IsString());
+        CHECK_JSON_TYPE(vai, IsString);
         pipeline_config.vertex_attribute_names.push_back(vai.GetString());
     }
 
-    assert(document.HasMember("uniform_layouts"));
-    assert(document["uniform_layouts"].IsArray());
+    CHECK_JSON_FIELD(document, uniform_layouts, IsArray);
     for (auto const & uli: document["uniform_layouts"].GetArray())
     {
-        assert(uli.IsString());
+        CHECK_JSON_TYPE(uli, IsString);
         pipeline_config.uniform_layout_names.push_back(uli.GetString());
     }
 
-    assert(document.HasMember("push_constants"));
-    assert(document["push_constants"].IsArray());
+    CHECK_JSON_FIELD(document, push_constants, IsArray);
     for (auto const & pci: document["push_constants"].GetArray())
     {
-        assert(pci.IsString());
+        CHECK_JSON_TYPE(pci, IsString);
         pipeline_config.push_constant_names.push_back(pci.GetString());
     }
 
-    assert(document.HasMember("render_pass"));
-    assert(document["render_pass"].IsString());
+    CHECK_JSON_FIELD(document, render_pass, IsString);
     pipeline_config.render_pass = document["render_pass"].GetString();
 
-    assert(document.HasMember("subpass"));
-    assert(document["subpass"].IsString());
+    CHECK_JSON_FIELD(document, subpass, IsString);
     pipeline_config.subpass = document["subpass"].GetString();
 
     if (document.HasMember("blendable"))
     {
-        assert(document["blendable"].IsBool());
+        CHECK_JSON_TYPE(document["blendable"], IsBool);
         pipeline_config.blendable = document["blendable"].GetBool();
     }
     else
@@ -1217,7 +1275,7 @@ void init(rapidjson::Value &                                   document,
 
     if (document.HasMember("tests_depth"))
     {
-        assert(document["tests_depth"].IsBool());
+        CHECK_JSON_TYPE(document["tests_depth"], IsBool);
         pipeline_config.tests_depth = document["tests_depth"].GetBool();
     }
     else
@@ -1227,174 +1285,208 @@ void init(rapidjson::Value &                                   document,
 
     if (document.HasMember("dynamic_state"))
     {
-        assert(document["dynamic_state"].IsArray());
+        CHECK_JSON_TYPE(document["dynamic_state"], IsArray);
 
         for (auto const & state: document["dynamic_state"].GetArray())
         {
-            assert(state.IsString());
-            LOG_DEBUG("Pushing state {}", state.GetString());
+            CHECK_JSON_TYPE(state, IsString);
             pipeline_config.dynamic_state.push_back(getVkDynamicState(state.GetString()));
         }
     }
+
+    return ErrorCode::NONE;
 }
 
-void init(rapidjson::Value & document, UniformConfig & uniform_config)
+ErrorCode init(rapidjson::Value & document, UniformConfig & uniform_config)
 {
-    assert(document.IsObject());
-    assert(document.HasMember("max_count"));
-    assert(document["max_count"].IsUint());
+    CHECK_JSON_TYPE(document, IsObject);
 
+    CHECK_JSON_FIELD(document, max_count, IsUint);
     uniform_config.max_uniform_count = document["max_count"].GetUint();
     assert(uniform_config.max_uniform_count != 0);
 
+    if (uniform_config.max_uniform_count == 0)
+    {
+        LOG_ERROR("Uniform Layout cannot have a max_count of 0");
+        return ErrorCode::JSON_ERROR;
+    }
+
     uniform_config.layout_binding = initVkDescriptorSetLayoutBinding(document);
+
+    return ErrorCode::NONE;
 }
 
 ErrorCode RenderConfig::init(char const * file_name, ReadFileFn read_file_fn)
 {
+    namespace rj = rapidjson;
+
+    LOG_INFO("Initializing Render Configuration");
+
     assert(read_file_fn != nullptr);
 
     config_filename = file_name;
     read_file       = read_file_fn;
 
-    namespace rj = rapidjson;
-
     rj::Document document;
 
     std::vector<char> config_json;
 
+    if (file_name == nullptr)
+    {
+        LOG_ERROR("File path was not defined");
+        return ErrorCode::API_ERROR;
+    }
+
     if (read_file == nullptr)
     {
         LOG_ERROR("ReadFileFn was not defined");
+        return ErrorCode::API_ERROR;
     }
 
-    read_file(config_filename, config_json);
+    if (read_file(config_filename, config_json) != ErrorCode::NONE)
+    {
+        LOG_ERROR("Couldn't read configuration file {}", config_filename);
+        return ErrorCode::FILE_ERROR;
+    }
 
     // auto config_json = readFile(config_filename);
     config_json.push_back('\0');
 
     if (document.Parse(config_json.data()).HasParseError())
     {
-        LOG_ERROR("Parse error on json data: \"{}\"", config_json.data());
+        LOG_ERROR("Couldn't parse Render Configuration json: \"{}\"", config_json.data());
         return ErrorCode::JSON_ERROR;
     }
     else
     {
-        LOG_DEBUG("Parsed file {} in RenderConfig", config_filename);
+        LOG_DEBUG("Parsed Render Configuration file {}", config_filename);
     }
 
-    assert(document.IsObject());
+    CHECK_JSON_TYPE(document, IsObject);
 
-    assert(document.HasMember("window_name"));
-    assert(document["window_name"].IsString());
+    CHECK_JSON_FIELD(document, window_name, IsString);
     window_name = document["window_name"].GetString();
 
-    assert(document.HasMember("attachments"));
-    assert(document["attachments"].IsArray());
-
+    CHECK_JSON_FIELD(document, attachments, IsArray);
     for (auto & a: document["attachments"].GetArray())
     {
-        assert(a.IsObject());
-        assert(a.HasMember("name"));
-        assert(a["name"].IsString());
+        CHECK_JSON_TYPE(a, IsObject);
 
-        gfx::init(a, attachment_configs[a["name"].GetString()]);
+        CHECK_JSON_FIELD(a, name, IsString);
+
+        auto error = gfx::init(a, attachment_configs[a["name"].GetString()]);
+        if (error != ErrorCode::NONE)
+        {
+            LOG_DEBUG("Couldn't read configuration for Attachment {}", a["name"].GetString());
+            return error;
+        }
     }
 
-    assert(document.HasMember("render_passes"));
-    assert(document["render_passes"].IsArray());
-
+    CHECK_JSON_FIELD(document, render_passes, IsArray);
     for (auto & rp: document["render_passes"].GetArray())
     {
-        assert(rp.IsObject());
-        assert(rp.HasMember("name"));
-        assert(rp["name"].IsString());
+        CHECK_JSON_TYPE(rp, IsObject);
+        CHECK_JSON_FIELD(rp, name, IsString);
 
-        gfx::init(rp, render_pass_configs[rp["name"].GetString()]);
+        auto error = gfx::init(rp, render_pass_configs[rp["name"].GetString()]);
+        if (error != ErrorCode::NONE)
+        {
+            LOG_DEBUG("Couldn't read configuration for Render Pass {}", rp["name"].GetString());
+            return error;
+        }
     }
 
-    assert(document.HasMember("render_pass_order"));
-    assert(document["render_pass_order"].IsArray());
+    CHECK_JSON_FIELD(document, render_pass_order, IsArray);
     for (auto & render_pass_name: document["render_pass_order"].GetArray())
     {
-        assert(render_pass_name.IsString());
+        CHECK_JSON_TYPE(render_pass_name, IsString);
         render_pass_order.push_back(render_pass_name.GetString());
     }
 
-    assert(document.HasMember("shaders"));
-    assert(document["shaders"].IsArray());
-
+    CHECK_JSON_FIELD(document, shaders, IsArray);
     for (auto & s: document["shaders"].GetArray())
     {
-        assert(s.IsObject());
-        assert(s.HasMember("name"));
-        assert(s["name"].IsString());
-
-        assert(s.HasMember("file"));
-        assert(s["file"].IsString());
+        CHECK_JSON_TYPE(s, IsObject);
+        CHECK_JSON_FIELD(s, name, IsString);
+        CHECK_JSON_FIELD(s, file, IsString);
 
         shader_names[s["name"].GetString()] = s["file"].GetString();
     }
 
-    assert(document.HasMember("uniform_layouts"));
-    assert(document["uniform_layouts"].IsArray());
-
+    CHECK_JSON_FIELD(document, uniform_layouts, IsArray);
     for (auto & ul: document["uniform_layouts"].GetArray())
     {
-        assert(ul.IsObject());
-        assert(ul.HasMember("name"));
-        assert(ul["name"].IsString());
+        CHECK_JSON_TYPE(ul, IsObject);
+        CHECK_JSON_FIELD(ul, name, IsString);
 
-        gfx::init(ul, uniform_configs[ul["name"].GetString()]);
+        auto error = gfx::init(ul, uniform_configs[ul["name"].GetString()]);
+        if (error != ErrorCode::NONE)
+        {
+            LOG_DEBUG("Couldn't read configuration for Uniform Layout {}", ul["name"].GetString());
+            return error;
+        }
     }
 
-    assert(document.HasMember("push_constants"));
-    assert(document["push_constants"].IsArray());
-
+    CHECK_JSON_FIELD(document, push_constants, IsArray);
     for (auto & pc: document["push_constants"].GetArray())
     {
-        assert(pc.IsObject());
-        assert(pc.HasMember("name"));
-        assert(pc["name"].IsString());
+        CHECK_JSON_TYPE(pc, IsObject);
+        CHECK_JSON_FIELD(pc, name, IsString);
 
-        push_constants[pc["name"].GetString()] = initVkPushConstantRange(pc);
+        auto error = initVkPushConstantRange(pc, push_constants[pc["name"].GetString()]);
+        if (error != ErrorCode::NONE)
+        {
+            LOG_DEBUG("Couldn't read the configuration for Push Constant {}",
+                      pc["name"].GetString());
+            return error;
+        }
     }
 
-    assert(document.HasMember("vertex_bindings"));
-    assert(document["vertex_bindings"].IsArray());
-
+    CHECK_JSON_FIELD(document, vertex_bindings, IsArray);
     for (auto & vb: document["vertex_bindings"].GetArray())
     {
-        assert(vb.IsObject());
-        assert(vb.HasMember("name"));
-        assert(vb["name"].IsString());
+        CHECK_JSON_TYPE(vb, IsObject);
+        CHECK_JSON_FIELD(vb, name, IsString);
 
-        vertex_bindings[vb["name"].GetString()] = initVkVertexInputBindingDescription(vb);
+        auto error = initVkVertexInputBindingDescription(vb,
+                                                         vertex_bindings[vb["name"].GetString()]);
+        if (error != ErrorCode::NONE)
+        {
+            LOG_DEBUG("Couldn't read the configuration for Vertex Binding {}",
+                      vb["name"].GetString());
+            return error;
+        }
     }
 
-    assert(document.HasMember("vertex_attributes"));
-    assert(document["vertex_attributes"].IsArray());
-
+    CHECK_JSON_FIELD(document, vertex_attributes, IsArray);
     for (auto & va: document["vertex_attributes"].GetArray())
     {
-        assert(va.IsObject());
-        assert(va.HasMember("name"));
-        assert(va["name"].IsString());
+        CHECK_JSON_TYPE(va, IsObject);
+        CHECK_JSON_FIELD(va, name, IsString);
 
-        vertex_attributes[va["name"].GetString()] = initVkVertexInputAttributeDescription(
-            va, vertex_bindings);
+        auto error = initVkVertexInputAttributeDescription(
+            va, vertex_attributes[va["name"].GetString()], vertex_bindings);
+
+        if (error != ErrorCode::NONE)
+        {
+            LOG_DEBUG("Couldn't read the configuration for Vertex Attribute {}",
+                      va["name"].GetString());
+            return error;
+        }
     }
 
-    assert(document.HasMember("pipelines"));
-    assert(document["pipelines"].IsArray());
-
+    CHECK_JSON_FIELD(document, pipelines, IsArray);
     for (auto & p: document["pipelines"].GetArray())
     {
-        assert(p.IsObject());
-        assert(p.HasMember("name"));
-        assert(p["name"].IsString());
+        CHECK_JSON_TYPE(p, IsObject);
+        CHECK_JSON_FIELD(p, name, IsString);
 
-        gfx::init(p, pipeline_configs[p["name"].GetString()], shader_names);
+        auto error = gfx::init(p, pipeline_configs[p["name"].GetString()], shader_names);
+        if (error != ErrorCode::NONE)
+        {
+            LOG_DEBUG("Couldn't read configuration for Pipeline {}", p["name"].GetString());
+            return error;
+        }
     }
 
     return ErrorCode::NONE;
