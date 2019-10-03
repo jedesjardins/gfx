@@ -108,7 +108,7 @@ struct RenderConfig
 
     std::unordered_map<std::string, PipelineConfig> pipeline_configs;
 
-    void init();
+    ErrorCode init(char const * file_name, ReadFileFn read_file_fn);
 };
 
 }; // namespace gfx
@@ -1250,8 +1250,13 @@ void init(rapidjson::Value & document, UniformConfig & uniform_config)
     uniform_config.layout_binding = initVkDescriptorSetLayoutBinding(document);
 }
 
-void RenderConfig::init()
+ErrorCode RenderConfig::init(char const * file_name, ReadFileFn read_file_fn)
 {
+	assert(read_file_fn != nullptr);
+
+	config_filename = file_name;
+	read_file = read_file_fn;
+
     namespace rj = rapidjson;
 
     rj::Document document;
@@ -1271,7 +1276,7 @@ void RenderConfig::init()
     if (document.Parse(config_json.data()).HasParseError())
     {
         LOG_ERROR("Parse error on json data: \"{}\"", config_json.data());
-        return;
+        return ErrorCode::JSON_ERROR;
     }
     else
     {
@@ -1391,6 +1396,8 @@ void RenderConfig::init()
 
         gfx::init(p, pipeline_configs[p["name"].GetString()], shader_names);
     }
+
+    return ErrorCode::NONE;
 }
 
 }; // namespace gfx

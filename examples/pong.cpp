@@ -557,12 +557,15 @@ int main()
 
     glfwSetKeyCallback(window, key_callback);
 
+    auto render_config = gfx::RenderConfig{};
+
+    if (render_config.init(RESOURCE_PATH "pong_config.json", readFile) != gfx::ErrorCode::NONE)
+    {
+        LOG_ERROR("Couldn't initialize the Render Configuration");
+        return 0;
+    }
+
     auto render_device = gfx::Renderer{window};
-
-    auto render_config = gfx::RenderConfig{.read_file       = readFile,
-                                           .config_filename = RESOURCE_PATH "pong_config.json"};
-
-    render_config.init();
 
     if (!render_device.init(render_config))
     {

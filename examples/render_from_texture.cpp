@@ -50,12 +50,16 @@ int main()
 
     glfwSetKeyCallback(window, key_callback);
 
+    auto render_config = gfx::RenderConfig{};
+
+    if (render_config.init(RESOURCE_PATH "render_from_texture_config.json", readFile)
+        != gfx::ErrorCode::NONE)
+    {
+        LOG_ERROR("Couldn't initialize the Render Configuration");
+        return 0;
+    }
+
     auto renderer = gfx::Renderer{window};
-
-    auto render_config = gfx::RenderConfig{
-        .read_file = readFile, .config_filename = RESOURCE_PATH "render_from_texture_config.json"};
-
-    render_config.init();
 
     if (!renderer.init(render_config))
     {
