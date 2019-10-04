@@ -281,7 +281,7 @@ bool operator!=(RenderPassConfig const & lhs, RenderPassConfig const & rhs)
 // CONFIGURATION CODE
 //
 
-VkDynamicState getVkDynamicState(std::string const & state_name)
+std::optional<VkDynamicState> getVkDynamicState(std::string const & state_name)
 {
 #define MAP_PAIR(value)                  \
     {                                    \
@@ -297,13 +297,13 @@ VkDynamicState getVkDynamicState(std::string const & state_name)
     assert(state != states.end());
     if (state == states.end())
     {
-        return static_cast<VkDynamicState>(0);
+        return std::nullopt;
     }
 
     return state->second;
 }
 
-VkSampleCountFlagBits getVkSampleCountFlagBits(size_t num_samples)
+std::optional<VkSampleCountFlagBits> getVkSampleCountFlagBits(size_t num_samples)
 {
 #define SWITCH_CASE(value) \
     case value:            \
@@ -318,12 +318,12 @@ VkSampleCountFlagBits getVkSampleCountFlagBits(size_t num_samples)
         SWITCH_CASE(2);
         SWITCH_CASE(1);
     default:
-        return VK_SAMPLE_COUNT_1_BIT;
+        return std::nullopt;
     };
 #undef SWITCH_CASE
 }
 
-VkImageLayout getVkImageLayout(std::string const & layout_name)
+std::optional<VkImageLayout> getVkImageLayout(std::string const & layout_name)
 {
 #define MAP_PAIR(value)                 \
     {                                   \
@@ -353,13 +353,13 @@ VkImageLayout getVkImageLayout(std::string const & layout_name)
     {
         LOG_ERROR("Couldn't find VkImageLayout {}", layout_name);
 
-        return VK_IMAGE_LAYOUT_UNDEFINED;
+        return std::nullopt;
     }
 
     return layout->second;
 }
 
-VkImageUsageFlagBits getVkImageUsageFlagBits(std::string const & usage_name)
+std::optional<VkImageUsageFlagBits> getVkImageUsageFlagBits(std::string const & usage_name)
 {
 #define MAP_PAIR(value)                      \
     {                                        \
@@ -384,13 +384,13 @@ VkImageUsageFlagBits getVkImageUsageFlagBits(std::string const & usage_name)
     if (bit == bits.end())
     {
         LOG_ERROR("Couldn't find VkImageUsageFlagBit {}", usage_name);
-        return static_cast<VkImageUsageFlagBits>(0);
+        return std::nullopt;
     }
 
     return bit->second;
 }
 
-VkAttachmentLoadOp getVkAttachmentLoadOp(std::string const & op_name)
+std::optional<VkAttachmentLoadOp> getVkAttachmentLoadOp(std::string const & op_name)
 {
 #define MAP_PAIR(value)                       \
     {                                         \
@@ -408,13 +408,13 @@ VkAttachmentLoadOp getVkAttachmentLoadOp(std::string const & op_name)
     {
         LOG_ERROR("Couldn't find VkAttachmentLoadOp {}", op_name);
 
-        return VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+        return std::nullopt;
     }
 
     return op->second;
 }
 
-VkAttachmentStoreOp getVkAttachmentStoreOp(std::string const & op_name)
+std::optional<VkAttachmentStoreOp> getVkAttachmentStoreOp(std::string const & op_name)
 {
 #define MAP_PAIR(value)                        \
     {                                          \
@@ -431,13 +431,13 @@ VkAttachmentStoreOp getVkAttachmentStoreOp(std::string const & op_name)
     if (op == ops.end())
     {
         LOG_ERROR("Couldn't find VkAttachmentStoreOp {}", op_name);
-        return VK_ATTACHMENT_STORE_OP_DONT_CARE;
+        return std::nullopt;
     }
 
     return op->second;
 }
 
-VkPipelineStageFlagBits getVkPipelineStageFlagBit(std::string const & bit_name)
+std::optional<VkPipelineStageFlagBits> getVkPipelineStageFlagBit(std::string const & bit_name)
 {
 #define MAP_PAIR(value)                         \
     {                                           \
@@ -467,13 +467,13 @@ VkPipelineStageFlagBits getVkPipelineStageFlagBit(std::string const & bit_name)
     if (bit == bits.end())
     {
         LOG_ERROR("Couldn't find VkPipelineStageFlagBit {}", bit_name);
-        return static_cast<VkPipelineStageFlagBits>(0);
+        return std::nullopt;
     }
 
     return bit->second;
 }
 
-VkAccessFlagBits getVkAccessFlagBit(std::string const & bit_name)
+std::optional<VkAccessFlagBits> getVkAccessFlagBit(std::string const & bit_name)
 {
 #define MAP_PAIR(value)                 \
     {                                   \
@@ -506,13 +506,13 @@ VkAccessFlagBits getVkAccessFlagBit(std::string const & bit_name)
     if (bit == bits.end())
     {
         LOG_ERROR("Couldn't find VkPipelineStageFlagBit {}", bit_name);
-        return static_cast<VkAccessFlagBits>(0);
+        return std::nullopt;
     }
 
     return bit->second;
 }
 
-VkShaderStageFlagBits getVkShaderStageFlagBit(std::string const & flag_name)
+std::optional<VkShaderStageFlagBits> getVkShaderStageFlagBit(std::string const & flag_name)
 {
 #define MAP_PAIR(value)                       \
     {                                         \
@@ -533,13 +533,13 @@ VkShaderStageFlagBits getVkShaderStageFlagBit(std::string const & flag_name)
     if (flag == flags.end())
     {
         LOG_ERROR("Couldn't find VkShaderStageFlagBits {}", flag_name);
-        return static_cast<VkShaderStageFlagBits>(0);
+        return std::nullopt;
     }
 
     return flag->second;
 }
 
-VkDescriptorType getVkDescriptorType(std::string const & type_name)
+std::optional<VkDescriptorType> getVkDescriptorType(std::string const & type_name)
 {
 #define MAP_PAIR(value)                    \
     {                                      \
@@ -565,13 +565,13 @@ VkDescriptorType getVkDescriptorType(std::string const & type_name)
     if (type == types.end())
     {
         LOG_ERROR("Couldn't find VkDescriptorType {}", type_name);
-        return static_cast<VkDescriptorType>(0);
+        return std::nullopt;
     }
 
     return type->second;
 }
 
-VkFormat getVkFormat(std::string const & format_name)
+std::optional<VkFormat> getVkFormat(std::string const & format_name)
 {
 #define MAP_PAIR(value)           \
     {                             \
@@ -589,38 +589,98 @@ VkFormat getVkFormat(std::string const & format_name)
     if (format == formats.end())
     {
         LOG_ERROR("Couldn't find VkFormat {}", format_name);
-        return static_cast<VkFormat>(0);
+        return std::nullopt;
     }
 
     return format->second;
 }
 
-VkAttachmentDescription initAttachmentDescription(rapidjson::Value const & document)
+#define CALL_FUNC(var, func) var.func()
+
+#ifdef NDEBUG
+
+#define CHECK_JSON_TYPE(document, type_func)                            \
+    do                                                                  \
+    {                                                                   \
+        if (!CALL_FUNC(document, type_func))                            \
+        {                                                               \
+            LOG_ERROR("Field failed {} check.", #document, #type_func); \
+            return ErrorCode::JSON_ERROR;                               \
+        }                                                               \
+    } while (0)
+
+#define CHECK_JSON_FIELD(document, name, type_func)                               \
+    do                                                                            \
+    {                                                                             \
+        if (!document.HasMember(#name) || !CALL_FUNC(document[#name], type_func)) \
+        {                                                                         \
+            LOG_ERROR("Field {} was missing or {} failed.", #name, #type_func);   \
+            return ErrorCode::JSON_ERROR;                                         \
+        }                                                                         \
+    } while (0)
+#else
+
+#define CHECK_JSON_TYPE(document, type_func) \
+    assert(CALL_FUNC(document, type_func) && "Field failed " #type_func " check.")
+
+#define CHECK_JSON_FIELD(document, name, type_func)                           \
+    assert(document.HasMember(#name) && CALL_FUNC(document[#name], type_func) \
+           && "Field " #name " was missing or " #type_func " failed.")
+#endif
+
+ErrorCode initAttachmentDescription(rapidjson::Value const &  document,
+                                    VkAttachmentDescription & description)
 {
-    assert(document.IsObject());
+    CHECK_JSON_TYPE(document, IsObject);
 
-    VkAttachmentDescription description{};
+    CHECK_JSON_FIELD(document, initial_layout, IsString);
+    auto opt_initial_layout = getVkImageLayout(document["initial_layout"].GetString());
+    if (!opt_initial_layout)
+    {
+        LOG_ERROR("Couldn't initialize initial_layout with {}",
+                  document["initial_layout"].GetString());
+        return ErrorCode::JSON_ERROR;
+    }
+    description.initialLayout = opt_initial_layout.value();
 
-    assert(document.HasMember("initial_layout"));
-    assert(document["initial_layout"].IsString());
-    description.initialLayout = getVkImageLayout(document["initial_layout"].GetString());
+    CHECK_JSON_FIELD(document, final_layout, IsString);
+    auto opt_final_layout = getVkImageLayout(document["final_layout"].GetString());
+    if (!opt_final_layout)
+    {
+        LOG_ERROR("Couldn't initialize final_layout with {}", document["final_layout"].GetString());
+        return ErrorCode::JSON_ERROR;
+    }
+    description.finalLayout = opt_final_layout.value();
 
-    assert(document.HasMember("final_layout"));
-    assert(document["final_layout"].IsString());
-    description.finalLayout = getVkImageLayout(document["final_layout"].GetString());
+    CHECK_JSON_FIELD(document, load_op, IsString);
+    auto opt_load_op = getVkAttachmentLoadOp(document["load_op"].GetString());
+    if (!opt_load_op)
+    {
+        LOG_ERROR("Couldn't initialize load_op with {}", document["load_op"].GetString());
+        return ErrorCode::JSON_ERROR;
+    }
+    description.loadOp = opt_load_op.value();
 
-    assert(document.HasMember("load_op"));
-    assert(document["load_op"].IsString());
-    description.loadOp = getVkAttachmentLoadOp(document["load_op"].GetString());
-
-    assert(document.HasMember("store_op"));
-    assert(document["store_op"].IsString());
-    description.storeOp = getVkAttachmentStoreOp(document["store_op"].GetString());
+    CHECK_JSON_FIELD(document, store_op, IsString);
+    auto opt_store_op = getVkAttachmentStoreOp(document["store_op"].GetString());
+    if (!opt_store_op)
+    {
+        LOG_ERROR("Couldn't initialize store_op with {}", document["store_op"].GetString());
+        return ErrorCode::JSON_ERROR;
+    }
+    description.storeOp = opt_store_op.value();
 
     if (document.HasMember("stencil_load_op"))
     {
-        assert(document["stencil_load_op"].IsString());
-        description.stencilLoadOp = getVkAttachmentLoadOp(document["stencil_load_op"].GetString());
+        CHECK_JSON_TYPE(document["stencil_load_op"], IsString);
+        auto opt_stencil_load = getVkAttachmentLoadOp(document["stencil_load_op"].GetString());
+        if (!opt_stencil_load)
+        {
+            LOG_ERROR("Couldn't initialize stencil_load_op with {}",
+                      document["stencil_load_op"].GetString());
+            return ErrorCode::JSON_ERROR;
+        }
+        description.stencilLoadOp = opt_stencil_load.value();
     }
     else
     {
@@ -629,63 +689,83 @@ VkAttachmentDescription initAttachmentDescription(rapidjson::Value const & docum
 
     if (document.HasMember("stencil_store_op"))
     {
-        assert(document["stencil_store_op"].IsString());
-        description.stencilStoreOp = getVkAttachmentStoreOp(
-            document["stencil_store_op"].GetString());
+        CHECK_JSON_TYPE(document["stencil_store_op"], IsString);
+        auto opt_stencil_store = getVkAttachmentStoreOp(document["stencil_store_op"].GetString());
+        if (!opt_stencil_store)
+        {
+            LOG_ERROR("Couldn't initialize stencil_store_op with {}",
+                      document["stencil_store_op"].GetString());
+            return ErrorCode::JSON_ERROR;
+        }
+        description.stencilStoreOp = opt_stencil_store.value();
     }
     else
     {
         description.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
     }
 
-    return description;
+    return ErrorCode::NONE;
 }
 
-VkAttachmentReference initAttachmentReference(
-    rapidjson::Value &                        document,
-    std::unordered_map<std::string, size_t> & attachment_indices)
+ErrorCode initAttachmentReference(rapidjson::Value &                        document,
+                                  VkAttachmentReference &                   reference,
+                                  std::unordered_map<std::string, size_t> & attachment_indices)
 {
-    assert(document.IsObject());
+    CHECK_JSON_TYPE(document, IsObject);
 
-    VkAttachmentReference reference{};
-
-    assert(document.HasMember("attachment_name"));
-    assert(document["attachment_name"].IsString());
+    CHECK_JSON_FIELD(document, attachment, IsString);
 
     auto attachment_index_iter = attachment_indices.find(document["attachment_name"].GetString());
     if (attachment_index_iter != attachment_indices.end())
     {
         reference.attachment = attachment_index_iter->second;
     }
-    else
+    else if (strcmp(document["attachment_name"].GetString(), "UNUSED") == 0)
     {
-        assert(strcmp(document["attachment_name"].GetString(), "UNUSED") == 0);
         reference.attachment = VK_ATTACHMENT_UNUSED;
     }
+    else
+    {
+        LOG_ERROR("Couldn't find preserve_attachment {} in framebuffer",
+                  document["attachment_name"].GetString());
+        return ErrorCode::JSON_ERROR;
+    }
 
-    assert(document.HasMember("layout"));
-    assert(document["layout"].IsString());
-    reference.layout = getVkImageLayout(document["layout"].GetString());
+    CHECK_JSON_FIELD(document, layout, IsString);
 
-    return reference;
+    auto opt_layout = getVkImageLayout(document["layout"].GetString());
+    if (!opt_layout)
+    {
+        LOG_ERROR("Couldn't initialize layout with {}", document["layout"].GetString());
+        return ErrorCode::JSON_ERROR;
+    }
+    reference.layout = opt_layout.value();
+
+    return ErrorCode::NONE;
 }
 
-VkClearValue initClearValue(rapidjson::Value const & document)
+ErrorCode initClearValue(rapidjson::Value const & document, VkClearValue value)
 {
-    VkClearValue value;
-
-    assert(document.IsObject());
+    CHECK_JSON_TYPE(document, IsObject);
 
     if (document.HasMember("color"))
     {
         value.color = {0.f, 0.f, 0.f, 1.f};
 
-        assert(document["color"].IsArray());
+        auto & color = document["color"];
+
+        CHECK_JSON_TYPE(color, IsArray);
+        assert(color.Size() == 4);
+        if (color.Size() != 4)
+        {
+            LOG_ERROR("Clear Color arrays must have 4 elements for RGBA");
+            return ErrorCode::JSON_ERROR;
+        }
 
         size_t i = 0;
-        for (auto const & comp_value: document["color"].GetArray())
+        for (auto const & comp_value: color.GetArray())
         {
-            assert(comp_value.IsNumber());
+            CHECK_JSON_TYPE(comp_value, IsNumber);
             if (comp_value.IsInt())
             {
                 value.color.float32[i] = comp_value.GetInt();
@@ -694,6 +774,18 @@ VkClearValue initClearValue(rapidjson::Value const & document)
             {
                 value.color.float32[i] = comp_value.GetDouble();
             }
+            else
+            {
+                LOG_ERROR("Clear Color Component values must be a double or integer");
+                return ErrorCode::JSON_ERROR;
+            }
+
+            if (value.color.float32[i] > 1.0 || value.color.float32[i] < 0.0)
+            {
+                LOG_WARN(
+                    "Clear Color Component values must be clamped between 0.0 and 1.0 (inclusive)");
+            }
+
             ++i;
         }
         LOG_DEBUG("Parsed VkClearValue {} {} {} {}",
@@ -708,43 +800,50 @@ VkClearValue initClearValue(rapidjson::Value const & document)
 
         auto & depth_stencil = document["depth_stencil"];
 
-        assert(depth_stencil.IsArray());
+        CHECK_JSON_TYPE(depth_stencil, IsArray);
         assert(depth_stencil.Size() == 2);
-
-        assert(depth_stencil[0].IsNumber());
-        if (depth_stencil[0].IsDouble())
+        if (depth_stencil.Size() != 2)
         {
-            value.depthStencil.depth = depth_stencil[0].GetDouble();
-        }
-        else if (depth_stencil[0].IsUint())
-        {
-            value.depthStencil.depth = depth_stencil[0].GetUint();
+            LOG_ERROR("Clear Depth Stencil arrays must have 2 elements for depth and stencil");
+            return ErrorCode::JSON_ERROR;
         }
 
-        assert(depth_stencil[1].IsUint());
+        CHECK_JSON_TYPE(depth_stencil[0], IsDouble);
+        value.depthStencil.depth = depth_stencil[0].GetDouble();
+        if (value.depthStencil.depth > 1.0 || value.depthStencil.depth < 0.0)
+        {
+            LOG_WARN("Depth values must be clamped between 0.0 and 1.0 (inclusive)");
+        }
+
+        CHECK_JSON_TYPE(depth_stencil[1], IsUint);
         value.depthStencil.stencil = depth_stencil[1].GetUint();
 
         LOG_DEBUG(
             "Parsed VkClearValue {} {}", value.depthStencil.depth, value.depthStencil.stencil);
     }
 
-    return value;
+    return ErrorCode::NONE;
 }
 
-VkPipelineStageFlagBits initStageFlags(rapidjson::Value & document)
+ErrorCode initStageFlags(rapidjson::Value & document, VkPipelineStageFlags & stage_flags)
 {
-    assert(document.IsArray());
-
-    VkPipelineStageFlagBits stage_flags{};
+    CHECK_JSON_TYPE(document, IsArray);
 
     for (auto & stage_name: document.GetArray())
     {
-        assert(stage_name.IsString());
-        stage_flags = static_cast<VkPipelineStageFlagBits>(
-            stage_flags | getVkPipelineStageFlagBit(stage_name.GetString()));
+        CHECK_JSON_TYPE(stage_name, IsString);
+
+        auto opt_flag = getVkPipelineStageFlagBit(stage_name.GetString());
+        if (!opt_flag)
+        {
+            LOG_ERROR("Stage Flag {} wasn't recognized", stage_name.GetString());
+            return ErrorCode::JSON_ERROR;
+        }
+
+        stage_flags = static_cast<VkPipelineStageFlags>(stage_flags | opt_flag.value());
     }
 
-    return stage_flags;
+    return ErrorCode::NONE;
 }
 
 std::optional<uint32_t> initSubpassIndex(
@@ -771,150 +870,191 @@ std::optional<uint32_t> initSubpassIndex(
     return std::nullopt;
 }
 
-VkExtent2D initVkExtent2D(rapidjson::Value & document)
+ErrorCode initVkExtent2D(rapidjson::Value & document, VkExtent2D & extent)
 {
-    VkExtent2D extent{};
-    assert(document.IsObject());
-    assert(document.HasMember("width") && document["width"].IsUint());
+    CHECK_JSON_TYPE(document, IsObject);
+
+    CHECK_JSON_FIELD(document, width, IsUint);
     extent.width = document["width"].GetUint();
 
-    assert(document.HasMember("height") && document["height"].IsUint());
+    CHECK_JSON_FIELD(document, height, IsUint);
     extent.height = document["height"].GetUint();
 
-    LOG_DEBUG("Read extent {} {}", extent.width, extent.height);
-
-    return extent;
+    return ErrorCode::NONE;
 }
 
-VkDescriptorSetLayoutBinding initVkDescriptorSetLayoutBinding(rapidjson::Value & document)
+ErrorCode initVkDescriptorSetLayoutBinding(rapidjson::Value &             document,
+                                           VkDescriptorSetLayoutBinding & layout)
 {
-    assert(document.IsObject());
+    CHECK_JSON_TYPE(document, IsObject);
 
-    VkDescriptorSetLayoutBinding layout{};
+    CHECK_JSON_FIELD(document, binding, IsUint);
+    layout.binding = document["binding"].GetUint();
 
-    assert(document.HasMember("binding"));
-    assert(document["binding"].IsInt());
-    layout.binding = document["binding"].GetInt();
+    CHECK_JSON_FIELD(document, descriptor_type, IsString);
+    auto opt_descriptor_type = getVkDescriptorType(document["descriptor_type"].GetString());
+    if (!opt_descriptor_type)
+    {
+        LOG_ERROR("Couldn't initialize descriptor_type with {}",
+                  document["descriptor_type"].GetString());
+        return ErrorCode::JSON_ERROR;
+    }
+    layout.descriptorType = opt_descriptor_type.value();
 
-    assert(document.HasMember("descriptor_type"));
-    assert(document["descriptor_type"].IsString());
-    layout.descriptorType = getVkDescriptorType(document["descriptor_type"].GetString());
+    CHECK_JSON_FIELD(document, descriptor_count, IsUint);
+    layout.descriptorCount = document["descriptor_count"].GetUint();
 
-    assert(document.HasMember("descriptor_count"));
-    assert(document["descriptor_count"].IsInt());
-    layout.descriptorCount = document["descriptor_count"].GetInt();
-
-    assert(document.HasMember("stage"));
-    assert(document["stage"].IsArray());
+    CHECK_JSON_FIELD(document, stage, IsArray);
     layout.stageFlags = 0;
     for (auto & stage: document["stage"].GetArray())
     {
-        assert(stage.IsString());
-        layout.stageFlags |= getVkShaderStageFlagBit(stage.GetString());
+        CHECK_JSON_TYPE(stage, IsString);
+        auto opt_shader_stage = getVkShaderStageFlagBit(stage.GetString());
+        if (!opt_shader_stage)
+        {
+            LOG_ERROR("Couldn't initialize stage with {}", stage.GetString());
+            return ErrorCode::JSON_ERROR;
+        }
+
+        layout.stageFlags |= opt_shader_stage.value();
     }
 
-    return layout;
+    return ErrorCode::NONE;
 }
 
-VkAccessFlagBits initAccessFlags(rapidjson::Value & document)
+ErrorCode initAccessFlags(rapidjson::Value & document, VkAccessFlags & access_flags)
 {
-    assert(document.IsArray());
-
-    VkAccessFlagBits access_flags{};
+    CHECK_JSON_TYPE(document, IsArray);
 
     for (auto & access_name: document.GetArray())
     {
-        assert(access_name.IsString());
-        access_flags = static_cast<VkAccessFlagBits>(access_flags
-                                                     | getVkAccessFlagBit(access_name.GetString()));
+        CHECK_JSON_TYPE(access_name, IsString);
+
+        auto opt_access_bit = getVkAccessFlagBit(access_name.GetString());
+        if (!opt_access_bit)
+        {
+            LOG_ERROR("Access Flag {} wasn't recognized", access_name.GetString());
+            return ErrorCode::JSON_ERROR;
+        }
+
+        access_flags = static_cast<VkAccessFlagBits>(access_flags | opt_access_bit.value());
     }
 
-    return access_flags;
+    return ErrorCode::NONE;
 }
 
-VkSubpassDependency initDependency(
-    rapidjson::Value &                                     document,
-    std::unordered_map<std::string, SubpassHandle> const & subpass_handles)
+ErrorCode initDependency(rapidjson::Value &                                     document,
+                         VkSubpassDependency &                                  dependency,
+                         std::unordered_map<std::string, SubpassHandle> const & subpass_handles)
 {
-    assert(document.IsObject());
-
-    VkSubpassDependency dependency{};
+    CHECK_JSON_TYPE(document, IsObject);
 
     if (document.HasMember("src_subpass"))
     {
-        dependency.srcSubpass = initSubpassIndex(document["src_subpass"], subpass_handles).value();
+        auto opt_subpass_index = initSubpassIndex(document["src_subpass"], subpass_handles);
+        if (!opt_subpass_index)
+        {
+            LOG_ERROR("src_subpass in subpass dependency couldn't be found");
+            return ErrorCode::JSON_ERROR;
+        }
+
+        dependency.srcSubpass = opt_subpass_index.value();
     }
 
     if (document.HasMember("dst_subpass"))
     {
-        dependency.dstSubpass = initSubpassIndex(document["dst_subpass"], subpass_handles).value();
+        auto opt_subpass_index = initSubpassIndex(document["dst_subpass"], subpass_handles);
+        if (!opt_subpass_index)
+        {
+            LOG_ERROR("dst_subpass in subpass dependency couldn't be found");
+            return ErrorCode::JSON_ERROR;
+        }
+
+        dependency.dstSubpass = opt_subpass_index.value();
     }
 
     if (document.HasMember("src_stage_mask"))
     {
-        dependency.srcStageMask = initStageFlags(document["src_stage_mask"]);
+        auto error = initStageFlags(document["src_stage_mask"], dependency.srcStageMask);
+        if (error != ErrorCode::NONE)
+        {
+            LOG_DEBUG("Subpass Dependency src_stage_mask couldn't be initialized");
+            return error;
+        }
     }
 
     if (document.HasMember("dst_stage_mask"))
     {
-        dependency.dstStageMask = initStageFlags(document["dst_stage_mask"]);
+        auto error = initStageFlags(document["dst_stage_mask"], dependency.dstStageMask);
+        if (error != ErrorCode::NONE)
+        {
+            LOG_DEBUG("Subpass Dependency dst_stage_mask couldn't be initialized");
+            return error;
+        }
     }
 
     if (document.HasMember("src_access_mask"))
     {
-        dependency.srcAccessMask = initAccessFlags(document["src_access_mask"]);
+        auto error = initAccessFlags(document["src_access_mask"], dependency.srcAccessMask);
+        if (error != ErrorCode::NONE)
+        {
+            LOG_DEBUG("Couldn't read configuration for src_access_mask in Subpass Dependency");
+            return error;
+        }
     }
 
     if (document.HasMember("dst_access_mask"))
     {
-        dependency.dstAccessMask = initAccessFlags(document["dst_access_mask"]);
+        auto error = initAccessFlags(document["dst_access_mask"], dependency.dstAccessMask);
+        if (error != ErrorCode::NONE)
+        {
+            LOG_DEBUG("Couldn't read configuration for src_access_mask in Subpass Dependency");
+            return error;
+        }
     }
 
-    return dependency;
+    return ErrorCode::NONE;
 }
 
-VkPushConstantRange initVkPushConstantRange(rapidjson::Value & document)
+ErrorCode initVkPushConstantRange(rapidjson::Value & document, VkPushConstantRange & push_constant)
 {
-    assert(document.IsObject());
+    CHECK_JSON_TYPE(document, IsObject);
 
-    VkPushConstantRange push_constant;
+    CHECK_JSON_FIELD(document, offset, IsUint);
+    push_constant.offset = document["offset"].IsUint();
 
-    assert(document.HasMember("offset"));
-    assert(document["offset"].IsInt());
-    push_constant.offset = document["offset"].GetInt();
+    CHECK_JSON_FIELD(document, size, IsUint);
+    push_constant.size = document["size"].IsUint();
 
-    assert(document.HasMember("size"));
-    assert(document["size"].IsInt());
-    push_constant.size = document["size"].GetInt();
-
-    assert(document.HasMember("stage"));
-    assert(document["stage"].IsArray());
+    CHECK_JSON_FIELD(document, stage, IsArray);
     push_constant.stageFlags = 0;
     for (auto & stage: document["stage"].GetArray())
     {
-        assert(stage.IsString());
-        push_constant.stageFlags |= getVkShaderStageFlagBit(stage.GetString());
+        CHECK_JSON_TYPE(stage, IsString);
+        auto opt_stage_flags = getVkShaderStageFlagBit(stage.GetString());
+        if (!opt_stage_flags)
+        {
+            LOG_ERROR("Couldn't initialize stage with {}", stage.GetString());
+        }
+
+        push_constant.stageFlags |= opt_stage_flags.value();
     }
 
-    return push_constant;
+    return ErrorCode::NONE;
 }
 
-VkVertexInputBindingDescription initVkVertexInputBindingDescription(rapidjson::Value & document)
+ErrorCode initVkVertexInputBindingDescription(rapidjson::Value &                document,
+                                              VkVertexInputBindingDescription & vertex_binding)
 {
-    assert(document.IsObject());
+    CHECK_JSON_TYPE(document, IsObject);
 
-    VkVertexInputBindingDescription vertex_binding;
-
-    assert(document.HasMember("binding_slot"));
-    assert(document["binding_slot"].IsUint());
+    CHECK_JSON_FIELD(document, binding_slot, IsUint);
     vertex_binding.binding = document["binding_slot"].GetUint();
 
-    assert(document.HasMember("stride"));
-    assert(document["stride"].IsUint());
+    CHECK_JSON_FIELD(document, stride, IsUint);
     vertex_binding.stride = document["stride"].GetUint();
 
-    assert(document.HasMember("input_rate"));
-    assert(document["input_rate"].IsString());
+    CHECK_JSON_FIELD(document, input_rate, IsString);
     std::string input_rate = document["input_rate"].GetString();
     if (strcmp(input_rate.c_str(), "PER_VERTEX") == 0)
     {
@@ -924,47 +1064,59 @@ VkVertexInputBindingDescription initVkVertexInputBindingDescription(rapidjson::V
     {
         vertex_binding.inputRate = VK_VERTEX_INPUT_RATE_INSTANCE;
     }
+    else
+    {
+        LOG_ERROR("Vertex Binding input_rate {} not recognized", input_rate);
+        return ErrorCode::JSON_ERROR;
+    }
 
-    return vertex_binding;
+    return ErrorCode::NONE;
 }
 
-VkVertexInputAttributeDescription initVkVertexInputAttributeDescription(
+ErrorCode initVkVertexInputAttributeDescription(
     rapidjson::Value &                                               document,
+    VkVertexInputAttributeDescription &                              attribute,
     std::unordered_map<std::string, VkVertexInputBindingDescription> vertex_bindings)
 {
-    assert(document.IsObject());
+    CHECK_JSON_TYPE(document, IsObject);
 
-    VkVertexInputAttributeDescription attribute;
+    CHECK_JSON_FIELD(document, vertex_binding_name, IsString);
+    auto iter = vertex_bindings.find(document["vertex_binding_name"].GetString());
+    if (iter == vertex_bindings.end())
+    {
+        LOG_ERROR("Couldn't find Vertex Binding {} referenced in Vertex Attribute",
+                  document["vertex_binding_name"].GetString());
+        return ErrorCode::JSON_ERROR;
+    }
+    attribute.binding = iter->second.binding;
 
-    assert(document.HasMember("vertex_binding_name"));
-    assert(document["vertex_binding_name"].IsString());
-    attribute.binding = vertex_bindings[document["vertex_binding_name"].GetString()].binding;
+    CHECK_JSON_FIELD(document, location, IsUint);
+    attribute.location = document["location"].GetUint();
 
-    assert(document.HasMember("location"));
-    assert(document["location"].IsInt());
-    attribute.location = document["location"].GetInt();
+    CHECK_JSON_FIELD(document, offset, IsUint);
+    attribute.offset = document["offset"].GetUint();
 
-    assert(document.HasMember("offset"));
-    assert(document["offset"].IsInt());
-    attribute.offset = document["offset"].GetInt();
+    CHECK_JSON_FIELD(document, format, IsString);
+    auto opt_format = getVkFormat(document["format"].GetString());
+    if (!opt_format)
+    {
+        LOG_ERROR("Couldn't initialize format with {}", document["format"].GetString());
+        return ErrorCode::JSON_ERROR;
+    }
+    attribute.format = opt_format.value();
 
-    assert(document.HasMember("format"));
-    assert(document["format"].IsString());
-    attribute.format = getVkFormat(document["format"].GetString());
-
-    return attribute;
+    return ErrorCode::NONE;
 }
 
 //
 // CONFIG STRUCT INITIALIZERS
 //
 
-void init(rapidjson::Value & document, AttachmentConfig & attachment_config)
+ErrorCode init(rapidjson::Value & document, AttachmentConfig & attachment_config)
 {
-    assert(document.IsObject());
+    CHECK_JSON_TYPE(document, IsObject);
 
-    assert(document.HasMember("format"));
-    assert(document["format"].IsString());
+    CHECK_JSON_FIELD(document, format, IsString);
     char const * format_str = document["format"].GetString();
     if (strcmp(format_str, "color") == 0)
     {
@@ -975,29 +1127,43 @@ void init(rapidjson::Value & document, AttachmentConfig & attachment_config)
         attachment_config.format = Format::USE_DEPTH;
     }
 
+    CHECK_JSON_FIELD(document, usage, IsArray);
     attachment_config.usage = static_cast<VkImageUsageFlags>(0);
-    assert(document.HasMember("usage"));
-    assert(document["usage"].IsArray());
     for (auto & usage_bit_name: document["usage"].GetArray())
     {
-        assert(usage_bit_name.IsString());
-        attachment_config.usage |= getVkImageUsageFlagBits(usage_bit_name.GetString());
+        CHECK_JSON_TYPE(usage_bit_name, IsString);
+
+        auto opt_usage = getVkImageUsageFlagBits(usage_bit_name.GetString());
+        if (!opt_usage)
+        {
+            LOG_ERROR("Couldn't initialize usage with {}", usage_bit_name.GetString());
+            return ErrorCode::JSON_ERROR;
+        }
+
+        attachment_config.usage |= opt_usage.value();
     }
 
     if (document.HasMember("multisamples"))
     {
-        assert(document["multisamples"].IsUint());
-        attachment_config.multisamples = getVkSampleCountFlagBits(
-            document["multisamples"].GetUint());
+        CHECK_JSON_TYPE(document["multisamples"], IsUint);
+        auto opt_multisamples = getVkSampleCountFlagBits(document["multisamples"].GetUint());
+        if (!opt_multisamples)
+        {
+            LOG_ERROR("Couldn't initialize multisamples with {}",
+                      document["multisamples"].GetUint());
+            return ErrorCode::JSON_ERROR;
+        }
+
+        attachment_config.multisamples = opt_multisamples.value();
     }
     else
     {
-        attachment_config.multisamples = getVkSampleCountFlagBits(1);
+        attachment_config.multisamples = getVkSampleCountFlagBits(1).value();
     }
 
     if (document.HasMember("is_swapchain_image"))
     {
-        assert(document["is_swapchain_image"].IsBool());
+        CHECK_JSON_TYPE(document["is_swapchain_image"], IsBool);
         attachment_config.is_swapchain_image = document["is_swapchain_image"].GetBool();
     }
     else
@@ -1009,70 +1175,124 @@ void init(rapidjson::Value & document, AttachmentConfig & attachment_config)
     {
         attachment_config.use_swapchain_size = false;
 
-        assert(document["size"].IsObject());
-        attachment_config.extent = initVkExtent2D(document["size"]);
+        // TODO: change initVkExtent2D to return an error
+        auto error = initVkExtent2D(document["size"], attachment_config.extent);
+        if (error != ErrorCode::NONE)
+        {
+            LOG_DEBUG("Attachment Extent failed to initialize");
+            return error;
+        }
     }
     else
     {
         attachment_config.use_swapchain_size = true;
     }
+
+    return ErrorCode::NONE;
 }
 
-void init(rapidjson::Value &                        document,
-          SubpassInfo &                             subpass_info,
-          std::unordered_map<std::string, size_t> & attachment_indices)
+ErrorCode init(rapidjson::Value &                        document,
+               SubpassInfo &                             subpass_info,
+               std::unordered_map<std::string, size_t> & attachment_indices)
 {
-    assert(document.IsObject());
+    CHECK_JSON_TYPE(document, IsObject);
 
     if (document.HasMember("multisamples"))
     {
-        assert(document["multisamples"].IsUint());
-        subpass_info.multisamples = getVkSampleCountFlagBits(document["multisamples"].GetUint());
+        CHECK_JSON_TYPE(document["multisamples"], IsUint);
+
+        auto opt_multisamples = getVkSampleCountFlagBits(document["multisamples"].GetUint());
+        if (!opt_multisamples)
+        {
+            LOG_ERROR("Couldn't initialize multisamples with {}",
+                      document["multisamples"].GetUint());
+            return ErrorCode::JSON_ERROR;
+        }
+
+        subpass_info.multisamples = opt_multisamples.value();
     }
     else
     {
-        subpass_info.multisamples = getVkSampleCountFlagBits(1);
+        subpass_info.multisamples = getVkSampleCountFlagBits(1).value();
     }
 
     if (document.HasMember("color_attachments"))
     {
-        assert(document["color_attachments"].IsArray());
+        CHECK_JSON_TYPE(document["color_attachments"], IsArray);
+
+        subpass_info.color_attachments.resize(document["color_attachments"].GetArray().Size());
         for (auto & ca: document["color_attachments"].GetArray())
         {
-            subpass_info.color_attachments.push_back(
-                initAttachmentReference(ca, attachment_indices));
+            subpass_info.color_attachments.push_back({});
+
+            auto error = initAttachmentReference(
+                ca, subpass_info.color_attachments.back(), attachment_indices);
+            if (error != ErrorCode::JSON_ERROR)
+            {
+                LOG_DEBUG("Couldn't initialize color_attachments");
+                return error;
+            }
         }
     }
 
     if (document.HasMember("color_resolve_attachments"))
     {
-        assert(document["color_resolve_attachments"].IsArray());
+        CHECK_JSON_TYPE(document["color_resolve_attachments"], IsArray);
+
+        subpass_info.color_resolve_attachments.resize(
+            document["color_resolve_attachments"].GetArray().Size());
+
         for (auto & cra: document["color_resolve_attachments"].GetArray())
         {
-            subpass_info.color_resolve_attachments.push_back(
-                initAttachmentReference(cra, attachment_indices));
+            // TODO: initAttachmentReference should return an error
+            subpass_info.color_resolve_attachments.push_back({});
+
+            auto error = initAttachmentReference(
+                cra, subpass_info.color_resolve_attachments.back(), attachment_indices);
+            if (error != ErrorCode::JSON_ERROR)
+            {
+                LOG_DEBUG("Couldn't initialize color_resolve_attachments");
+                return error;
+            }
         }
     }
 
     assert(subpass_info.color_attachments.size() == subpass_info.color_resolve_attachments.size()
            || subpass_info.color_resolve_attachments.size() == 0);
+    if (subpass_info.color_attachments.size() != subpass_info.color_resolve_attachments.size()
+        && subpass_info.color_resolve_attachments.size() != 0)
+    {
+        LOG_ERROR("Subpass's color_attachments need to map 1-to-1 with it's "
+                  "color_resolve_attachments, or color_resolve_attachments must be empty");
+        return ErrorCode::JSON_ERROR;
+    }
 
     if (document.HasMember("input_attachments"))
     {
-        assert(document["input_attachments"].IsArray());
+        CHECK_JSON_TYPE(document["input_attachments"], IsArray);
+
+        subpass_info.input_attachments.resize(document["input_attachments"].GetArray().Size());
         for (auto & ia: document["input_attachments"].GetArray())
         {
-            subpass_info.input_attachments.push_back(
-                initAttachmentReference(ia, attachment_indices));
+            // TODO: initAttachmentReference should return an error
+            subpass_info.input_attachments.push_back({});
+            auto error = initAttachmentReference(
+                ia, subpass_info.input_attachments.back(), attachment_indices);
+            if (error != ErrorCode::NONE)
+            {
+                LOG_DEBUG("Couldn't initialize input_attachments");
+                return error;
+            }
         }
     }
 
     if (document.HasMember("preserve_attachments"))
     {
-        assert(document["preserve_attachments"].IsArray());
+        CHECK_JSON_TYPE(document["preserve_attachments"], IsArray);
+
         for (auto & pa: document["preserve_attachments"].GetArray())
         {
-            assert(pa.IsString());
+            CHECK_JSON_TYPE(pa, IsString);
 
             auto attachment_index_iter = attachment_indices.find(pa.GetString());
             if (attachment_index_iter != attachment_indices.end())
@@ -1081,133 +1301,158 @@ void init(rapidjson::Value &                        document,
             }
             else
             {
-                LOG_ERROR("Couldn't find index in framebuffer for preserve attachment {}",
-                          pa.GetString());
+                LOG_ERROR("Couldn't find preserve_attachment {} in framebuffer", pa.GetString());
+                return ErrorCode::JSON_ERROR;
             }
         }
     }
 
     if (document.HasMember("depth_stencil_attachment"))
     {
-        subpass_info.depth_stencil_attachment = initAttachmentReference(
-            document["depth_stencil_attachment"], attachment_indices);
+        // TODO: initAttachmentReference should return an error
+        auto error = initAttachmentReference(document["depth_stencil_attachment"],
+                                             subpass_info.depth_stencil_attachment,
+                                             attachment_indices);
+
+        if (error != ErrorCode::NONE)
+        {
+            LOG_DEBUG("Couldn't initialize depth_stencil_attachment");
+            return error;
+        }
     }
     else
     {
         subpass_info.depth_stencil_attachment = VkAttachmentReference{
             .attachment = VK_ATTACHMENT_UNUSED, .layout = VK_IMAGE_LAYOUT_UNDEFINED};
     }
+
+    return ErrorCode::NONE;
 }
 
-void init(rapidjson::Value & document, RenderPassConfig & render_pass_config)
+ErrorCode init(rapidjson::Value & document, RenderPassConfig & render_pass_config)
 {
-    assert(document.IsObject());
+    CHECK_JSON_TYPE(document, IsObject);
 
-    assert(document.HasMember("framebuffer"));
-    assert(document["framebuffer"].IsArray());
+    CHECK_JSON_FIELD(document, framebuffer, IsArray);
     size_t attachment_index{0};
     for (auto & ad: document["framebuffer"].GetArray())
     {
-        assert(ad.IsObject());
-        assert(ad.HasMember("attachment_name"));
-        assert(ad["attachment_name"].IsString());
+        CHECK_JSON_TYPE(ad, IsObject);
+
+        CHECK_JSON_FIELD(ad, attachment_name, IsString);
         std::string name = ad["attachment_name"].GetString();
 
-        render_pass_config.attachments[name]  = attachment_index++;
-        render_pass_config.descriptions[name] = initAttachmentDescription(ad);
+        render_pass_config.attachments[name] = attachment_index++;
+
+        auto error = initAttachmentDescription(ad, render_pass_config.descriptions[name]);
+        if (error != ErrorCode::NONE)
+        {
+            LOG_DEBUG("Couldn't initialize render pass attachment description");
+            return error;
+        }
 
         if (ad.HasMember("clear_value"))
         {
-            render_pass_config.clear_values[ad["attachment_name"].GetString()] = initClearValue(
-                ad["clear_value"]);
+            auto error = initClearValue(
+                ad["clear_value"],
+                render_pass_config.clear_values[ad["attachment_name"].GetString()]);
+
+            if (error != ErrorCode::NONE)
+            {
+                LOG_DEBUG("Couldn't initialize Render Pass Clear Value");
+            }
         }
     }
 
-    assert(document.HasMember("subpasses"));
-    assert(document["subpasses"].IsArray());
-
+    CHECK_JSON_FIELD(document, subpasses, IsArray);
     for (auto & sp: document["subpasses"].GetArray())
     {
         assert(sp.IsObject());
-        assert(sp.HasMember("name"));
-        assert(sp["name"].IsString());
+        CHECK_JSON_FIELD(sp, name, IsString);
 
         SubpassHandle handle = render_pass_config.subpasses.size();
 
         SubpassInfo info{};
-        init(sp, info, render_pass_config.attachments);
+
+        auto error = init(sp, info, render_pass_config.attachments);
+        if (error != ErrorCode::NONE)
+        {
+            LOG_DEBUG("Subpass {} failed to initialize", sp["name"].GetString());
+            return error;
+        }
 
         render_pass_config.subpass_handles[sp["name"].GetString()] = handle;
         render_pass_config.subpasses.push_back(info);
     }
 
-    assert(document.HasMember("subpass_dependencies"));
-    assert(document["subpass_dependencies"].IsArray());
-
-    for (auto & spd: document["subpass_dependencies"].GetArray())
+    CHECK_JSON_FIELD(document, subpass_dependencies, IsArray);
+    auto const & json_dependency_array = document["subpass_dependencies"].GetArray();
+    render_pass_config.subpass_dependencies.resize(json_dependency_array.Size());
+    for (size_t i = 0; i < json_dependency_array.Size(); ++i)
     {
-        render_pass_config.subpass_dependencies.push_back(
-            initDependency(spd, render_pass_config.subpass_handles));
+        auto & sp_d      = render_pass_config.subpass_dependencies[i];
+        auto & json_sp_d = json_dependency_array[i];
+
+        auto error = initDependency(json_sp_d, sp_d, render_pass_config.subpass_handles);
+
+        if (error != ErrorCode::NONE)
+        {
+            LOG_DEBUG("Couldn't read configuration for Subpass Dependency at index {}", i);
+        }
     }
+
+    return ErrorCode::NONE;
 }
 
-void init(rapidjson::Value &                                   document,
-          PipelineConfig &                                     pipeline_config,
-          std::unordered_map<std::string, std::string> const & shader_names)
+ErrorCode init(rapidjson::Value &                                   document,
+               PipelineConfig &                                     pipeline_config,
+               std::unordered_map<std::string, std::string> const & shader_names)
 {
-    assert(document.IsObject());
+    CHECK_JSON_TYPE(document, IsObject);
 
-    assert(document.HasMember("vertex_shader_name"));
-    assert(document["vertex_shader_name"].IsString());
+    CHECK_JSON_FIELD(document, vertex_shader_name, IsString);
     pipeline_config.vertex_shader_name = document["vertex_shader_name"].GetString();
 
-    assert(document.HasMember("fragment_shader_name"));
-    assert(document["fragment_shader_name"].IsString());
+    CHECK_JSON_FIELD(document, fragment_shader_name, IsString);
     pipeline_config.fragment_shader_name = document["fragment_shader_name"].GetString();
 
-    assert(document.HasMember("vertex_bindings"));
-    assert(document["vertex_bindings"].IsArray());
+    CHECK_JSON_FIELD(document, vertex_bindings, IsArray);
     for (auto const & vbi: document["vertex_bindings"].GetArray())
     {
-        assert(vbi.IsString());
+        CHECK_JSON_TYPE(vbi, IsString);
         pipeline_config.vertex_binding_names.push_back(vbi.GetString());
     }
 
-    assert(document.HasMember("vertex_attributes"));
-    assert(document["vertex_attributes"].IsArray());
+    CHECK_JSON_FIELD(document, vertex_attributes, IsArray);
     for (auto const & vai: document["vertex_attributes"].GetArray())
     {
-        assert(vai.IsString());
+        CHECK_JSON_TYPE(vai, IsString);
         pipeline_config.vertex_attribute_names.push_back(vai.GetString());
     }
 
-    assert(document.HasMember("uniform_layouts"));
-    assert(document["uniform_layouts"].IsArray());
+    CHECK_JSON_FIELD(document, uniform_layouts, IsArray);
     for (auto const & uli: document["uniform_layouts"].GetArray())
     {
-        assert(uli.IsString());
+        CHECK_JSON_TYPE(uli, IsString);
         pipeline_config.uniform_layout_names.push_back(uli.GetString());
     }
 
-    assert(document.HasMember("push_constants"));
-    assert(document["push_constants"].IsArray());
+    CHECK_JSON_FIELD(document, push_constants, IsArray);
     for (auto const & pci: document["push_constants"].GetArray())
     {
-        assert(pci.IsString());
+        CHECK_JSON_TYPE(pci, IsString);
         pipeline_config.push_constant_names.push_back(pci.GetString());
     }
 
-    assert(document.HasMember("render_pass"));
-    assert(document["render_pass"].IsString());
+    CHECK_JSON_FIELD(document, render_pass, IsString);
     pipeline_config.render_pass = document["render_pass"].GetString();
 
-    assert(document.HasMember("subpass"));
-    assert(document["subpass"].IsString());
+    CHECK_JSON_FIELD(document, subpass, IsString);
     pipeline_config.subpass = document["subpass"].GetString();
 
     if (document.HasMember("blendable"))
     {
-        assert(document["blendable"].IsBool());
+        CHECK_JSON_TYPE(document["blendable"], IsBool);
         pipeline_config.blendable = document["blendable"].GetBool();
     }
     else
@@ -1217,7 +1462,7 @@ void init(rapidjson::Value &                                   document,
 
     if (document.HasMember("tests_depth"))
     {
-        assert(document["tests_depth"].IsBool());
+        CHECK_JSON_TYPE(document["tests_depth"], IsBool);
         pipeline_config.tests_depth = document["tests_depth"].GetBool();
     }
     else
@@ -1227,174 +1472,222 @@ void init(rapidjson::Value &                                   document,
 
     if (document.HasMember("dynamic_state"))
     {
-        assert(document["dynamic_state"].IsArray());
+        CHECK_JSON_TYPE(document["dynamic_state"], IsArray);
 
+        pipeline_config.dynamic_state.reserve(document["dynamic_state"].GetArray().Size());
         for (auto const & state: document["dynamic_state"].GetArray())
         {
-            assert(state.IsString());
-            LOG_DEBUG("Pushing state {}", state.GetString());
-            pipeline_config.dynamic_state.push_back(getVkDynamicState(state.GetString()));
+            CHECK_JSON_TYPE(state, IsString);
+
+            auto opt_state = getVkDynamicState(state.GetString());
+            if (!opt_state)
+            {
+                LOG_ERROR("Couldn't initialize dynamic_state with {}", state.GetString());
+                return ErrorCode::JSON_ERROR;
+            }
+
+            pipeline_config.dynamic_state.push_back(opt_state.value());
         }
     }
+
+    return ErrorCode::NONE;
 }
 
-void init(rapidjson::Value & document, UniformConfig & uniform_config)
+ErrorCode init(rapidjson::Value & document, UniformConfig & uniform_config)
 {
-    assert(document.IsObject());
-    assert(document.HasMember("max_count"));
-    assert(document["max_count"].IsUint());
+    CHECK_JSON_TYPE(document, IsObject);
 
+    CHECK_JSON_FIELD(document, max_count, IsUint);
     uniform_config.max_uniform_count = document["max_count"].GetUint();
     assert(uniform_config.max_uniform_count != 0);
 
-    uniform_config.layout_binding = initVkDescriptorSetLayoutBinding(document);
+    if (uniform_config.max_uniform_count == 0)
+    {
+        LOG_ERROR("Uniform Layout cannot have a max_count of 0");
+        return ErrorCode::JSON_ERROR;
+    }
+
+    auto error = initVkDescriptorSetLayoutBinding(document, uniform_config.layout_binding);
+    if (error != ErrorCode::NONE)
+    {
+        LOG_DEBUG("Couldn't read configuration for Uniform Layout");
+        return error;
+    }
+
+    return ErrorCode::NONE;
 }
 
 ErrorCode RenderConfig::init(char const * file_name, ReadFileFn read_file_fn)
 {
+    namespace rj = rapidjson;
+
+    LOG_INFO("Initializing Render Configuration");
+
     assert(read_file_fn != nullptr);
 
     config_filename = file_name;
     read_file       = read_file_fn;
 
-    namespace rj = rapidjson;
-
     rj::Document document;
 
     std::vector<char> config_json;
 
+    if (file_name == nullptr)
+    {
+        LOG_ERROR("File path was not defined");
+        return ErrorCode::API_ERROR;
+    }
+
     if (read_file == nullptr)
     {
         LOG_ERROR("ReadFileFn was not defined");
+        return ErrorCode::API_ERROR;
     }
 
-    read_file(config_filename, config_json);
+    if (read_file(config_filename, config_json) != ErrorCode::NONE)
+    {
+        LOG_ERROR("Couldn't read configuration file {}", config_filename);
+        return ErrorCode::FILE_ERROR;
+    }
 
     // auto config_json = readFile(config_filename);
     config_json.push_back('\0');
 
     if (document.Parse(config_json.data()).HasParseError())
     {
-        LOG_ERROR("Parse error on json data: \"{}\"", config_json.data());
+        LOG_ERROR("Couldn't parse Render Configuration json: \"{}\"", config_json.data());
         return ErrorCode::JSON_ERROR;
     }
     else
     {
-        LOG_DEBUG("Parsed file {} in RenderConfig", config_filename);
+        LOG_DEBUG("Parsed Render Configuration file {}", config_filename);
     }
 
-    assert(document.IsObject());
+    CHECK_JSON_TYPE(document, IsObject);
 
-    assert(document.HasMember("window_name"));
-    assert(document["window_name"].IsString());
+    CHECK_JSON_FIELD(document, window_name, IsString);
     window_name = document["window_name"].GetString();
 
-    assert(document.HasMember("attachments"));
-    assert(document["attachments"].IsArray());
-
+    CHECK_JSON_FIELD(document, attachments, IsArray);
     for (auto & a: document["attachments"].GetArray())
     {
-        assert(a.IsObject());
-        assert(a.HasMember("name"));
-        assert(a["name"].IsString());
+        CHECK_JSON_TYPE(a, IsObject);
 
-        gfx::init(a, attachment_configs[a["name"].GetString()]);
+        CHECK_JSON_FIELD(a, name, IsString);
+
+        auto error = gfx::init(a, attachment_configs[a["name"].GetString()]);
+        if (error != ErrorCode::NONE)
+        {
+            LOG_DEBUG("Couldn't read configuration for Attachment {}", a["name"].GetString());
+            return error;
+        }
     }
 
-    assert(document.HasMember("render_passes"));
-    assert(document["render_passes"].IsArray());
-
+    CHECK_JSON_FIELD(document, render_passes, IsArray);
     for (auto & rp: document["render_passes"].GetArray())
     {
-        assert(rp.IsObject());
-        assert(rp.HasMember("name"));
-        assert(rp["name"].IsString());
+        CHECK_JSON_TYPE(rp, IsObject);
+        CHECK_JSON_FIELD(rp, name, IsString);
 
-        gfx::init(rp, render_pass_configs[rp["name"].GetString()]);
+        auto error = gfx::init(rp, render_pass_configs[rp["name"].GetString()]);
+        if (error != ErrorCode::NONE)
+        {
+            LOG_DEBUG("Couldn't read configuration for Render Pass {}", rp["name"].GetString());
+            return error;
+        }
     }
 
-    assert(document.HasMember("render_pass_order"));
-    assert(document["render_pass_order"].IsArray());
+    CHECK_JSON_FIELD(document, render_pass_order, IsArray);
     for (auto & render_pass_name: document["render_pass_order"].GetArray())
     {
-        assert(render_pass_name.IsString());
+        CHECK_JSON_TYPE(render_pass_name, IsString);
         render_pass_order.push_back(render_pass_name.GetString());
     }
 
-    assert(document.HasMember("shaders"));
-    assert(document["shaders"].IsArray());
-
+    CHECK_JSON_FIELD(document, shaders, IsArray);
     for (auto & s: document["shaders"].GetArray())
     {
-        assert(s.IsObject());
-        assert(s.HasMember("name"));
-        assert(s["name"].IsString());
-
-        assert(s.HasMember("file"));
-        assert(s["file"].IsString());
+        CHECK_JSON_TYPE(s, IsObject);
+        CHECK_JSON_FIELD(s, name, IsString);
+        CHECK_JSON_FIELD(s, file, IsString);
 
         shader_names[s["name"].GetString()] = s["file"].GetString();
     }
 
-    assert(document.HasMember("uniform_layouts"));
-    assert(document["uniform_layouts"].IsArray());
-
+    CHECK_JSON_FIELD(document, uniform_layouts, IsArray);
     for (auto & ul: document["uniform_layouts"].GetArray())
     {
-        assert(ul.IsObject());
-        assert(ul.HasMember("name"));
-        assert(ul["name"].IsString());
+        CHECK_JSON_TYPE(ul, IsObject);
+        CHECK_JSON_FIELD(ul, name, IsString);
 
-        gfx::init(ul, uniform_configs[ul["name"].GetString()]);
+        auto error = gfx::init(ul, uniform_configs[ul["name"].GetString()]);
+        if (error != ErrorCode::NONE)
+        {
+            LOG_DEBUG("Couldn't read configuration for Uniform Layout {}", ul["name"].GetString());
+            return error;
+        }
     }
 
-    assert(document.HasMember("push_constants"));
-    assert(document["push_constants"].IsArray());
-
+    CHECK_JSON_FIELD(document, push_constants, IsArray);
     for (auto & pc: document["push_constants"].GetArray())
     {
-        assert(pc.IsObject());
-        assert(pc.HasMember("name"));
-        assert(pc["name"].IsString());
+        CHECK_JSON_TYPE(pc, IsObject);
+        CHECK_JSON_FIELD(pc, name, IsString);
 
-        push_constants[pc["name"].GetString()] = initVkPushConstantRange(pc);
+        auto error = initVkPushConstantRange(pc, push_constants[pc["name"].GetString()]);
+        if (error != ErrorCode::NONE)
+        {
+            LOG_DEBUG("Couldn't read the configuration for Push Constant {}",
+                      pc["name"].GetString());
+            return error;
+        }
     }
 
-    assert(document.HasMember("vertex_bindings"));
-    assert(document["vertex_bindings"].IsArray());
-
+    CHECK_JSON_FIELD(document, vertex_bindings, IsArray);
     for (auto & vb: document["vertex_bindings"].GetArray())
     {
-        assert(vb.IsObject());
-        assert(vb.HasMember("name"));
-        assert(vb["name"].IsString());
+        CHECK_JSON_TYPE(vb, IsObject);
+        CHECK_JSON_FIELD(vb, name, IsString);
 
-        vertex_bindings[vb["name"].GetString()] = initVkVertexInputBindingDescription(vb);
+        auto error = initVkVertexInputBindingDescription(vb,
+                                                         vertex_bindings[vb["name"].GetString()]);
+        if (error != ErrorCode::NONE)
+        {
+            LOG_DEBUG("Couldn't read the configuration for Vertex Binding {}",
+                      vb["name"].GetString());
+            return error;
+        }
     }
 
-    assert(document.HasMember("vertex_attributes"));
-    assert(document["vertex_attributes"].IsArray());
-
+    CHECK_JSON_FIELD(document, vertex_attributes, IsArray);
     for (auto & va: document["vertex_attributes"].GetArray())
     {
-        assert(va.IsObject());
-        assert(va.HasMember("name"));
-        assert(va["name"].IsString());
+        CHECK_JSON_TYPE(va, IsObject);
+        CHECK_JSON_FIELD(va, name, IsString);
 
-        vertex_attributes[va["name"].GetString()] = initVkVertexInputAttributeDescription(
-            va, vertex_bindings);
+        auto error = initVkVertexInputAttributeDescription(
+            va, vertex_attributes[va["name"].GetString()], vertex_bindings);
+
+        if (error != ErrorCode::NONE)
+        {
+            LOG_DEBUG("Couldn't read the configuration for Vertex Attribute {}",
+                      va["name"].GetString());
+            return error;
+        }
     }
 
-    assert(document.HasMember("pipelines"));
-    assert(document["pipelines"].IsArray());
-
+    CHECK_JSON_FIELD(document, pipelines, IsArray);
     for (auto & p: document["pipelines"].GetArray())
     {
-        assert(p.IsObject());
-        assert(p.HasMember("name"));
-        assert(p["name"].IsString());
+        CHECK_JSON_TYPE(p, IsObject);
+        CHECK_JSON_FIELD(p, name, IsString);
 
-        gfx::init(p, pipeline_configs[p["name"].GetString()], shader_names);
+        auto error = gfx::init(p, pipeline_configs[p["name"].GetString()], shader_names);
+        if (error != ErrorCode::NONE)
+        {
+            LOG_DEBUG("Couldn't read configuration for Pipeline {}", p["name"].GetString());
+            return error;
+        }
     }
 
     return ErrorCode::NONE;
