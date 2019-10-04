@@ -59,6 +59,7 @@ set(SOURCES_SINGLE_FILE
 	mul_vbs.cpp
 	resize.cpp
 	render_from_texture.cpp
+	input_attachment.cpp
 )
 
 # get base names of each file (strips off .cpp)

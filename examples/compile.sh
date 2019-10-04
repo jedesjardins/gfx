@@ -15,3 +15,5 @@ glslc -fshader-stage=frag shaders/white_pos.frag -o ../build/shaders/white_pos_f
 
 glslc -fshader-stage=vert shaders/pos_uv_texture.vert -o ../build/shaders/pos_uv_texture_vert.spv
 glslc -fshader-stage=frag shaders/uv_texture.frag -o ../build/shaders/uv_texture_frag.spv
+
+glslc -fshader-stage=frag shaders/uv_input_attachment.frag -o ../build/shaders/input_attachment_frag.spv

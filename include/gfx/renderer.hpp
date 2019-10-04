@@ -192,6 +192,21 @@ struct SamplerCollection
     void                           destroy(VkDevice const & logical_device);
 };
 
+struct InputAttachmentCollection
+{
+    std::vector<VkDescriptorSet> descriptor_sets;
+    IndexAllocator               free_uniform_slots;
+
+    std::optional<UniformHandle> create_uniform(VkDevice const & logical_device,
+                                                uint32_t         binding,
+                                                VkImageView      view);
+
+    std::optional<VkDescriptorSet> get_uniform(UniformHandle handle);
+    std::optional<VkDeviceSize>    get_dynamic_offset(UniformHandle handle);
+    void                           destroy_uniform(UniformHandle handle);
+    void                           destroy(VkDevice const & logical_device);
+};
+
 struct DynamicBufferCollection
 {
     // following map one to one
@@ -214,7 +229,8 @@ struct DynamicBufferCollection
     void destroy(VkDevice const & logical_device);
 };
 
-using UniformVariant = std::variant<DynamicBufferCollection, SamplerCollection>;
+using UniformVariant
+    = std::variant<DynamicBufferCollection, SamplerCollection, InputAttachmentCollection>;
 
 //
 //  COMMANDS
@@ -1336,7 +1352,7 @@ std::optional<UniformHandle> SamplerCollection::create_uniform(VkDevice const & 
 
     auto descriptorWrite = VkWriteDescriptorSet{
         .sType            = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-        .dstSet           = descriptor_sets[0],
+        .dstSet           = descriptor_sets[descriptor_set_index],
         .dstBinding       = binding,
         .dstArrayElement  = 0,
         .descriptorType   = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
@@ -1364,6 +1380,57 @@ void SamplerCollection::destroy_uniform(UniformHandle)
 {}
 
 void SamplerCollection::destroy(VkDevice const & logical_device)
+{}
+
+std::optional<UniformHandle> InputAttachmentCollection::create_uniform(
+    VkDevice const & logical_device,
+    uint32_t         binding,
+    VkImageView      view)
+{
+    int64_t descriptor_set_index = free_uniform_slots.acquire();
+    if (descriptor_set_index < 0)
+    {
+        LOG_ERROR("Couldn't acquire a VkDescriptorSet in InputAttachmentCollection",
+                  descriptor_set_index);
+        return std::nullopt;
+    }
+    LOG_DEBUG("Acquired descriptor_set_index {} in InputAttachmentCollection",
+              descriptor_set_index);
+
+    auto imageInfo = VkDescriptorImageInfo{.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                                           .imageView   = view,
+                                           .sampler     = VK_NULL_HANDLE};
+
+    auto descriptorWrite = VkWriteDescriptorSet{
+        .sType            = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+        .dstSet           = descriptor_sets[descriptor_set_index],
+        .dstBinding       = binding,
+        .dstArrayElement  = 0,
+        .descriptorType   = VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT,
+        .descriptorCount  = 1,
+        .pBufferInfo      = nullptr,
+        .pImageInfo       = &imageInfo,
+        .pTexelBufferView = nullptr};
+
+    vkUpdateDescriptorSets(logical_device, 1, &descriptorWrite, 0, nullptr);
+
+    return UniformHandle{.uniform_id = static_cast<uint64_t>(descriptor_set_index)};
+}
+
+std::optional<VkDescriptorSet> InputAttachmentCollection::get_uniform(UniformHandle handle)
+{
+    return descriptor_sets[handle.uniform_id];
+}
+
+std::optional<VkDeviceSize> InputAttachmentCollection::get_dynamic_offset(UniformHandle handle)
+{
+    return std::nullopt;
+}
+
+void InputAttachmentCollection::destroy_uniform(UniformHandle)
+{}
+
+void InputAttachmentCollection::destroy(VkDevice const & logical_device)
 {}
 
 //
@@ -2764,12 +2831,18 @@ ErrorCode RenderPassResources::createRenderPasses(Device const &         device,
 
         for (auto & subpass_info: render_pass_config.subpasses)
         {
-            subpasses.push_back(VkSubpassDescription{
-                .pipelineBindPoint    = VK_PIPELINE_BIND_POINT_GRAPHICS,
-                .colorAttachmentCount = static_cast<uint32_t>(
-                    subpass_info.color_attachments.size()),
-                .pColorAttachments       = subpass_info.color_attachments.data(),
-                .pDepthStencilAttachment = &subpass_info.depth_stencil_attachment});
+            subpasses.push_back(
+                VkSubpassDescription{.pipelineBindPoint    = VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                     .colorAttachmentCount = static_cast<uint32_t>(
+                                         subpass_info.color_attachments.size()),
+                                     .pColorAttachments = subpass_info.color_attachments.data(),
+                                     .pDepthStencilAttachment = nullptr});
+
+            if (subpass_info.depth_stencil_attachment)
+            {
+                subpasses.back().pDepthStencilAttachment
+                    = &subpass_info.depth_stencil_attachment.value();
+            }
 
             if (subpass_info.color_resolve_attachments.size() > 0)
             {
@@ -3119,6 +3192,48 @@ ErrorCode UniformResources::create_uniform_layouts(Device const & device, Buffer
                                                    .free_uniform_slots = IndexAllocator()};
 
             std::get<SamplerCollection>(uniform_collection)
+                .free_uniform_slots.init(descriptor_sets.size());
+        }
+        else if (uniform_layout_info.descriptorType == VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT)
+        {
+            const size_t descriptor_count = uniform_counts[ul_i];
+
+            LOG_DEBUG("descriptor_count for sampler uniform is {}", descriptor_count);
+
+            auto poolsize = VkDescriptorPoolSize{
+                .type            = uniform_layout_info.descriptorType,
+                .descriptorCount = static_cast<uint32_t>(descriptor_count)};
+
+            auto poolInfo = VkDescriptorPoolCreateInfo{
+                .sType         = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
+                .poolSizeCount = 1,
+                .pPoolSizes    = &poolsize,
+                .maxSets       = static_cast<uint32_t>(descriptor_count)};
+
+            VK_CHECK_RESULT(
+                vkCreateDescriptorPool(device.get_logical_device(), &poolInfo, nullptr, &pool),
+                "Unable to create VkDescriptorPool");
+
+            std::vector<VkDescriptorSet> descriptor_sets;
+
+            descriptor_sets.resize(uniform_counts[ul_i]);
+
+            std::vector<VkDescriptorSetLayout> layouts{descriptor_sets.size(), uniform_layout};
+
+            auto allocInfo = VkDescriptorSetAllocateInfo{
+                .sType              = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
+                .descriptorPool     = pool,
+                .descriptorSetCount = static_cast<uint32_t>(descriptor_sets.size()),
+                .pSetLayouts        = layouts.data()};
+
+            VK_CHECK_RESULT(vkAllocateDescriptorSets(
+                                device.get_logical_device(), &allocInfo, descriptor_sets.data()),
+                            "Unable to allocate VkDescriptorSets");
+
+            uniform_collection = InputAttachmentCollection{.descriptor_sets    = descriptor_sets,
+                                                           .free_uniform_slots = IndexAllocator()};
+
+            std::get<InputAttachmentCollection>(uniform_collection)
                 .free_uniform_slots.init(descriptor_sets.size());
         }
     }
@@ -4179,25 +4294,42 @@ std::optional<UniformHandle> Renderer::new_uniform(UniformLayoutHandle const & l
     auto &       uniform_collection  = uniforms.uniform_collections[layout_handle];
     auto const & uniform_layout_info = uniforms.uniform_layout_infos[layout_handle];
 
-    if (!std::holds_alternative<SamplerCollection>(uniform_collection))
+    if (std::holds_alternative<SamplerCollection>(uniform_collection))
     {
-        LOG_WARN("UniformLayout {} doesn't hold Sampler Uniform resources", layout_handle);
+        auto & sampler_collection = std::get<SamplerCollection>(uniform_collection);
+
+        auto opt_uniform_handle = sampler_collection.create_uniform(device.get_logical_device(),
+                                                                    uniform_layout_info.binding,
+                                                                    sampler.view_handle(),
+                                                                    sampler.sampler_handle());
+
+        if (opt_uniform_handle)
+        {
+            opt_uniform_handle.value().uniform_layout_id = layout_handle;
+        }
+
+        return opt_uniform_handle;
+    }
+    else if (std::holds_alternative<InputAttachmentCollection>(uniform_collection))
+    {
+        auto & input_collection = std::get<InputAttachmentCollection>(uniform_collection);
+
+        auto opt_uniform_handle = input_collection.create_uniform(
+            device.get_logical_device(), uniform_layout_info.binding, sampler.view_handle());
+
+        if (opt_uniform_handle)
+        {
+            opt_uniform_handle.value().uniform_layout_id = layout_handle;
+        }
+
+        return opt_uniform_handle;
+    }
+    else
+    {
+        LOG_WARN("UniformLayout {} doesn't hold Sampler or Input Attachment Uniform resources",
+                 layout_handle);
         return std::nullopt;
     }
-
-    auto & sampler_collection = std::get<SamplerCollection>(uniform_collection);
-
-    auto opt_uniform_handle = sampler_collection.create_uniform(device.get_logical_device(),
-                                                                uniform_layout_info.binding,
-                                                                sampler.view_handle(),
-                                                                sampler.sampler_handle());
-
-    if (opt_uniform_handle)
-    {
-        opt_uniform_handle.value().uniform_layout_id = layout_handle;
-    }
-
-    return opt_uniform_handle;
 }
 
 std::optional<VkDescriptorSet> Renderer::get_uniform(UniformHandle const & handle)

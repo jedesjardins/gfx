@@ -29,11 +29,11 @@ struct AttachmentConfig
 
 struct SubpassInfo
 {
-    std::vector<VkAttachmentReference> color_attachments;
-    std::vector<VkAttachmentReference> color_resolve_attachments;
-    std::vector<VkAttachmentReference> input_attachments;
-    std::vector<uint32_t>              preserve_attachments;
-    VkAttachmentReference              depth_stencil_attachment;
+    std::vector<VkAttachmentReference>   color_attachments;
+    std::vector<VkAttachmentReference>   color_resolve_attachments;
+    std::vector<VkAttachmentReference>   input_attachments;
+    std::vector<uint32_t>                preserve_attachments;
+    std::optional<VkAttachmentReference> depth_stencil_attachment;
 
     VkSampleCountFlagBits multisamples;
 
@@ -215,9 +215,13 @@ bool operator==(SubpassInfo const & lhs, SubpassInfo const & rhs)
     }
 
     // depth attachment
-    if (lhs.depth_stencil_attachment != rhs.depth_stencil_attachment)
+    if (lhs.depth_stencil_attachment && lhs.depth_stencil_attachment)
     {
-        return true;
+        return lhs.depth_stencil_attachment.value() == rhs.depth_stencil_attachment.value();
+    }
+    else
+    {
+        return !lhs.depth_stencil_attachment && !lhs.depth_stencil_attachment;
     }
 
     return true;
@@ -713,7 +717,7 @@ ErrorCode initAttachmentReference(rapidjson::Value &                        docu
 {
     CHECK_JSON_TYPE(document, IsObject);
 
-    CHECK_JSON_FIELD(document, attachment, IsString);
+    CHECK_JSON_FIELD(document, attachment_name, IsString);
 
     auto attachment_index_iter = attachment_indices.find(document["attachment_name"].GetString());
     if (attachment_index_iter != attachment_indices.end())
@@ -1220,14 +1224,14 @@ ErrorCode init(rapidjson::Value &                        document,
     {
         CHECK_JSON_TYPE(document["color_attachments"], IsArray);
 
-        subpass_info.color_attachments.resize(document["color_attachments"].GetArray().Size());
+        subpass_info.color_attachments.reserve(document["color_attachments"].GetArray().Size());
         for (auto & ca: document["color_attachments"].GetArray())
         {
             subpass_info.color_attachments.push_back({});
 
             auto error = initAttachmentReference(
                 ca, subpass_info.color_attachments.back(), attachment_indices);
-            if (error != ErrorCode::JSON_ERROR)
+            if (error != ErrorCode::NONE)
             {
                 LOG_DEBUG("Couldn't initialize color_attachments");
                 return error;
@@ -1239,17 +1243,16 @@ ErrorCode init(rapidjson::Value &                        document,
     {
         CHECK_JSON_TYPE(document["color_resolve_attachments"], IsArray);
 
-        subpass_info.color_resolve_attachments.resize(
+        subpass_info.color_resolve_attachments.reserve(
             document["color_resolve_attachments"].GetArray().Size());
 
         for (auto & cra: document["color_resolve_attachments"].GetArray())
         {
-            // TODO: initAttachmentReference should return an error
             subpass_info.color_resolve_attachments.push_back({});
 
             auto error = initAttachmentReference(
                 cra, subpass_info.color_resolve_attachments.back(), attachment_indices);
-            if (error != ErrorCode::JSON_ERROR)
+            if (error != ErrorCode::NONE)
             {
                 LOG_DEBUG("Couldn't initialize color_resolve_attachments");
                 return error;
@@ -1271,10 +1274,9 @@ ErrorCode init(rapidjson::Value &                        document,
     {
         CHECK_JSON_TYPE(document["input_attachments"], IsArray);
 
-        subpass_info.input_attachments.resize(document["input_attachments"].GetArray().Size());
+        subpass_info.input_attachments.reserve(document["input_attachments"].GetArray().Size());
         for (auto & ia: document["input_attachments"].GetArray())
         {
-            // TODO: initAttachmentReference should return an error
             subpass_info.input_attachments.push_back({});
             auto error = initAttachmentReference(
                 ia, subpass_info.input_attachments.back(), attachment_indices);
@@ -1309,21 +1311,25 @@ ErrorCode init(rapidjson::Value &                        document,
 
     if (document.HasMember("depth_stencil_attachment"))
     {
-        // TODO: initAttachmentReference should return an error
-        auto error = initAttachmentReference(document["depth_stencil_attachment"],
-                                             subpass_info.depth_stencil_attachment,
-                                             attachment_indices);
+        VkAttachmentReference depth_stencil_reference;
+
+        auto error = initAttachmentReference(
+            document["depth_stencil_attachment"], depth_stencil_reference, attachment_indices);
 
         if (error != ErrorCode::NONE)
         {
             LOG_DEBUG("Couldn't initialize depth_stencil_attachment");
             return error;
         }
+
+        LOG_DEBUG("Initialized depth_stencil_attachment with {}",
+                  depth_stencil_reference.attachment);
+
+        subpass_info.depth_stencil_attachment = depth_stencil_reference;
     }
     else
     {
-        subpass_info.depth_stencil_attachment = VkAttachmentReference{
-            .attachment = VK_ATTACHMENT_UNUSED, .layout = VK_IMAGE_LAYOUT_UNDEFINED};
+        subpass_info.depth_stencil_attachment = std::nullopt;
     }
 
     return ErrorCode::NONE;
@@ -1341,6 +1347,8 @@ ErrorCode init(rapidjson::Value & document, RenderPassConfig & render_pass_confi
 
         CHECK_JSON_FIELD(ad, attachment_name, IsString);
         std::string name = ad["attachment_name"].GetString();
+
+        LOG_DEBUG("Render Pass uses {} at attachment_index {}", name, attachment_index);
 
         render_pass_config.attachments[name] = attachment_index++;
 
@@ -1582,6 +1590,7 @@ ErrorCode RenderConfig::init(char const * file_name, ReadFileFn read_file_fn)
             return error;
         }
     }
+    LOG_DEBUG("Created {} Attachments", attachment_configs.size());
 
     CHECK_JSON_FIELD(document, render_passes, IsArray);
     for (auto & rp: document["render_passes"].GetArray())
