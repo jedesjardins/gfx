@@ -281,7 +281,7 @@ bool operator!=(RenderPassConfig const & lhs, RenderPassConfig const & rhs)
 // CONFIGURATION CODE
 //
 
-VkDynamicState getVkDynamicState(std::string const & state_name)
+std::optional<VkDynamicState> getVkDynamicState(std::string const & state_name)
 {
 #define MAP_PAIR(value)                  \
     {                                    \
@@ -297,13 +297,13 @@ VkDynamicState getVkDynamicState(std::string const & state_name)
     assert(state != states.end());
     if (state == states.end())
     {
-        return static_cast<VkDynamicState>(0);
+        return std::nullopt;
     }
 
     return state->second;
 }
 
-VkSampleCountFlagBits getVkSampleCountFlagBits(size_t num_samples)
+std::optional<VkSampleCountFlagBits> getVkSampleCountFlagBits(size_t num_samples)
 {
 #define SWITCH_CASE(value) \
     case value:            \
@@ -318,12 +318,12 @@ VkSampleCountFlagBits getVkSampleCountFlagBits(size_t num_samples)
         SWITCH_CASE(2);
         SWITCH_CASE(1);
     default:
-        return VK_SAMPLE_COUNT_1_BIT;
+        return std::nullopt;
     };
 #undef SWITCH_CASE
 }
 
-VkImageLayout getVkImageLayout(std::string const & layout_name)
+std::optional<VkImageLayout> getVkImageLayout(std::string const & layout_name)
 {
 #define MAP_PAIR(value)                 \
     {                                   \
@@ -353,13 +353,13 @@ VkImageLayout getVkImageLayout(std::string const & layout_name)
     {
         LOG_ERROR("Couldn't find VkImageLayout {}", layout_name);
 
-        return VK_IMAGE_LAYOUT_UNDEFINED;
+        return std::nullopt;
     }
 
     return layout->second;
 }
 
-VkImageUsageFlagBits getVkImageUsageFlagBits(std::string const & usage_name)
+std::optional<VkImageUsageFlagBits> getVkImageUsageFlagBits(std::string const & usage_name)
 {
 #define MAP_PAIR(value)                      \
     {                                        \
@@ -384,13 +384,13 @@ VkImageUsageFlagBits getVkImageUsageFlagBits(std::string const & usage_name)
     if (bit == bits.end())
     {
         LOG_ERROR("Couldn't find VkImageUsageFlagBit {}", usage_name);
-        return static_cast<VkImageUsageFlagBits>(0);
+        return std::nullopt;
     }
 
     return bit->second;
 }
 
-VkAttachmentLoadOp getVkAttachmentLoadOp(std::string const & op_name)
+std::optional<VkAttachmentLoadOp> getVkAttachmentLoadOp(std::string const & op_name)
 {
 #define MAP_PAIR(value)                       \
     {                                         \
@@ -408,13 +408,13 @@ VkAttachmentLoadOp getVkAttachmentLoadOp(std::string const & op_name)
     {
         LOG_ERROR("Couldn't find VkAttachmentLoadOp {}", op_name);
 
-        return VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+        return std::nullopt;
     }
 
     return op->second;
 }
 
-VkAttachmentStoreOp getVkAttachmentStoreOp(std::string const & op_name)
+std::optional<VkAttachmentStoreOp> getVkAttachmentStoreOp(std::string const & op_name)
 {
 #define MAP_PAIR(value)                        \
     {                                          \
@@ -431,13 +431,13 @@ VkAttachmentStoreOp getVkAttachmentStoreOp(std::string const & op_name)
     if (op == ops.end())
     {
         LOG_ERROR("Couldn't find VkAttachmentStoreOp {}", op_name);
-        return VK_ATTACHMENT_STORE_OP_DONT_CARE;
+        return std::nullopt;
     }
 
     return op->second;
 }
 
-VkPipelineStageFlagBits getVkPipelineStageFlagBit(std::string const & bit_name)
+std::optional<VkPipelineStageFlagBits> getVkPipelineStageFlagBit(std::string const & bit_name)
 {
 #define MAP_PAIR(value)                         \
     {                                           \
@@ -467,13 +467,13 @@ VkPipelineStageFlagBits getVkPipelineStageFlagBit(std::string const & bit_name)
     if (bit == bits.end())
     {
         LOG_ERROR("Couldn't find VkPipelineStageFlagBit {}", bit_name);
-        return static_cast<VkPipelineStageFlagBits>(0);
+        return std::nullopt;
     }
 
     return bit->second;
 }
 
-VkAccessFlagBits getVkAccessFlagBit(std::string const & bit_name)
+std::optional<VkAccessFlagBits> getVkAccessFlagBit(std::string const & bit_name)
 {
 #define MAP_PAIR(value)                 \
     {                                   \
@@ -506,13 +506,13 @@ VkAccessFlagBits getVkAccessFlagBit(std::string const & bit_name)
     if (bit == bits.end())
     {
         LOG_ERROR("Couldn't find VkPipelineStageFlagBit {}", bit_name);
-        return static_cast<VkAccessFlagBits>(0);
+        return std::nullopt;
     }
 
     return bit->second;
 }
 
-VkShaderStageFlagBits getVkShaderStageFlagBit(std::string const & flag_name)
+std::optional<VkShaderStageFlagBits> getVkShaderStageFlagBit(std::string const & flag_name)
 {
 #define MAP_PAIR(value)                       \
     {                                         \
@@ -533,13 +533,13 @@ VkShaderStageFlagBits getVkShaderStageFlagBit(std::string const & flag_name)
     if (flag == flags.end())
     {
         LOG_ERROR("Couldn't find VkShaderStageFlagBits {}", flag_name);
-        return static_cast<VkShaderStageFlagBits>(0);
+        return std::nullopt;
     }
 
     return flag->second;
 }
 
-VkDescriptorType getVkDescriptorType(std::string const & type_name)
+std::optional<VkDescriptorType> getVkDescriptorType(std::string const & type_name)
 {
 #define MAP_PAIR(value)                    \
     {                                      \
@@ -565,13 +565,13 @@ VkDescriptorType getVkDescriptorType(std::string const & type_name)
     if (type == types.end())
     {
         LOG_ERROR("Couldn't find VkDescriptorType {}", type_name);
-        return static_cast<VkDescriptorType>(0);
+        return std::nullopt;
     }
 
     return type->second;
 }
 
-VkFormat getVkFormat(std::string const & format_name)
+std::optional<VkFormat> getVkFormat(std::string const & format_name)
 {
 #define MAP_PAIR(value)           \
     {                             \
@@ -589,7 +589,7 @@ VkFormat getVkFormat(std::string const & format_name)
     if (format == formats.end())
     {
         LOG_ERROR("Couldn't find VkFormat {}", format_name);
-        return static_cast<VkFormat>(0);
+        return std::nullopt;
     }
 
     return format->second;
@@ -628,32 +628,59 @@ VkFormat getVkFormat(std::string const & format_name)
            && "Field " #name " was missing or " #type_func " failed.")
 #endif
 
-VkAttachmentDescription initAttachmentDescription(rapidjson::Value const & document)
+ErrorCode initAttachmentDescription(rapidjson::Value const &  document,
+                                    VkAttachmentDescription & description)
 {
-    assert(document.IsObject());
+    CHECK_JSON_TYPE(document, IsObject);
 
-    VkAttachmentDescription description{};
+    CHECK_JSON_FIELD(document, initial_layout, IsString);
+    auto opt_initial_layout = getVkImageLayout(document["initial_layout"].GetString());
+    if (!opt_initial_layout)
+    {
+        LOG_ERROR("Couldn't initialize initial_layout with {}",
+                  document["initial_layout"].GetString());
+        return ErrorCode::JSON_ERROR;
+    }
+    description.initialLayout = opt_initial_layout.value();
 
-    assert(document.HasMember("initial_layout"));
-    assert(document["initial_layout"].IsString());
-    description.initialLayout = getVkImageLayout(document["initial_layout"].GetString());
+    CHECK_JSON_FIELD(document, final_layout, IsString);
+    auto opt_final_layout = getVkImageLayout(document["final_layout"].GetString());
+    if (!opt_final_layout)
+    {
+        LOG_ERROR("Couldn't initialize final_layout with {}", document["final_layout"].GetString());
+        return ErrorCode::JSON_ERROR;
+    }
+    description.finalLayout = opt_final_layout.value();
 
-    assert(document.HasMember("final_layout"));
-    assert(document["final_layout"].IsString());
-    description.finalLayout = getVkImageLayout(document["final_layout"].GetString());
+    CHECK_JSON_FIELD(document, load_op, IsString);
+    auto opt_load_op = getVkAttachmentLoadOp(document["load_op"].GetString());
+    if (!opt_load_op)
+    {
+        LOG_ERROR("Couldn't initialize load_op with {}", document["load_op"].GetString());
+        return ErrorCode::JSON_ERROR;
+    }
+    description.loadOp = opt_load_op.value();
 
-    assert(document.HasMember("load_op"));
-    assert(document["load_op"].IsString());
-    description.loadOp = getVkAttachmentLoadOp(document["load_op"].GetString());
-
-    assert(document.HasMember("store_op"));
-    assert(document["store_op"].IsString());
-    description.storeOp = getVkAttachmentStoreOp(document["store_op"].GetString());
+    CHECK_JSON_FIELD(document, store_op, IsString);
+    auto opt_store_op = getVkAttachmentStoreOp(document["store_op"].GetString());
+    if (!opt_store_op)
+    {
+        LOG_ERROR("Couldn't initialize store_op with {}", document["store_op"].GetString());
+        return ErrorCode::JSON_ERROR;
+    }
+    description.storeOp = opt_store_op.value();
 
     if (document.HasMember("stencil_load_op"))
     {
-        assert(document["stencil_load_op"].IsString());
-        description.stencilLoadOp = getVkAttachmentLoadOp(document["stencil_load_op"].GetString());
+        CHECK_JSON_TYPE(document["stencil_load_op"], IsString);
+        auto opt_stencil_load = getVkAttachmentLoadOp(document["stencil_load_op"].GetString());
+        if (!opt_stencil_load)
+        {
+            LOG_ERROR("Couldn't initialize stencil_load_op with {}",
+                      document["stencil_load_op"].GetString());
+            return ErrorCode::JSON_ERROR;
+        }
+        description.stencilLoadOp = opt_stencil_load.value();
     }
     else
     {
@@ -662,63 +689,83 @@ VkAttachmentDescription initAttachmentDescription(rapidjson::Value const & docum
 
     if (document.HasMember("stencil_store_op"))
     {
-        assert(document["stencil_store_op"].IsString());
-        description.stencilStoreOp = getVkAttachmentStoreOp(
-            document["stencil_store_op"].GetString());
+        CHECK_JSON_TYPE(document["stencil_store_op"], IsString);
+        auto opt_stencil_store = getVkAttachmentStoreOp(document["stencil_store_op"].GetString());
+        if (!opt_stencil_store)
+        {
+            LOG_ERROR("Couldn't initialize stencil_store_op with {}",
+                      document["stencil_store_op"].GetString());
+            return ErrorCode::JSON_ERROR;
+        }
+        description.stencilStoreOp = opt_stencil_store.value();
     }
     else
     {
         description.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
     }
 
-    return description;
+    return ErrorCode::NONE;
 }
 
-VkAttachmentReference initAttachmentReference(
-    rapidjson::Value &                        document,
-    std::unordered_map<std::string, size_t> & attachment_indices)
+ErrorCode initAttachmentReference(rapidjson::Value &                        document,
+                                  VkAttachmentReference &                   reference,
+                                  std::unordered_map<std::string, size_t> & attachment_indices)
 {
-    assert(document.IsObject());
+    CHECK_JSON_TYPE(document, IsObject);
 
-    VkAttachmentReference reference{};
-
-    assert(document.HasMember("attachment_name"));
-    assert(document["attachment_name"].IsString());
+    CHECK_JSON_FIELD(document, attachment, IsString);
 
     auto attachment_index_iter = attachment_indices.find(document["attachment_name"].GetString());
     if (attachment_index_iter != attachment_indices.end())
     {
         reference.attachment = attachment_index_iter->second;
     }
-    else
+    else if (strcmp(document["attachment_name"].GetString(), "UNUSED") == 0)
     {
-        assert(strcmp(document["attachment_name"].GetString(), "UNUSED") == 0);
         reference.attachment = VK_ATTACHMENT_UNUSED;
     }
+    else
+    {
+        LOG_ERROR("Couldn't find preserve_attachment {} in framebuffer",
+                  document["attachment_name"].GetString());
+        return ErrorCode::JSON_ERROR;
+    }
 
-    assert(document.HasMember("layout"));
-    assert(document["layout"].IsString());
-    reference.layout = getVkImageLayout(document["layout"].GetString());
+    CHECK_JSON_FIELD(document, layout, IsString);
 
-    return reference;
+    auto opt_layout = getVkImageLayout(document["layout"].GetString());
+    if (!opt_layout)
+    {
+        LOG_ERROR("Couldn't initialize layout with {}", document["layout"].GetString());
+        return ErrorCode::JSON_ERROR;
+    }
+    reference.layout = opt_layout.value();
+
+    return ErrorCode::NONE;
 }
 
-VkClearValue initClearValue(rapidjson::Value const & document)
+ErrorCode initClearValue(rapidjson::Value const & document, VkClearValue value)
 {
-    VkClearValue value;
-
-    assert(document.IsObject());
+    CHECK_JSON_TYPE(document, IsObject);
 
     if (document.HasMember("color"))
     {
         value.color = {0.f, 0.f, 0.f, 1.f};
 
-        assert(document["color"].IsArray());
+        auto & color = document["color"];
+
+        CHECK_JSON_TYPE(color, IsArray);
+        assert(color.Size() == 4);
+        if (color.Size() != 4)
+        {
+            LOG_ERROR("Clear Color arrays must have 4 elements for RGBA");
+            return ErrorCode::JSON_ERROR;
+        }
 
         size_t i = 0;
-        for (auto const & comp_value: document["color"].GetArray())
+        for (auto const & comp_value: color.GetArray())
         {
-            assert(comp_value.IsNumber());
+            CHECK_JSON_TYPE(comp_value, IsNumber);
             if (comp_value.IsInt())
             {
                 value.color.float32[i] = comp_value.GetInt();
@@ -727,6 +774,18 @@ VkClearValue initClearValue(rapidjson::Value const & document)
             {
                 value.color.float32[i] = comp_value.GetDouble();
             }
+            else
+            {
+                LOG_ERROR("Clear Color Component values must be a double or integer");
+                return ErrorCode::JSON_ERROR;
+            }
+
+            if (value.color.float32[i] > 1.0 || value.color.float32[i] < 0.0)
+            {
+                LOG_WARN(
+                    "Clear Color Component values must be clamped between 0.0 and 1.0 (inclusive)");
+            }
+
             ++i;
         }
         LOG_DEBUG("Parsed VkClearValue {} {} {} {}",
@@ -741,43 +800,50 @@ VkClearValue initClearValue(rapidjson::Value const & document)
 
         auto & depth_stencil = document["depth_stencil"];
 
-        assert(depth_stencil.IsArray());
+        CHECK_JSON_TYPE(depth_stencil, IsArray);
         assert(depth_stencil.Size() == 2);
-
-        assert(depth_stencil[0].IsNumber());
-        if (depth_stencil[0].IsDouble())
+        if (depth_stencil.Size() != 2)
         {
-            value.depthStencil.depth = depth_stencil[0].GetDouble();
-        }
-        else if (depth_stencil[0].IsUint())
-        {
-            value.depthStencil.depth = depth_stencil[0].GetUint();
+            LOG_ERROR("Clear Depth Stencil arrays must have 2 elements for depth and stencil");
+            return ErrorCode::JSON_ERROR;
         }
 
-        assert(depth_stencil[1].IsUint());
+        CHECK_JSON_TYPE(depth_stencil[0], IsDouble);
+        value.depthStencil.depth = depth_stencil[0].GetDouble();
+        if (value.depthStencil.depth > 1.0 || value.depthStencil.depth < 0.0)
+        {
+            LOG_WARN("Depth values must be clamped between 0.0 and 1.0 (inclusive)");
+        }
+
+        CHECK_JSON_TYPE(depth_stencil[1], IsUint);
         value.depthStencil.stencil = depth_stencil[1].GetUint();
 
         LOG_DEBUG(
             "Parsed VkClearValue {} {}", value.depthStencil.depth, value.depthStencil.stencil);
     }
 
-    return value;
+    return ErrorCode::NONE;
 }
 
-VkPipelineStageFlagBits initStageFlags(rapidjson::Value & document)
+ErrorCode initStageFlags(rapidjson::Value & document, VkPipelineStageFlags & stage_flags)
 {
-    assert(document.IsArray());
-
-    VkPipelineStageFlagBits stage_flags{};
+    CHECK_JSON_TYPE(document, IsArray);
 
     for (auto & stage_name: document.GetArray())
     {
-        assert(stage_name.IsString());
-        stage_flags = static_cast<VkPipelineStageFlagBits>(
-            stage_flags | getVkPipelineStageFlagBit(stage_name.GetString()));
+        CHECK_JSON_TYPE(stage_name, IsString);
+
+        auto opt_flag = getVkPipelineStageFlagBit(stage_name.GetString());
+        if (!opt_flag)
+        {
+            LOG_ERROR("Stage Flag {} wasn't recognized", stage_name.GetString());
+            return ErrorCode::JSON_ERROR;
+        }
+
+        stage_flags = static_cast<VkPipelineStageFlags>(stage_flags | opt_flag.value());
     }
 
-    return stage_flags;
+    return ErrorCode::NONE;
 }
 
 std::optional<uint32_t> initSubpassIndex(
@@ -804,67 +870,77 @@ std::optional<uint32_t> initSubpassIndex(
     return std::nullopt;
 }
 
-VkExtent2D initVkExtent2D(rapidjson::Value & document)
+ErrorCode initVkExtent2D(rapidjson::Value & document, VkExtent2D & extent)
 {
-    // CHECK_JSON_TYPE(document["size"], IsObject);
+    CHECK_JSON_TYPE(document, IsObject);
 
-    VkExtent2D extent{};
-    assert(document.IsObject());
-    assert(document.HasMember("width") && document["width"].IsUint());
+    CHECK_JSON_FIELD(document, width, IsUint);
     extent.width = document["width"].GetUint();
 
-    assert(document.HasMember("height") && document["height"].IsUint());
+    CHECK_JSON_FIELD(document, height, IsUint);
     extent.height = document["height"].GetUint();
 
-    LOG_DEBUG("Read extent {} {}", extent.width, extent.height);
-
-    return extent;
+    return ErrorCode::NONE;
 }
 
-VkDescriptorSetLayoutBinding initVkDescriptorSetLayoutBinding(rapidjson::Value & document)
+ErrorCode initVkDescriptorSetLayoutBinding(rapidjson::Value &             document,
+                                           VkDescriptorSetLayoutBinding & layout)
 {
-    assert(document.IsObject());
+    CHECK_JSON_TYPE(document, IsObject);
 
-    VkDescriptorSetLayoutBinding layout{};
+    CHECK_JSON_FIELD(document, binding, IsUint);
+    layout.binding = document["binding"].GetUint();
 
-    assert(document.HasMember("binding"));
-    assert(document["binding"].IsInt());
-    layout.binding = document["binding"].GetInt();
+    CHECK_JSON_FIELD(document, descriptor_type, IsString);
+    auto opt_descriptor_type = getVkDescriptorType(document["descriptor_type"].GetString());
+    if (!opt_descriptor_type)
+    {
+        LOG_ERROR("Couldn't initialize descriptor_type with {}",
+                  document["descriptor_type"].GetString());
+        return ErrorCode::JSON_ERROR;
+    }
+    layout.descriptorType = opt_descriptor_type.value();
 
-    assert(document.HasMember("descriptor_type"));
-    assert(document["descriptor_type"].IsString());
-    layout.descriptorType = getVkDescriptorType(document["descriptor_type"].GetString());
+    CHECK_JSON_FIELD(document, descriptor_count, IsUint);
+    layout.descriptorCount = document["descriptor_count"].GetUint();
 
-    assert(document.HasMember("descriptor_count"));
-    assert(document["descriptor_count"].IsInt());
-    layout.descriptorCount = document["descriptor_count"].GetInt();
-
-    assert(document.HasMember("stage"));
-    assert(document["stage"].IsArray());
+    CHECK_JSON_FIELD(document, stage, IsArray);
     layout.stageFlags = 0;
     for (auto & stage: document["stage"].GetArray())
     {
-        assert(stage.IsString());
-        layout.stageFlags |= getVkShaderStageFlagBit(stage.GetString());
+        CHECK_JSON_TYPE(stage, IsString);
+        auto opt_shader_stage = getVkShaderStageFlagBit(stage.GetString());
+        if (!opt_shader_stage)
+        {
+            LOG_ERROR("Couldn't initialize stage with {}", stage.GetString());
+            return ErrorCode::JSON_ERROR;
+        }
+
+        layout.stageFlags |= opt_shader_stage.value();
     }
 
-    return layout;
+    return ErrorCode::NONE;
 }
 
-VkAccessFlagBits initAccessFlags(rapidjson::Value & document)
+ErrorCode initAccessFlags(rapidjson::Value & document, VkAccessFlags & access_flags)
 {
-    assert(document.IsArray());
-
-    VkAccessFlagBits access_flags{};
+    CHECK_JSON_TYPE(document, IsArray);
 
     for (auto & access_name: document.GetArray())
     {
-        assert(access_name.IsString());
-        access_flags = static_cast<VkAccessFlagBits>(access_flags
-                                                     | getVkAccessFlagBit(access_name.GetString()));
+        CHECK_JSON_TYPE(access_name, IsString);
+
+        auto opt_access_bit = getVkAccessFlagBit(access_name.GetString());
+        if (!opt_access_bit)
+        {
+            LOG_ERROR("Access Flag {} wasn't recognized", access_name.GetString());
+            return ErrorCode::JSON_ERROR;
+        }
+
+        access_flags = static_cast<VkAccessFlagBits>(access_flags | opt_access_bit.value());
     }
 
-    return access_flags;
+    return ErrorCode::NONE;
 }
 
 ErrorCode initDependency(rapidjson::Value &                                     document,
@@ -875,32 +951,66 @@ ErrorCode initDependency(rapidjson::Value &                                     
 
     if (document.HasMember("src_subpass"))
     {
-        dependency.srcSubpass = initSubpassIndex(document["src_subpass"], subpass_handles).value();
+        auto opt_subpass_index = initSubpassIndex(document["src_subpass"], subpass_handles);
+        if (!opt_subpass_index)
+        {
+            LOG_ERROR("src_subpass in subpass dependency couldn't be found");
+            return ErrorCode::JSON_ERROR;
+        }
+
+        dependency.srcSubpass = opt_subpass_index.value();
     }
 
     if (document.HasMember("dst_subpass"))
     {
-        dependency.dstSubpass = initSubpassIndex(document["dst_subpass"], subpass_handles).value();
+        auto opt_subpass_index = initSubpassIndex(document["dst_subpass"], subpass_handles);
+        if (!opt_subpass_index)
+        {
+            LOG_ERROR("dst_subpass in subpass dependency couldn't be found");
+            return ErrorCode::JSON_ERROR;
+        }
+
+        dependency.dstSubpass = opt_subpass_index.value();
     }
 
     if (document.HasMember("src_stage_mask"))
     {
-        dependency.srcStageMask = initStageFlags(document["src_stage_mask"]);
+        auto error = initStageFlags(document["src_stage_mask"], dependency.srcStageMask);
+        if (error != ErrorCode::NONE)
+        {
+            LOG_DEBUG("Subpass Dependency src_stage_mask couldn't be initialized");
+            return error;
+        }
     }
 
     if (document.HasMember("dst_stage_mask"))
     {
-        dependency.dstStageMask = initStageFlags(document["dst_stage_mask"]);
+        auto error = initStageFlags(document["dst_stage_mask"], dependency.dstStageMask);
+        if (error != ErrorCode::NONE)
+        {
+            LOG_DEBUG("Subpass Dependency dst_stage_mask couldn't be initialized");
+            return error;
+        }
     }
 
     if (document.HasMember("src_access_mask"))
     {
-        dependency.srcAccessMask = initAccessFlags(document["src_access_mask"]);
+        auto error = initAccessFlags(document["src_access_mask"], dependency.srcAccessMask);
+        if (error != ErrorCode::NONE)
+        {
+            LOG_DEBUG("Couldn't read configuration for src_access_mask in Subpass Dependency");
+            return error;
+        }
     }
 
     if (document.HasMember("dst_access_mask"))
     {
-        dependency.dstAccessMask = initAccessFlags(document["dst_access_mask"]);
+        auto error = initAccessFlags(document["dst_access_mask"], dependency.dstAccessMask);
+        if (error != ErrorCode::NONE)
+        {
+            LOG_DEBUG("Couldn't read configuration for src_access_mask in Subpass Dependency");
+            return error;
+        }
     }
 
     return ErrorCode::NONE;
@@ -921,7 +1031,13 @@ ErrorCode initVkPushConstantRange(rapidjson::Value & document, VkPushConstantRan
     for (auto & stage: document["stage"].GetArray())
     {
         CHECK_JSON_TYPE(stage, IsString);
-        push_constant.stageFlags |= getVkShaderStageFlagBit(stage.GetString());
+        auto opt_stage_flags = getVkShaderStageFlagBit(stage.GetString());
+        if (!opt_stage_flags)
+        {
+            LOG_ERROR("Couldn't initialize stage with {}", stage.GetString());
+        }
+
+        push_constant.stageFlags |= opt_stage_flags.value();
     }
 
     return ErrorCode::NONE;
@@ -981,8 +1097,13 @@ ErrorCode initVkVertexInputAttributeDescription(
     attribute.offset = document["offset"].GetUint();
 
     CHECK_JSON_FIELD(document, format, IsString);
-    // TODO: getVkFormat could error
-    attribute.format = getVkFormat(document["format"].GetString());
+    auto opt_format = getVkFormat(document["format"].GetString());
+    if (!opt_format)
+    {
+        LOG_ERROR("Couldn't initialize format with {}", document["format"].GetString());
+        return ErrorCode::JSON_ERROR;
+    }
+    attribute.format = opt_format.value();
 
     return ErrorCode::NONE;
 }
@@ -1011,18 +1132,33 @@ ErrorCode init(rapidjson::Value & document, AttachmentConfig & attachment_config
     for (auto & usage_bit_name: document["usage"].GetArray())
     {
         CHECK_JSON_TYPE(usage_bit_name, IsString);
-        attachment_config.usage |= getVkImageUsageFlagBits(usage_bit_name.GetString());
+
+        auto opt_usage = getVkImageUsageFlagBits(usage_bit_name.GetString());
+        if (!opt_usage)
+        {
+            LOG_ERROR("Couldn't initialize usage with {}", usage_bit_name.GetString());
+            return ErrorCode::JSON_ERROR;
+        }
+
+        attachment_config.usage |= opt_usage.value();
     }
 
     if (document.HasMember("multisamples"))
     {
         CHECK_JSON_TYPE(document["multisamples"], IsUint);
-        attachment_config.multisamples = getVkSampleCountFlagBits(
-            document["multisamples"].GetUint());
+        auto opt_multisamples = getVkSampleCountFlagBits(document["multisamples"].GetUint());
+        if (!opt_multisamples)
+        {
+            LOG_ERROR("Couldn't initialize multisamples with {}",
+                      document["multisamples"].GetUint());
+            return ErrorCode::JSON_ERROR;
+        }
+
+        attachment_config.multisamples = opt_multisamples.value();
     }
     else
     {
-        attachment_config.multisamples = getVkSampleCountFlagBits(1);
+        attachment_config.multisamples = getVkSampleCountFlagBits(1).value();
     }
 
     if (document.HasMember("is_swapchain_image"))
@@ -1040,7 +1176,12 @@ ErrorCode init(rapidjson::Value & document, AttachmentConfig & attachment_config
         attachment_config.use_swapchain_size = false;
 
         // TODO: change initVkExtent2D to return an error
-        attachment_config.extent = initVkExtent2D(document["size"]);
+        auto error = initVkExtent2D(document["size"], attachment_config.extent);
+        if (error != ErrorCode::NONE)
+        {
+            LOG_DEBUG("Attachment Extent failed to initialize");
+            return error;
+        }
     }
     else
     {
@@ -1060,23 +1201,37 @@ ErrorCode init(rapidjson::Value &                        document,
     {
         CHECK_JSON_TYPE(document["multisamples"], IsUint);
 
-        // TODO: getVkSampleCountFlagBits should return an error
-        subpass_info.multisamples = getVkSampleCountFlagBits(document["multisamples"].GetUint());
+        auto opt_multisamples = getVkSampleCountFlagBits(document["multisamples"].GetUint());
+        if (!opt_multisamples)
+        {
+            LOG_ERROR("Couldn't initialize multisamples with {}",
+                      document["multisamples"].GetUint());
+            return ErrorCode::JSON_ERROR;
+        }
+
+        subpass_info.multisamples = opt_multisamples.value();
     }
     else
     {
-        subpass_info.multisamples = getVkSampleCountFlagBits(1);
+        subpass_info.multisamples = getVkSampleCountFlagBits(1).value();
     }
 
     if (document.HasMember("color_attachments"))
     {
         CHECK_JSON_TYPE(document["color_attachments"], IsArray);
 
+        subpass_info.color_attachments.resize(document["color_attachments"].GetArray().Size());
         for (auto & ca: document["color_attachments"].GetArray())
         {
-            // TODO: initAttachmentReference should return an error
-            subpass_info.color_attachments.push_back(
-                initAttachmentReference(ca, attachment_indices));
+            subpass_info.color_attachments.push_back({});
+
+            auto error = initAttachmentReference(
+                ca, subpass_info.color_attachments.back(), attachment_indices);
+            if (error != ErrorCode::JSON_ERROR)
+            {
+                LOG_DEBUG("Couldn't initialize color_attachments");
+                return error;
+            }
         }
     }
 
@@ -1084,11 +1239,21 @@ ErrorCode init(rapidjson::Value &                        document,
     {
         CHECK_JSON_TYPE(document["color_resolve_attachments"], IsArray);
 
+        subpass_info.color_resolve_attachments.resize(
+            document["color_resolve_attachments"].GetArray().Size());
+
         for (auto & cra: document["color_resolve_attachments"].GetArray())
         {
             // TODO: initAttachmentReference should return an error
-            subpass_info.color_resolve_attachments.push_back(
-                initAttachmentReference(cra, attachment_indices));
+            subpass_info.color_resolve_attachments.push_back({});
+
+            auto error = initAttachmentReference(
+                cra, subpass_info.color_resolve_attachments.back(), attachment_indices);
+            if (error != ErrorCode::JSON_ERROR)
+            {
+                LOG_DEBUG("Couldn't initialize color_resolve_attachments");
+                return error;
+            }
         }
     }
 
@@ -1106,11 +1271,18 @@ ErrorCode init(rapidjson::Value &                        document,
     {
         CHECK_JSON_TYPE(document["input_attachments"], IsArray);
 
+        subpass_info.input_attachments.resize(document["input_attachments"].GetArray().Size());
         for (auto & ia: document["input_attachments"].GetArray())
         {
             // TODO: initAttachmentReference should return an error
-            subpass_info.input_attachments.push_back(
-                initAttachmentReference(ia, attachment_indices));
+            subpass_info.input_attachments.push_back({});
+            auto error = initAttachmentReference(
+                ia, subpass_info.input_attachments.back(), attachment_indices);
+            if (error != ErrorCode::NONE)
+            {
+                LOG_DEBUG("Couldn't initialize input_attachments");
+                return error;
+            }
         }
     }
 
@@ -1138,8 +1310,15 @@ ErrorCode init(rapidjson::Value &                        document,
     if (document.HasMember("depth_stencil_attachment"))
     {
         // TODO: initAttachmentReference should return an error
-        subpass_info.depth_stencil_attachment = initAttachmentReference(
-            document["depth_stencil_attachment"], attachment_indices);
+        auto error = initAttachmentReference(document["depth_stencil_attachment"],
+                                             subpass_info.depth_stencil_attachment,
+                                             attachment_indices);
+
+        if (error != ErrorCode::NONE)
+        {
+            LOG_DEBUG("Couldn't initialize depth_stencil_attachment");
+            return error;
+        }
     }
     else
     {
@@ -1164,14 +1343,24 @@ ErrorCode init(rapidjson::Value & document, RenderPassConfig & render_pass_confi
         std::string name = ad["attachment_name"].GetString();
 
         render_pass_config.attachments[name] = attachment_index++;
-        // TODO: initAttachmentDescription should return an error
-        render_pass_config.descriptions[name] = initAttachmentDescription(ad);
+
+        auto error = initAttachmentDescription(ad, render_pass_config.descriptions[name]);
+        if (error != ErrorCode::NONE)
+        {
+            LOG_DEBUG("Couldn't initialize render pass attachment description");
+            return error;
+        }
 
         if (ad.HasMember("clear_value"))
         {
-            // TODO: initClearValue should return an error
-            render_pass_config.clear_values[ad["attachment_name"].GetString()] = initClearValue(
-                ad["clear_value"]);
+            auto error = initClearValue(
+                ad["clear_value"],
+                render_pass_config.clear_values[ad["attachment_name"].GetString()]);
+
+            if (error != ErrorCode::NONE)
+            {
+                LOG_DEBUG("Couldn't initialize Render Pass Clear Value");
+            }
         }
     }
 
@@ -1201,12 +1390,10 @@ ErrorCode init(rapidjson::Value & document, RenderPassConfig & render_pass_confi
     render_pass_config.subpass_dependencies.resize(json_dependency_array.Size());
     for (size_t i = 0; i < json_dependency_array.Size(); ++i)
     {
-        auto & sp_d = render_pass_config.subpass_dependencies[i];
+        auto & sp_d      = render_pass_config.subpass_dependencies[i];
         auto & json_sp_d = json_dependency_array[i];
 
-        auto error = initDependency(json_sp_d,
-                                    sp_d,
-                                    render_pass_config.subpass_handles);
+        auto error = initDependency(json_sp_d, sp_d, render_pass_config.subpass_handles);
 
         if (error != ErrorCode::NONE)
         {
@@ -1287,10 +1474,19 @@ ErrorCode init(rapidjson::Value &                                   document,
     {
         CHECK_JSON_TYPE(document["dynamic_state"], IsArray);
 
+        pipeline_config.dynamic_state.reserve(document["dynamic_state"].GetArray().Size());
         for (auto const & state: document["dynamic_state"].GetArray())
         {
             CHECK_JSON_TYPE(state, IsString);
-            pipeline_config.dynamic_state.push_back(getVkDynamicState(state.GetString()));
+
+            auto opt_state = getVkDynamicState(state.GetString());
+            if (!opt_state)
+            {
+                LOG_ERROR("Couldn't initialize dynamic_state with {}", state.GetString());
+                return ErrorCode::JSON_ERROR;
+            }
+
+            pipeline_config.dynamic_state.push_back(opt_state.value());
         }
     }
 
@@ -1311,7 +1507,12 @@ ErrorCode init(rapidjson::Value & document, UniformConfig & uniform_config)
         return ErrorCode::JSON_ERROR;
     }
 
-    uniform_config.layout_binding = initVkDescriptorSetLayoutBinding(document);
+    auto error = initVkDescriptorSetLayoutBinding(document, uniform_config.layout_binding);
+    if (error != ErrorCode::NONE)
+    {
+        LOG_DEBUG("Couldn't read configuration for Uniform Layout");
+        return error;
+    }
 
     return ErrorCode::NONE;
 }
