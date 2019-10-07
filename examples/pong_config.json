@@ -111,6 +111,21 @@
 			"max_count": 1
 		}
 	],
+	"uniforms": [
+		{
+			"name": "uniform_name",
+			"binding": 0,
+			"descriptor_type": "UNIFORM_BUFFER_DYNAMIC",
+			"descriptor_count": 1,
+			"stage": ["VERTEX"]
+		}
+	],
+	"uniform_sets": [
+		{
+			"name": "first_set",
+			"uniforms": ["uniform_name"]
+		}
+	],
 	"push_constants":
 	[
 		{

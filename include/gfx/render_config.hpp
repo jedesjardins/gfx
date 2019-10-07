@@ -74,6 +74,7 @@ struct PipelineConfig
     std::vector<VkDynamicState> dynamic_state;
 };
 
+// REMOVE THIS
 struct UniformConfig
 {
     size_t                       max_uniform_count;
@@ -96,7 +97,12 @@ struct RenderConfig
 
     std::unordered_map<std::string, AttachmentConfig> attachment_configs;
 
+    // REMOVE THIS
     std::unordered_map<std::string, UniformConfig> uniform_configs;
+
+    std::unordered_map<std::string, VkDescriptorSetLayoutBinding> uniform_bindings;
+
+    std::unordered_map<std::string, std::vector<std::string>> uniform_sets;
 
     std::unordered_map<std::string, VkPushConstantRange> push_constants;
 
@@ -1621,6 +1627,52 @@ ErrorCode RenderConfig::init(char const * file_name, ReadFileFn read_file_fn)
         CHECK_JSON_FIELD(s, file, IsString);
 
         shader_names[s["name"].GetString()] = s["file"].GetString();
+    }
+
+    CHECK_JSON_FIELD(document, uniforms, IsArray);
+    for(auto & u: document["uniforms"].GetArray())
+    {
+        CHECK_JSON_TYPE(u, IsObject);
+        CHECK_JSON_FIELD(u, name, IsString);
+
+        VkDescriptorSetLayoutBinding binding;
+
+        auto error = initVkDescriptorSetLayoutBinding(u, uniform_bindings[u["name"].GetString()]);
+        if (error != ErrorCode::NONE)
+        {
+            LOG_DEBUG("Couldn't read configuration for Uniform");
+            return error;
+        }
+    }
+
+    CHECK_JSON_FIELD(document, uniform_sets, IsArray);
+    for (auto & us:  document["uniform_sets"].GetArray())
+    {
+        CHECK_JSON_TYPE(us, IsObject);
+        CHECK_JSON_FIELD(us, name, IsString);
+        CHECK_JSON_FIELD(us, uniforms, IsArray);
+
+        auto & uniform_set = uniform_sets[us["name"].GetString()];
+
+        if (us["uniforms"].GetArray().Size() == 0)
+        {
+            LOG_ERROR("Uniform Set {} must have at least one uniform", us["name"].GetString());
+            return ErrorCode::JSON_ERROR;
+        }
+
+        for (auto & u: us["uniforms"].GetArray())
+        {
+            CHECK_JSON_TYPE(u, IsString);
+
+            auto uniform_iter = uniform_bindings.find(u.GetString());
+            if (uniform_iter == uniform_bindings.end())
+            {
+                LOG_ERROR("Couldn't find Uniform {} for Uniform Set {}", u.GetString(), us["name"].GetString());
+                return ErrorCode::JSON_ERROR;
+            }
+
+            uniform_set.push_back(u.GetString());
+        }
     }
 
     CHECK_JSON_FIELD(document, uniform_layouts, IsArray);

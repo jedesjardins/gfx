@@ -19,6 +19,7 @@
 namespace gfx
 {
 const size_t max_calls_per_bucket = 10;
+const size_t descriptors_per_pool = 8;
 
 class Memory
 {
@@ -651,6 +652,90 @@ private:
     std::unordered_map<BufferHandle, void *> mapped_memory;
 }; // class BufferResources
 
+struct BufferWrite
+{
+    BufferHandle buffer;
+    VkDeviceSize offset;
+    VkDeviceSize size;
+};
+
+struct ImageWrite
+{
+    TextureHandle texture;
+};
+
+struct UniformWrite
+{
+    uint32_t first_array_element;
+
+    size_t        buffer_write_count;
+    BufferWrite * buffer_writes;
+
+    size_t       image_write_count;
+    ImageWrite * image_writes;
+};
+
+struct UniformSet
+{
+    std::vector<VkDescriptorSetLayoutBinding> bindings;
+
+    std::vector<VkDescriptorPool> pools;
+
+    // maps a UniformHandle to a DescriptorSet
+    std::vector<uint16_t>        generations;
+    std::vector<VkDescriptorSet> uniforms;
+
+    IndexAllocator free_descriptor_sets;
+};
+
+class NewUniformResources
+{
+public:
+    std::unordered_map<std::string, UniformLayoutHandle> uniform_layout_handles;
+
+    std::vector<VkDescriptorSetLayout> uniform_layouts;
+    std::vector<UniformSet>            uniform_sets;
+
+    bool init(RenderConfig & render_config, Device const & device);
+    void quit(Device const & device);
+
+    std::optional<UniformHandle2> create_uniform(UniformSetHandle const & set_handle);
+
+    void update_uniform(Device &               device,
+                        UniformHandle2 const & uniform_handle,
+                        BufferResources &      buffers,
+                        ImageResources &       images,
+                        size_t                 uniform_write_count,
+                        UniformWrite *         uniform_write_infos);
+
+    std::optional<VkDescriptorSet> get_uniform(UniformHandle2 handle);
+
+    void delete_uniform(UniformHandle2 handle);
+
+private:
+    ErrorCode create_uniform_layout(Device const &                                    device,
+                                    VkDescriptorSetLayout &                           layout,
+                                    std::vector<VkDescriptorSetLayoutBinding> const & bindings);
+
+    ErrorCode create_uniform_set(Device const &                              device,
+                                 VkDescriptorSetLayout const &               layout,
+                                 UniformSet &                                uniform_set,
+                                 std::vector<VkDescriptorSetLayoutBinding> & bindings);
+
+    ErrorCode create_pool(Device const &                                    device,
+                          VkDescriptorPool &                                pool,
+                          std::vector<VkDescriptorSetLayoutBinding> const & bindings);
+
+    ErrorCode allocate_descriptor_sets(Device const &                device,
+                                       VkDescriptorSetLayout const & layout,
+                                       VkDescriptorPool &            pool,
+                                       VkDescriptorSet *             descriptor_sets);
+
+    ErrorCode check_valid_set(UniformSetHandle const & set_handle);
+
+    ErrorCode check_valid_uniform(UniformHandle2 const & uniform_handle);
+};
+
 /*
  * Manages Uniforms
  */
@@ -781,6 +866,8 @@ struct DrawParameters
     void *          push_constant_data;
     size_t          uniform_count;
     UniformHandle * uniforms;
+    size_t          dynamic_offset_count;
+    uint32_t *      dynamic_offsets;
     VkRect2D *      scissor;
     VkViewport *    viewport;
 };
@@ -809,6 +896,7 @@ public:
 
     std::optional<AttachmentHandle>    get_attachment_handle(std::string const & attachment_name);
     std::optional<UniformLayoutHandle> get_uniform_layout_handle(std::string const & layout_name);
+    std::optional<UniformSetHandle>    get_uniform_set_handle(std::string const & set_name);
     std::optional<PipelineHandle>      get_pipeline_handle(std::string const & pipeline_name);
 
     std::optional<UniformHandle> new_uniform(UniformLayoutHandle const & layout_handle,
@@ -853,7 +941,12 @@ public:
 
     std::optional<TextureHandle> get_texture(AttachmentHandle const & attachment);
 
-    void delete_textures(size_t sampler_count, TextureHandle const * sampler_handles);
+    void delete_textures(size_t sampler_count, TextureHandle const * texture_handles);
+
+    std::optional<UniformHandle2> create_uniform(UniformSetHandle       set_handle,
+                                                 module::UniformWrite & write_info);
+
+    void delete_uniforms(size_t uniform_count, UniformHandle2 const * uniforms);
 
 private:
     std::optional<VkDescriptorSet> get_uniform(UniformHandle const & handle);
@@ -875,6 +968,7 @@ private:
     module::ImageResources      images;
     module::RenderPassResources render_passes;
     module::UniformResources    uniforms;
+    module::NewUniformResources uniforms2;
     module::PipelineResources   pipelines;
     module::CommandResources    commands;
     module::BufferResources     buffers;
@@ -1186,7 +1280,7 @@ VkBuffer MappedBuffer::buffer_handle()
 void IndexAllocator::init(size_t number_of_indices)
 {
     indices.resize(number_of_indices);
-    for (size_t i = 0; i < indices.size() - 1; ++i)
+    for (int32_t i = 0; i < static_cast<int32_t>(indices.size()) - 1; ++i)
     {
         indices[i] = i + 1;
     }
@@ -2972,6 +3066,344 @@ ErrorCode RenderPassResources::createFramebuffer(Device const &               de
     return ErrorCode::NONE;
 }
 
+bool NewUniformResources::init(RenderConfig & render_config, Device const & device)
+{
+    uniform_layouts.reserve(render_config.uniform_sets.size());
+    uniform_sets.reserve(render_config.uniform_sets.size());
+
+    for (auto const & iter: render_config.uniform_sets)
+    {
+        auto & name          = iter.first;
+        auto & binding_names = iter.second;
+
+        VkDescriptorSetLayout uniform_layout;
+
+        // Get all vkDescriptorSetLayoutBindings for this layout
+        std::vector<VkDescriptorSetLayoutBinding> bindings;
+        for (auto const & binding_name: binding_names)
+        {
+            auto const & binding_iter = render_config.uniform_bindings.find(binding_name);
+            if (binding_iter == render_config.uniform_bindings.end())
+            {
+                LOG_ERROR(
+                    "Couldn't find Uniform Binding {} for Uniform Set {}", binding_name, name);
+                return false;
+            }
+
+            bindings.push_back(binding_iter->second);
+        }
+
+        // create layout
+        UniformSetHandle handle = uniform_layouts.size();
+
+        if (create_uniform_layout(device, uniform_layout, bindings) != ErrorCode::NONE)
+        {
+            LOG_DEBUG("Unable to create VkDescriptorSetLayout for set {}", name);
+            return false;
+        }
+
+        uniform_layouts.push_back(uniform_layout);
+
+        // create a pool
+
+        uniform_sets.emplace_back();
+        create_uniform_set(device, uniform_layouts.back(), uniform_sets.back(), bindings);
+    }
+
+    return true;
+}
+
+void NewUniformResources::quit(Device const & device)
+{
+    for (auto & uniform_layout: uniform_layouts)
+    {
+        vkDestroyDescriptorSetLayout(device.get_logical_device(), uniform_layout, nullptr);
+    }
+
+    for (auto & uniform_set: uniform_sets)
+    {
+        for (auto & pool: uniform_set.pools)
+        {
+            vkDestroyDescriptorPool(device.get_logical_device(), pool, nullptr);
+        }
+
+        uniform_set.pools.clear();
+        uniform_set.uniforms.clear();
+        uniform_set.free_descriptor_sets.init(0);
+    }
+}
+
+std::optional<UniformHandle2> NewUniformResources::create_uniform(
+    UniformSetHandle const & set_handle)
+{
+    if (check_valid_set(set_handle) != ErrorCode::NONE)
+    {
+        return std::nullopt;
+    }
+
+    UniformSet & uniform_set = uniform_sets[set_handle];
+
+    auto descriptor_index = uniform_set.free_descriptor_sets.acquire();
+    if (descriptor_index < 0)
+    {
+        return std::nullopt;
+    }
+
+    auto generation = ++uniform_set.generations[descriptor_index];
+
+    return UniformHandle2{.set        = set_handle,
+                          .generation = generation,
+                          .uniform    = static_cast<uint16_t>(descriptor_index)};
+}
+
+void NewUniformResources::update_uniform(Device &               device,
+                                         UniformHandle2 const & uniform_handle,
+                                         BufferResources &      buffers,
+                                         ImageResources &       images,
+                                         size_t                 uniform_write_count,
+                                         UniformWrite *         uniform_write_infos)
+{
+    check_valid_set(uniform_handle.set);
+    check_valid_uniform(uniform_handle);
+
+    assert(uniform_write_count != 0 && uniform_write_infos != nullptr);
+
+    auto uniform_set = uniform_sets[uniform_handle.set];
+
+    assert(uniform_write_count == uniform_set.bindings.size());
+
+    std::vector<VkWriteDescriptorSet>   writes;
+    std::vector<VkDescriptorBufferInfo> buffer_writes;
+    std::vector<VkDescriptorImageInfo>  image_writes;
+
+    auto descriptor_set = uniform_set.uniforms[uniform_handle.uniform];
+
+    for (size_t write_info_idx = 0; write_info_idx < uniform_write_count; write_info_idx++)
+    {
+        auto & write_info = uniform_write_infos[write_info_idx];
+        auto & binding    = uniform_set.bindings[write_info_idx];
+
+        assert(write_info.buffer_write_count == 0 || write_info.image_write_count == 0);
+        assert(write_info.buffer_write_count == binding.descriptorCount
+               || write_info.image_write_count == binding.descriptorCount);
+
+        if (write_info.buffer_write_count != 0)
+        {
+            size_t write_offset = buffer_writes.size();
+
+            for (size_t buffer_write_idx = 0; buffer_write_idx < write_info.buffer_write_count;
+                 buffer_write_idx++)
+            {
+                auto & buffer_write = write_info.buffer_writes[buffer_write_idx];
+
+                auto opt_buffer = buffers.get_buffer(buffer_write.buffer);
+                if (!opt_buffer)
+                {
+                    LOG_ERROR("Tried to write to Uniform Set with invalid buffer");
+                    return;
+                }
+
+                VkDescriptorBufferInfo buffer_info;
+                buffer_info.buffer = opt_buffer.value().buffer_handle();
+                buffer_info.offset = buffer_write.offset;
+                buffer_info.range  = buffer_write.size;
+
+                buffer_writes.push_back(buffer_info);
+            }
+
+            VkWriteDescriptorSet descriptor_write;
+
+            descriptor_write.dstSet          = descriptor_set;
+            descriptor_write.dstArrayElement = 0;
+            descriptor_write.descriptorCount = binding.descriptorCount;
+            descriptor_write.descriptorType  = binding.descriptorType;
+            descriptor_write.pBufferInfo     = &buffer_writes[write_offset];
+
+            writes.push_back(descriptor_write);
+        }
+        else if (write_info.image_write_count != 0)
+        {
+            size_t write_offset = image_writes.size();
+
+            for (size_t image_write_idx = 0; image_write_idx < write_info.image_write_count;
+                 image_write_idx++)
+            {
+                auto & image_write = write_info.image_writes[image_write_idx];
+
+                auto opt_sampler = images.get_texture(image_write.texture);
+                if (!opt_sampler)
+                {
+                    LOG_ERROR("Tried to write to Uniform Set with invalid texture");
+                    return;
+                }
+
+                VkDescriptorImageInfo image_info;
+                image_info.sampler     = opt_sampler.value().sampler_handle();
+                image_info.imageView   = opt_sampler.value().view_handle();
+                image_info.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+
+                image_writes.push_back(image_info);
+            }
+
+            VkWriteDescriptorSet descriptor_write;
+
+            descriptor_write.dstSet          = descriptor_set;
+            descriptor_write.dstArrayElement = 0;
+            descriptor_write.descriptorCount = binding.descriptorCount;
+            descriptor_write.descriptorType  = binding.descriptorType;
+            descriptor_write.pImageInfo      = &image_writes[write_offset];
+
+            writes.push_back(descriptor_write);
+        }
+    }
+
+    vkUpdateDescriptorSets(device.get_logical_device(), writes.size(), writes.data(), 0, nullptr);
+}
+
+std::optional<VkDescriptorSet> NewUniformResources::get_uniform(UniformHandle2 handle)
+{
+    if (check_valid_set(handle.set) != ErrorCode::NONE
+        || check_valid_uniform(handle) != ErrorCode::NONE)
+    {
+        return std::nullopt;
+    }
+
+    return uniform_sets[handle.set].uniforms[handle.uniform];
+}
+
+void NewUniformResources::delete_uniform(UniformHandle2 handle)
+{
+    if (check_valid_set(handle.set) != ErrorCode::NONE
+        || check_valid_uniform(handle) != ErrorCode::NONE)
+    {
+        return;
+    }
+
+    auto & uniform_set = uniform_sets[handle.set];
+}
+
+ErrorCode NewUniformResources::create_uniform_layout(
+    Device const &                                    device,
+    VkDescriptorSetLayout &                           layout,
+    std::vector<VkDescriptorSetLayoutBinding> const & bindings)
+{
+    auto layoutInfo = VkDescriptorSetLayoutCreateInfo{
+        .sType        = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
+        .bindingCount = static_cast<uint32_t>(bindings.size()),
+        .pBindings    = bindings.data()};
+
+    VK_CHECK_RESULT(
+        vkCreateDescriptorSetLayout(device.get_logical_device(), &layoutInfo, nullptr, &layout),
+        "Unable to create VkDescriptorSetLayout");
+
+    return ErrorCode::NONE;
+}
+
+ErrorCode NewUniformResources::create_uniform_set(
+    Device const &                              device,
+    VkDescriptorSetLayout const &               layout,
+    UniformSet &                                uniform_set,
+    std::vector<VkDescriptorSetLayoutBinding> & bindings)
+{
+    uniform_set.bindings = std::move(bindings);
+
+    uniform_set.pools.push_back(VK_NULL_HANDLE);
+
+    // create pool
+    auto error = create_pool(device, uniform_set.pools.back(), uniform_set.bindings);
+    if (error != ErrorCode::NONE)
+    {
+        return error;
+    }
+
+    // allocate descriptor sets
+    uniform_set.uniforms.resize(descriptors_per_pool);
+    error = allocate_descriptor_sets(
+        device, layout, uniform_set.pools.back(), uniform_set.uniforms.data());
+    if (error != ErrorCode::NONE)
+    {
+        return error;
+    }
+
+    uniform_set.free_descriptor_sets.init(descriptors_per_pool);
+    uniform_set.generations.resize(descriptors_per_pool, 0);
+
+    return ErrorCode::NONE;
+}
+
+ErrorCode NewUniformResources::create_pool(
+    Device const &                                    device,
+    VkDescriptorPool &                                pool,
+    std::vector<VkDescriptorSetLayoutBinding> const & bindings)
+{
+    std::vector<VkDescriptorPoolSize> pool_sizes{bindings.size()};
+
+    for (size_t i = 0; i < pool_sizes.size(); ++i)
+    {
+        pool_sizes[i].type            = bindings[i].descriptorType;
+        pool_sizes[i].descriptorCount = descriptors_per_pool;
+    }
+
+    auto poolInfo = VkDescriptorPoolCreateInfo{
+        .sType         = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
+        .poolSizeCount = static_cast<uint32_t>(pool_sizes.size()),
+        .pPoolSizes    = pool_sizes.data(),
+        .maxSets       = descriptors_per_pool};
+
+    VK_CHECK_RESULT(vkCreateDescriptorPool(device.get_logical_device(), &poolInfo, nullptr, &pool),
+                    "Unable to create VkDescriptorPool");
+
+    return ErrorCode::NONE;
+}
+
+ErrorCode NewUniformResources::allocate_descriptor_sets(Device const &                device,
+                                                        VkDescriptorSetLayout const & layout,
+                                                        VkDescriptorPool &            pool,
+                                                        VkDescriptorSet * descriptor_sets)
+{
+    std::vector<VkDescriptorSetLayout> layouts{descriptors_per_pool, layout};
+
+    auto allocInfo = VkDescriptorSetAllocateInfo{
+        .sType              = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
+        .descriptorPool     = pool,
+        .descriptorSetCount = descriptors_per_pool,
+        .pSetLayouts        = layouts.data()};
+
+    VK_CHECK_RESULT(
+        vkAllocateDescriptorSets(device.get_logical_device(), &allocInfo, descriptor_sets),
+        "Unable to allocate VkDescriptorSets");
+
+    return ErrorCode::NONE;
+}
+
+ErrorCode NewUniformResources::check_valid_set(UniformSetHandle const & set_handle)
+{
+    assert(set_handle < uniform_sets.size());
+    if (set_handle > uniform_sets.size())
+    {
+        LOG_ERROR("UniformSetHandle was not valid");
+        return ErrorCode::API_ERROR;
+    }
+    return ErrorCode::NONE;
+}
+
+ErrorCode NewUniformResources::check_valid_uniform(UniformHandle2 const & uniform_handle)
+{
+    auto & uniform_set = uniform_sets[uniform_handle.set];
+
+    assert(uniform_handle.uniform < uniform_set.uniforms.size()
+           && uniform_handle.generation == uniform_set.generations[uniform_handle.uniform]);
+
+    if (uniform_handle.uniform > uniform_set.uniforms.size()
+        || uniform_handle.generation != uniform_set.generations[uniform_handle.uniform])
+    {
+        LOG_ERROR("UniformHandle was not valid");
+        return ErrorCode::API_ERROR;
+    }
+
+    return ErrorCode::NONE;
+}
+
 bool UniformResources::init(RenderConfig &    render_config,
                             Device const &    device,
                             BufferResources & buffers)
@@ -3892,6 +4324,12 @@ bool Renderer::init(RenderConfig & render_config)
         return false;
     }
 
+    if (!uniforms2.init(render_config, device))
+    {
+        LOG_ERROR("Failed to initialize NewUniformResources in Renderer");
+        return false;
+    }
+
     if (!pipelines.init(render_config, device, render_passes, uniforms))
     {
         LOG_ERROR("Failed to initialize PipelineResources in Renderer");
@@ -3913,6 +4351,7 @@ void Renderer::quit()
     commands.quit(device);
     pipelines.quit(device);
     uniforms.quit(device);
+    uniforms2.quit(device);
     buffers.quit(device);
     render_passes.quit(device);
     images.quit(device);
