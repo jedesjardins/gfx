@@ -1025,10 +1025,10 @@ ErrorCode initVkPushConstantRange(rapidjson::Value & document, VkPushConstantRan
     CHECK_JSON_TYPE(document, IsObject);
 
     CHECK_JSON_FIELD(document, offset, IsUint);
-    push_constant.offset = document["offset"].IsUint();
+    push_constant.offset = document["offset"].GetUint();
 
     CHECK_JSON_FIELD(document, size, IsUint);
-    push_constant.size = document["size"].IsUint();
+    push_constant.size = document["size"].GetUint();
 
     CHECK_JSON_FIELD(document, stage, IsArray);
     push_constant.stageFlags = 0;

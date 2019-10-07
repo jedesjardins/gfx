@@ -45,7 +45,7 @@
 					"initial_layout": "UNDEFINED",
 					"final_layout": "DEPTH_STENCIL_ATTACHMENT_OPTIMAL",
 					"clear_value": {
-						"depth_stencil": [1, 0]
+						"depth_stencil": [1.0, 0]
 					}
 				},
 				{
