@@ -71,12 +71,6 @@ int main()
     auto to_texture_pipeline   = renderer.get_pipeline_handle("initial_shader").value();
     auto from_texture_pipeline = renderer.get_pipeline_handle("blit_shader").value();
 
-    /*
-    auto color_attachment   = renderer.get_attachment_handle("a_color").value();
-    auto attachment_texture = renderer.get_texture(color_attachment).value();
-
-    auto texture_uniform = make_texture_uniform(renderer, "us_texture", attachment_texture);
-    */
     auto texture_uniform = make_texture_uniform_from_attachment(
         renderer, "us_texture", "a_color");
 
