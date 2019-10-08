@@ -124,23 +124,32 @@
 			"file": "shaders/simple-frag.spv"
 		}
 	],
-	"uniform_layouts":
+	"uniforms":
 	[
 		{
-			"name": "ul_camera_matrix",
+			"name": "u_camera_matrix",
 			"binding": 0,
-			"descriptor_type": "UNIFORM_BUFFER_DYNAMIC",
+			"descriptor_type": "UNIFORM_BUFFER",
 			"descriptor_count": 1,
-			"stage": ["VERTEX"],
-			"max_count": 8
+			"stage": ["VERTEX"]
 		},
 		{
-			"name": "ul_texture",
+			"name": "u_texture",
 			"binding": 1,
 			"descriptor_type": "COMBINED_IMAGE_SAMPLER",
 			"descriptor_count": 1,
-			"stage": ["FRAGMENT"],
-			"max_count": 8
+			"stage": ["FRAGMENT"]
+		}
+	],
+	"uniform_sets":
+	[
+		{
+			"name": "us_camera_matrix",
+			"uniforms": ["u_camera_matrix"]
+		},
+		{
+			"name": "us_texture",
+			"uniforms": ["u_texture"]
 		}
 	],
 	"push_constants":
@@ -186,7 +195,7 @@
 			"fragment_shader_name": "s_fragment_shader",
 			"vertex_bindings": ["vb_pos_color"],
 			"vertex_attributes": ["va_color", "va_pos"],
-			"uniform_layouts": ["ul_camera_matrix", "ul_texture"],
+			"uniform_sets": ["us_camera_matrix", "us_texture"],
 			"push_constants": ["pc_model_matrix"],
 			"render_pass": "rp_main_render_pass",
 			"subpass": "sp_first_subpass"
@@ -197,7 +206,7 @@
 			"fragment_shader_name": "s_simple_fragment_shader",
 			"vertex_bindings": ["vb_pos_color"],
 			"vertex_attributes": ["va_color", "va_pos"],
-			"uniform_layouts": ["ul_camera_matrix", "ul_texture"],
+			"uniform_sets": ["us_camera_matrix", "us_texture"],
 			"push_constants": ["pc_model_matrix"],
 			"render_pass": "rp_main_render_pass",
 			"subpass": "sp_first_subpass"

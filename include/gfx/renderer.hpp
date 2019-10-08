@@ -3248,6 +3248,7 @@ void UniformResources::update_uniform(Device &              device,
             descriptor_write.sType           = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
             descriptor_write.dstSet          = descriptor_set;
             descriptor_write.dstArrayElement = 0;
+            descriptor_write.dstBinding      = binding.binding;
             descriptor_write.descriptorCount = binding.descriptorCount;
             descriptor_write.descriptorType  = binding.descriptorType;
             descriptor_write.pBufferInfo     = &buffer_writes[write_offset];
@@ -3282,6 +3283,7 @@ void UniformResources::update_uniform(Device &              device,
             descriptor_write.sType           = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
             descriptor_write.dstSet          = descriptor_set;
             descriptor_write.dstArrayElement = 0;
+            descriptor_write.dstBinding      = binding.binding;
             descriptor_write.descriptorCount = binding.descriptorCount;
             descriptor_write.descriptorType  = binding.descriptorType;
             descriptor_write.pImageInfo      = &image_writes[write_offset];
@@ -3313,6 +3315,8 @@ void UniformResources::delete_uniform(UniformHandle const & handle)
     }
 
     auto & uniform_set = uniform_sets[handle.set];
+
+    uniform_set.free_descriptor_sets.release(handle.uniform);
 }
 
 std::optional<VkDescriptorSetLayout> UniformResources::get_layout(std::string const & name)
