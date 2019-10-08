@@ -2,6 +2,7 @@
 #include "log/logger.hpp"
 #include "gfx/renderer.hpp"
 #include "cmd/cmd.hpp"
+#include "common.hpp"
 
 #include <vulkan/vulkan.h>
 #include <GLFW/glfw3.h>
@@ -70,11 +71,14 @@ int main()
     auto to_texture_pipeline   = renderer.get_pipeline_handle("initial_shader").value();
     auto from_texture_pipeline = renderer.get_pipeline_handle("blit_shader").value();
 
-    auto uniform_layout = renderer.get_uniform_layout_handle("ul_texture").value();
-
+    /*
     auto color_attachment   = renderer.get_attachment_handle("a_color").value();
     auto attachment_texture = renderer.get_texture(color_attachment).value();
-    auto texture_uniform    = renderer.new_uniform(uniform_layout, attachment_texture).value();
+
+    auto texture_uniform = make_texture_uniform(renderer, "us_texture", attachment_texture);
+    */
+    auto texture_uniform = make_texture_uniform_from_attachment(
+        renderer, "us_texture", "a_color");
 
     // object vertices
     std::vector<glm::vec2> object_vertices = {{-.9f, -.9f}, {0.f, -.9f}, {0.f, 0.f}, {-.9f, 0.f}};

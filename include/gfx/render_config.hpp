@@ -756,7 +756,7 @@ ErrorCode initAttachmentReference(rapidjson::Value &                        docu
     return ErrorCode::NONE;
 }
 
-ErrorCode initClearValue(rapidjson::Value const & document, VkClearValue value)
+ErrorCode initClearValue(rapidjson::Value const & document, VkClearValue & value)
 {
     CHECK_JSON_TYPE(document, IsObject);
 

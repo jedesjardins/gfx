@@ -26,8 +26,12 @@ struct TextureUniform
     gfx::TextureHandle texture_handle;
 };
 
-TextureUniform make_texture_uniform(gfx::Renderer &            renderer,
-                                    std::string const &        set_name,
-                                    gfx::TextureHandle const & texture_handle);
+gfx::UniformHandle make_texture_uniform(gfx::Renderer &            renderer,
+                                        std::string const &        set_name,
+                                        gfx::TextureHandle const & texture_handle);
+
+gfx::UniformHandle make_texture_uniform_from_attachment(gfx::Renderer &     renderer,
+                                                        std::string const & set_name,
+                                                        std::string const & attachment_name);
 
 #endif
