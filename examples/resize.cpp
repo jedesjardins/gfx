@@ -2,6 +2,7 @@
 #include "log/logger.hpp"
 #include "gfx/renderer.hpp"
 #include "cmd/cmd.hpp"
+#include "common.hpp"
 
 #include <vulkan/vulkan.h>
 #include <GLFW/glfw3.h>
@@ -95,19 +96,25 @@ int main()
         return 0;
     }
 
-    auto opt_layout_handle = render_device.get_uniform_layout_handle("ul_camera_matrix");
-
     set_scale(window);
 
     LOG_INFO("Scale {}", scale);
 
-    glm::mat4 view = glm::ortho(0.f, 60.f, 0.f, 60.f / scale);
+    /*
+    auto opt_layout_handle = render_device.get_uniform_layout_handle("ul_camera_matrix");
 
     gfx::UniformHandle view_handle = render_device
                                          .new_uniform(opt_layout_handle.value(),
                                                       sizeof(glm::mat4),
                                                       glm::value_ptr(view))
                                          .value();
+    */
+
+    glm::mat4 view = glm::ortho(0.f, 60.f, 0.f, 60.f / scale);
+
+    BufferUniform uniform = make_matrix_uniform(render_device, "us_camera_matrix", view);
+
+    gfx::UniformHandle view_handle = uniform.uniform_handle;
 
     auto pipeline_handle = render_device.get_pipeline_handle("square_shader").value();
 
@@ -158,7 +165,15 @@ int main()
         if (resized)
         {
             view = glm::ortho(0.f, 60.f, 0.f, 60.f / scale);
-            render_device.update_uniform(view_handle, sizeof(glm::mat4), glm::value_ptr(view));
+
+            render_device.delete_uniforms(1, &uniform.uniform_handle);
+            render_device.delete_buffers(1, &uniform.buffer_handle);
+
+            uniform = make_matrix_uniform(render_device, "us_camera_matrix", view);
+            view_handle = uniform.uniform_handle;
+            //render_device.update_uniform(view_handle, sizeof(glm::mat4), glm::value_ptr(view));
+
+            resized = false;
         }
 
         gfx::DrawParameters params{};

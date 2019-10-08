@@ -236,119 +236,6 @@ using UniformVariant
 
 */
 
-//
-//  COMMANDS
-//
-
-struct Draw
-{
-    static cmd::BackendDispatchFunction const DISPATCH_FUNCTION;
-
-    VkCommandBuffer    commandbuffer;
-    VkPipelineLayout * pipeline_layout;
-
-    size_t         vertex_buffer_count;
-    VkDeviceSize * vertex_buffer_offsets;
-    VkBuffer *     vertex_buffers;
-
-    size_t   index_count;
-    size_t   index_buffer_offset;
-    VkBuffer index_buffer;
-
-    size_t push_constant_size;
-    void * push_constant_data;
-
-    size_t            descriptor_set_count;
-    VkDescriptorSet * descriptor_sets;
-    size_t            dynamic_offset_count;
-    uint32_t *        dynamic_offsets;
-
-    VkViewport * viewport;
-
-    VkRect2D * scissor;
-};
-static_assert(std::is_pod<Draw>::value == true, "Draw must be a POD.");
-
-void draw(void const * data);
-
-struct Copy
-{
-    static cmd::BackendDispatchFunction const DISPATCH_FUNCTION;
-
-    VkCommandBuffer commandbuffer;
-    VkBuffer        srcBuffer;
-    VkBuffer        dstBuffer;
-    VkDeviceSize    srcOffset;
-    VkDeviceSize    dstOffset;
-    VkDeviceSize    size;
-};
-static_assert(std::is_pod<Copy>::value == true, "Copy must be a POD.");
-
-void copy(void const * data);
-
-struct CopyToImage
-{
-    static cmd::BackendDispatchFunction const DISPATCH_FUNCTION;
-
-    VkCommandBuffer commandbuffer;
-    VkBuffer        srcBuffer;
-    VkDeviceSize    srcOffset;
-    VkImage         dstImage;
-    uint32_t        width;
-    uint32_t        height;
-};
-static_assert(std::is_pod<Copy>::value == true, "Copy must be a POD.");
-
-void copyToImage(void const * data);
-
-struct SetImageLayout
-{
-    static cmd::BackendDispatchFunction const DISPATCH_FUNCTION;
-
-    VkCommandBuffer      commandbuffer;
-    VkAccessFlags        srcAccessMask;
-    VkAccessFlags        dstAccessMask;
-    VkImageLayout        oldLayout;
-    VkImageLayout        newLayout;
-    VkPipelineStageFlags sourceStage;
-    VkPipelineStageFlags destinationStage;
-    VkImage              image;
-    uint32_t             mipLevels;
-    VkImageAspectFlags   aspectMask;
-};
-static_assert(std::is_pod<SetImageLayout>::value == true, "SetImageLayout must be a POD.");
-
-void setImageLayout(void const * data);
-
-struct DeleteBuffers
-{
-    static cmd::BackendDispatchFunction const DISPATCH_FUNCTION;
-
-    VkDevice         logical_device;
-    size_t           buffer_count;
-    VkBuffer *       buffers;
-    VkDeviceMemory * memories;
-};
-
-static_assert(std::is_pod<DeleteBuffers>::value == true, "DeleteBuffers must be a POD.");
-
-void deleteBuffers(void const * data);
-
-struct DeleteTextures
-{
-    static cmd::BackendDispatchFunction const DISPATCH_FUNCTION;
-
-    VkDevice         logical_device;
-    size_t           texture_count;
-    VkSampler *      samplers;
-    VkImageView *    views;
-    VkImage *        images;
-    VkDeviceMemory * memories;
-};
-
-static_assert(std::is_pod<DeleteTextures>::value == true, "DeleteTextures must be a POD.");
-
-void deleteTextures(void const * data);
 
 /*
 struct DeleteUniforms
@@ -1527,8 +1414,39 @@ void InputAttachmentCollection::destroy(VkDevice const & logical_device)
 */
 
 //
-//  DRAW COMMANDS
+// COMMANDS
 //
+
+// DRAW
+
+struct Draw
+{
+    static cmd::BackendDispatchFunction const DISPATCH_FUNCTION;
+
+    VkCommandBuffer    commandbuffer;
+    VkPipelineLayout * pipeline_layout;
+
+    size_t         vertex_buffer_count;
+    VkDeviceSize * vertex_buffer_offsets;
+    VkBuffer *     vertex_buffers;
+
+    size_t   index_count;
+    size_t   index_buffer_offset;
+    VkBuffer index_buffer;
+
+    size_t push_constant_size;
+    void * push_constant_data;
+
+    size_t            descriptor_set_count;
+    VkDescriptorSet * descriptor_sets;
+    size_t            dynamic_offset_count;
+    uint32_t *        dynamic_offsets;
+
+    VkViewport * viewport;
+
+    VkRect2D * scissor;
+};
+static_assert(std::is_pod<Draw>::value == true, "Draw must be a POD.");
 
 void draw(void const * data)
 {
@@ -1582,6 +1500,21 @@ void draw(void const * data)
 
 cmd::BackendDispatchFunction const Draw::DISPATCH_FUNCTION = &draw;
 
+// COPY BUFFERS
+
+struct Copy
+{
+    static cmd::BackendDispatchFunction const DISPATCH_FUNCTION;
+
+    VkCommandBuffer commandbuffer;
+    VkBuffer        srcBuffer;
+    VkBuffer        dstBuffer;
+    VkDeviceSize    srcOffset;
+    VkDeviceSize    dstOffset;
+    VkDeviceSize    size;
+};
+static_assert(std::is_pod<Copy>::value == true, "Copy must be a POD.");
+
 void copy(void const * data)
 {
     Copy const * copydata = reinterpret_cast<Copy const *>(data);
@@ -1594,6 +1527,21 @@ void copy(void const * data)
 }
 
 cmd::BackendDispatchFunction const Copy::DISPATCH_FUNCTION = &copy;
+
+// COPY TO IMAGES
+
+struct CopyToImage
+{
+    static cmd::BackendDispatchFunction const DISPATCH_FUNCTION;
+
+    VkCommandBuffer commandbuffer;
+    VkBuffer        srcBuffer;
+    VkDeviceSize    srcOffset;
+    VkImage         dstImage;
+    uint32_t        width;
+    uint32_t        height;
+};
+static_assert(std::is_pod<Copy>::value == true, "Copy must be a POD.");
 
 void copyToImage(void const * data)
 {
@@ -1618,6 +1566,25 @@ void copyToImage(void const * data)
 }
 
 cmd::BackendDispatchFunction const CopyToImage::DISPATCH_FUNCTION = &copyToImage;
+
+// TRANSITION IMAGE LAYOUT
+
+struct SetImageLayout
+{
+    static cmd::BackendDispatchFunction const DISPATCH_FUNCTION;
+
+    VkCommandBuffer      commandbuffer;
+    VkAccessFlags        srcAccessMask;
+    VkAccessFlags        dstAccessMask;
+    VkImageLayout        oldLayout;
+    VkImageLayout        newLayout;
+    VkPipelineStageFlags sourceStage;
+    VkPipelineStageFlags destinationStage;
+    VkImage              image;
+    uint32_t             mipLevels;
+    VkImageAspectFlags   aspectMask;
+};
+static_assert(std::is_pod<SetImageLayout>::value == true, "SetImageLayout must be a POD.");
 
 void setImageLayout(void const * data)
 {
@@ -1651,6 +1618,20 @@ void setImageLayout(void const * data)
 
 cmd::BackendDispatchFunction const SetImageLayout::DISPATCH_FUNCTION = &setImageLayout;
 
+// DELETE BUFFERS
+
+struct DeleteBuffers
+{
+    static cmd::BackendDispatchFunction const DISPATCH_FUNCTION;
+
+    VkDevice         logical_device;
+    size_t           buffer_count;
+    VkBuffer *       buffers;
+    VkDeviceMemory * memories;
+};
+
+static_assert(std::is_pod<DeleteBuffers>::value == true, "DeleteBuffers must be a POD.");
+
 void deleteBuffers(void const * data)
 {
     LOG_TRACE("Entering deleteBuffers");
@@ -1670,6 +1651,22 @@ void deleteBuffers(void const * data)
 }
 
 cmd::BackendDispatchFunction const DeleteBuffers::DISPATCH_FUNCTION = &deleteBuffers;
+
+// DELETE TEXTURES
+
+struct DeleteTextures
+{
+    static cmd::BackendDispatchFunction const DISPATCH_FUNCTION;
+
+    VkDevice         logical_device;
+    size_t           texture_count;
+    VkSampler *      samplers;
+    VkImageView *    views;
+    VkImage *        images;
+    VkDeviceMemory * memories;
+};
+
+static_assert(std::is_pod<DeleteTextures>::value == true, "DeleteTextures must be a POD.");
 
 void deleteTextures(void const * data)
 {
@@ -1692,6 +1689,39 @@ void deleteTextures(void const * data)
 }
 
 cmd::BackendDispatchFunction const DeleteTextures::DISPATCH_FUNCTION = &deleteTextures;
+
+// DELETE UNIFORMS
+
+struct DeleteUniforms
+{
+    static cmd::BackendDispatchFunction const DISPATCH_FUNCTION;
+
+    module::UniformResources * uniform_resources;
+
+    size_t          uniform_count;
+    UniformHandle * uniform_handles;
+};
+
+static_assert(std::is_pod<DeleteUniforms>::value == true, "DeleteUniforms must be a POD.");
+
+void deleteUniforms(void const * data)
+{
+    LOG_TRACE("Entering deleteUniforms");
+    auto const * delete_data = reinterpret_cast<DeleteUniforms const *>(data);
+
+    for (size_t i = 0; i < delete_data->uniform_count; ++i)
+    {
+        LOG_DEBUG("Deleting Uniform {} {}",
+                  delete_data->uniform_handles[i].set,
+                  delete_data->uniform_handles[i].uniform);
+
+        delete_data->uniform_resources->delete_uniform(delete_data->uniform_handles[i]);
+    }
+
+    LOG_TRACE("Exiting deleteUniforms");
+}
+
+cmd::BackendDispatchFunction const DeleteUniforms::DISPATCH_FUNCTION = &deleteUniforms;
 
 /*
 void deleteUniforms(void const * data)
@@ -3139,6 +3169,7 @@ std::optional<UniformHandle> UniformResources::create_uniform(UniformSetHandle c
 {
     if (check_valid_set(set_handle) != ErrorCode::NONE)
     {
+        LOG_DEBUG("UniformHandle passed to create_uniform was not valid");
         return std::nullopt;
     }
 
@@ -3147,6 +3178,7 @@ std::optional<UniformHandle> UniformResources::create_uniform(UniformSetHandle c
     auto descriptor_index = uniform_set.free_descriptor_sets.acquire();
     if (descriptor_index < 0)
     {
+        LOG_WARN("Need to allocate more descriptor sets");
         return std::nullopt;
     }
 
@@ -5151,6 +5183,22 @@ std::optional<UniformHandle> Renderer::create_uniform(UniformSetHandle set_handl
     uniforms.update_uniform(device, opt_uniform.value(), buffers, images, write_count, write_infos);
 
     return opt_uniform;
+}
+
+void Renderer::delete_uniforms(size_t uniform_count, UniformHandle const * uniform_handles)
+{
+    LOG_INFO("Deleting Uniform");
+
+    auto & bucket = commands.get_delete_bucket(frames.currentResource);
+
+    DeleteUniforms * delete_command = bucket.AddCommand<DeleteUniforms>(
+        0, uniform_count * sizeof(UniformHandle));
+
+    delete_command->uniform_resources = &uniforms;
+    delete_command->uniform_count = uniform_count;
+    delete_command->uniform_handles = reinterpret_cast<UniformHandle*>(cmd::commandPacket::GetAuxiliaryMemory(delete_command));
+
+    memcpy(delete_command->uniform_handles, uniform_handles, uniform_count * sizeof(UniformHandle));
 }
 
 std::optional<VkDescriptorSet> Renderer::get_uniform(UniformHandle const & handle)
