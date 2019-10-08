@@ -72,8 +72,6 @@ using RenderPassHandle      = size_t;
 using SubpassHandle         = size_t;
 using AttachmentHandle      = size_t;
 using FramebufferHandle     = size_t;
-// REMOVE THIS
-using UniformLayoutHandle   = size_t;
 using PushConstantHandle    = size_t;
 using VertexBindingHandle   = size_t;
 using VertexAttributeHandle = size_t;
@@ -82,6 +80,7 @@ using PipelineHandle        = size_t;
 using BufferHandle          = size_t;
 using TextureHandle         = size_t;
 
+/*
 // REMOVE THIS
 struct UniformHandle
 {
@@ -89,11 +88,13 @@ struct UniformHandle
     uint64_t uniform_id : 32;
 }; // struct UniformHandle
 
+using UniformLayoutHandle   = size_t;
+
+*/
 
 using UniformSetHandle = uint16_t;
 
-// this should include a generation?
-struct UniformHandle2
+struct UniformHandle
 {
 	UniformSetHandle set;
 	uint16_t generation;

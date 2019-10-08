@@ -172,6 +172,7 @@ struct IndexAllocator
     void release(int32_t released_index);
 };
 
+/*
 struct DynamicBufferUniform
 {
     size_t       descriptor_set;
@@ -232,6 +233,8 @@ struct DynamicBufferCollection
 
 using UniformVariant
     = std::variant<DynamicBufferCollection, SamplerCollection, InputAttachmentCollection>;
+
+*/
 
 //
 //  COMMANDS
@@ -347,6 +350,7 @@ static_assert(std::is_pod<DeleteTextures>::value == true, "DeleteTextures must b
 
 void deleteTextures(void const * data);
 
+/*
 struct DeleteUniforms
 {
     static cmd::BackendDispatchFunction const DISPATCH_FUNCTION;
@@ -359,6 +363,8 @@ struct DeleteUniforms
 static_assert(std::is_pod<DeleteUniforms>::value == true, "DeleteUniforms must be a POD.");
 
 void deleteUniforms(void const * data);
+
+*/
 
 //
 // PHYSICAL DEVICE
@@ -388,6 +394,29 @@ struct PhysicalDeviceInfo
     VkPhysicalDeviceProperties properties{};
 
     VkSampleCountFlagBits max_msaa_samples{VK_SAMPLE_COUNT_1_BIT};
+};
+
+struct BufferWrite
+{
+    BufferHandle buffer;
+    VkDeviceSize offset;
+    VkDeviceSize size;
+};
+
+struct ImageWrite
+{
+    TextureHandle texture;
+};
+
+struct UniformWrite
+{
+    uint32_t first_array_element;
+
+    size_t        buffer_write_count;
+    BufferWrite * buffer_writes;
+
+    size_t       image_write_count;
+    ImageWrite * image_writes;
 };
 
 //
@@ -652,29 +681,6 @@ private:
     std::unordered_map<BufferHandle, void *> mapped_memory;
 }; // class BufferResources
 
-struct BufferWrite
-{
-    BufferHandle buffer;
-    VkDeviceSize offset;
-    VkDeviceSize size;
-};
-
-struct ImageWrite
-{
-    TextureHandle texture;
-};
-
-struct UniformWrite
-{
-    uint32_t first_array_element;
-
-    size_t        buffer_write_count;
-    BufferWrite * buffer_writes;
-
-    size_t       image_write_count;
-    ImageWrite * image_writes;
-};
-
 struct UniformSet
 {
     std::vector<VkDescriptorSetLayoutBinding> bindings;
@@ -688,10 +694,10 @@ struct UniformSet
     IndexAllocator free_descriptor_sets;
 };
 
-class NewUniformResources
+class UniformResources
 {
 public:
-    std::unordered_map<std::string, UniformLayoutHandle> uniform_layout_handles;
+    std::unordered_map<std::string, UniformSetHandle> uniform_set_handles;
 
     std::vector<VkDescriptorSetLayout> uniform_layouts;
     std::vector<UniformSet>            uniform_sets;
@@ -699,18 +705,20 @@ public:
     bool init(RenderConfig & render_config, Device const & device);
     void quit(Device const & device);
 
-    std::optional<UniformHandle2> create_uniform(UniformSetHandle const & set_handle);
+    std::optional<UniformHandle> create_uniform(UniformSetHandle const & set_handle);
 
-    void update_uniform(Device &               device,
-                        UniformHandle2 const & uniform_handle,
-                        BufferResources &      buffers,
-                        ImageResources &       images,
-                        size_t                 uniform_write_count,
-                        UniformWrite *         uniform_write_infos);
+    void update_uniform(Device &              device,
+                        UniformHandle const & uniform_handle,
+                        BufferResources &     buffers,
+                        ImageResources &      images,
+                        size_t                uniform_write_count,
+                        UniformWrite *        uniform_write_infos);
 
-    std::optional<VkDescriptorSet> get_uniform(UniformHandle2 handle);
+    std::optional<VkDescriptorSet> get_uniform(UniformHandle const & handle);
 
-    void delete_uniform(UniformHandle2 handle);
+    void delete_uniform(UniformHandle const & handle);
+
+    std::optional<VkDescriptorSetLayout> get_layout(std::string const & name);
 
 private:
     ErrorCode create_uniform_layout(Device const &                                    device,
@@ -733,12 +741,12 @@ private:
 
     ErrorCode check_valid_set(UniformSetHandle const & set_handle);
 
-    ErrorCode check_valid_uniform(UniformHandle2 const & uniform_handle);
+    ErrorCode check_valid_uniform(UniformHandle const & uniform_handle);
 };
 
 /*
  * Manages Uniforms
- */
+ *
 struct UniformResources
 {
 public:
@@ -756,6 +764,7 @@ public:
 private:
     ErrorCode create_uniform_layouts(Device const & device, BufferResources & buffers);
 }; // struct UniformResources
+*/
 
 struct Pipeline
 {
@@ -894,11 +903,12 @@ public:
 
     ErrorCode draw(DrawParameters const & args);
 
-    std::optional<AttachmentHandle>    get_attachment_handle(std::string const & attachment_name);
-    std::optional<UniformLayoutHandle> get_uniform_layout_handle(std::string const & layout_name);
-    std::optional<UniformSetHandle>    get_uniform_set_handle(std::string const & set_name);
-    std::optional<PipelineHandle>      get_pipeline_handle(std::string const & pipeline_name);
+    std::optional<AttachmentHandle> get_attachment_handle(std::string const & attachment_name);
+    // std::optional<UniformSetHandle> get_uniform_layout_handle(std::string const & layout_name);
+    std::optional<UniformSetHandle> get_uniform_set_handle(std::string const & set_name);
+    std::optional<PipelineHandle>   get_pipeline_handle(std::string const & pipeline_name);
 
+    /*
     std::optional<UniformHandle> new_uniform(UniformLayoutHandle const & layout_handle,
                                              VkDeviceSize                size,
                                              void *                      data_ptr);
@@ -923,6 +933,7 @@ public:
     }
 
     void delete_uniforms(size_t uniform_count, UniformHandle const * uniforms);
+    */
 
     std::optional<BufferHandle> create_buffer(VkDeviceSize          size,
                                               VkBufferUsageFlags    usage,
@@ -943,10 +954,11 @@ public:
 
     void delete_textures(size_t sampler_count, TextureHandle const * texture_handles);
 
-    std::optional<UniformHandle2> create_uniform(UniformSetHandle       set_handle,
-                                                 module::UniformWrite & write_info);
+    std::optional<UniformHandle> create_uniform(UniformSetHandle set_handle,
+                                                size_t           write_count,
+                                                UniformWrite *   write_infos);
 
-    void delete_uniforms(size_t uniform_count, UniformHandle2 const * uniforms);
+    void delete_uniforms(size_t uniform_count, UniformHandle const * uniforms);
 
 private:
     std::optional<VkDescriptorSet> get_uniform(UniformHandle const & handle);
@@ -968,7 +980,6 @@ private:
     module::ImageResources      images;
     module::RenderPassResources render_passes;
     module::UniformResources    uniforms;
-    module::NewUniformResources uniforms2;
     module::PipelineResources   pipelines;
     module::CommandResources    commands;
     module::BufferResources     buffers;
@@ -1321,12 +1332,7 @@ void IndexAllocator::release(int32_t released_index)
 }
 
 /*
- * Acquires a open slot in the uniform buffer
- * Acquires an available DynamicBufferUniform element
- * Copies the data into the uniform buffer
- * Returns a UniformHandle to the DynamicBuffer Uniform (which holds the index of it's
- * descriptorset, and the offset into it's Uniform Buffer)
- */
+
 std::optional<UniformHandle> DynamicBufferCollection::create_uniform(VkDeviceSize size,
                                                                      void *       data_ptr)
 {
@@ -1356,11 +1362,7 @@ std::optional<UniformHandle> DynamicBufferCollection::create_uniform(VkDeviceSiz
     return UniformHandle{.uniform_layout_id = 0, .uniform_id = static_cast<uint64_t>(uniform_slot)};
 }
 
-/*
- * Releases the uniform buffer slot
- * Acquires a new uniform buffer slot
- * UniformHandle (and DynamicBufferUniform slot) stays the same
- */
+
 void DynamicBufferCollection::update_uniform(UniformHandle handle,
                                              VkDeviceSize  size,
                                              void *        data_ptr)
@@ -1389,10 +1391,6 @@ void DynamicBufferCollection::update_uniform(UniformHandle handle,
     uniform_buffer.copy(size, data_ptr);
 }
 
-/*
- * Release the DynamicBufferUniform slot
- * Release the Uniform Buffer "block"
- */
 void DynamicBufferCollection::destroy_uniform(UniformHandle handle)
 {
     DynamicBufferUniform & uniform = uniforms[handle.uniform_id];
@@ -1526,6 +1524,7 @@ void InputAttachmentCollection::destroy_uniform(UniformHandle)
 
 void InputAttachmentCollection::destroy(VkDevice const & logical_device)
 {}
+*/
 
 //
 //  DRAW COMMANDS
@@ -1694,6 +1693,7 @@ void deleteTextures(void const * data)
 
 cmd::BackendDispatchFunction const DeleteTextures::DISPATCH_FUNCTION = &deleteTextures;
 
+/*
 void deleteUniforms(void const * data)
 {
     LOG_TRACE("Entering deleteUniforms");
@@ -1718,6 +1718,7 @@ void deleteUniforms(void const * data)
 }
 
 cmd::BackendDispatchFunction const DeleteUniforms::DISPATCH_FUNCTION = &deleteUniforms;
+*/
 
 //
 // PHYSICALDEVICEINFO
@@ -3066,7 +3067,7 @@ ErrorCode RenderPassResources::createFramebuffer(Device const &               de
     return ErrorCode::NONE;
 }
 
-bool NewUniformResources::init(RenderConfig & render_config, Device const & device)
+bool UniformResources::init(RenderConfig & render_config, Device const & device)
 {
     uniform_layouts.reserve(render_config.uniform_sets.size());
     uniform_sets.reserve(render_config.uniform_sets.size());
@@ -3094,7 +3095,8 @@ bool NewUniformResources::init(RenderConfig & render_config, Device const & devi
         }
 
         // create layout
-        UniformSetHandle handle = uniform_layouts.size();
+        UniformSetHandle handle   = uniform_layouts.size();
+        uniform_set_handles[name] = handle;
 
         if (create_uniform_layout(device, uniform_layout, bindings) != ErrorCode::NONE)
         {
@@ -3113,7 +3115,7 @@ bool NewUniformResources::init(RenderConfig & render_config, Device const & devi
     return true;
 }
 
-void NewUniformResources::quit(Device const & device)
+void UniformResources::quit(Device const & device)
 {
     for (auto & uniform_layout: uniform_layouts)
     {
@@ -3133,8 +3135,7 @@ void NewUniformResources::quit(Device const & device)
     }
 }
 
-std::optional<UniformHandle2> NewUniformResources::create_uniform(
-    UniformSetHandle const & set_handle)
+std::optional<UniformHandle> UniformResources::create_uniform(UniformSetHandle const & set_handle)
 {
     if (check_valid_set(set_handle) != ErrorCode::NONE)
     {
@@ -3151,17 +3152,17 @@ std::optional<UniformHandle2> NewUniformResources::create_uniform(
 
     auto generation = ++uniform_set.generations[descriptor_index];
 
-    return UniformHandle2{.set        = set_handle,
-                          .generation = generation,
-                          .uniform    = static_cast<uint16_t>(descriptor_index)};
+    return UniformHandle{.set        = set_handle,
+                         .generation = generation,
+                         .uniform    = static_cast<uint16_t>(descriptor_index)};
 }
 
-void NewUniformResources::update_uniform(Device &               device,
-                                         UniformHandle2 const & uniform_handle,
-                                         BufferResources &      buffers,
-                                         ImageResources &       images,
-                                         size_t                 uniform_write_count,
-                                         UniformWrite *         uniform_write_infos)
+void UniformResources::update_uniform(Device &              device,
+                                      UniformHandle const & uniform_handle,
+                                      BufferResources &     buffers,
+                                      ImageResources &      images,
+                                      size_t                uniform_write_count,
+                                      UniformWrite *        uniform_write_infos)
 {
     check_valid_set(uniform_handle.set);
     check_valid_uniform(uniform_handle);
@@ -3203,7 +3204,7 @@ void NewUniformResources::update_uniform(Device &               device,
                     return;
                 }
 
-                VkDescriptorBufferInfo buffer_info;
+                VkDescriptorBufferInfo buffer_info{};
                 buffer_info.buffer = opt_buffer.value().buffer_handle();
                 buffer_info.offset = buffer_write.offset;
                 buffer_info.range  = buffer_write.size;
@@ -3211,8 +3212,8 @@ void NewUniformResources::update_uniform(Device &               device,
                 buffer_writes.push_back(buffer_info);
             }
 
-            VkWriteDescriptorSet descriptor_write;
-
+            VkWriteDescriptorSet descriptor_write{};
+            descriptor_write.sType           = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
             descriptor_write.dstSet          = descriptor_set;
             descriptor_write.dstArrayElement = 0;
             descriptor_write.descriptorCount = binding.descriptorCount;
@@ -3237,7 +3238,7 @@ void NewUniformResources::update_uniform(Device &               device,
                     return;
                 }
 
-                VkDescriptorImageInfo image_info;
+                VkDescriptorImageInfo image_info{};
                 image_info.sampler     = opt_sampler.value().sampler_handle();
                 image_info.imageView   = opt_sampler.value().view_handle();
                 image_info.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
@@ -3245,8 +3246,8 @@ void NewUniformResources::update_uniform(Device &               device,
                 image_writes.push_back(image_info);
             }
 
-            VkWriteDescriptorSet descriptor_write;
-
+            VkWriteDescriptorSet descriptor_write{};
+            descriptor_write.sType           = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
             descriptor_write.dstSet          = descriptor_set;
             descriptor_write.dstArrayElement = 0;
             descriptor_write.descriptorCount = binding.descriptorCount;
@@ -3260,7 +3261,7 @@ void NewUniformResources::update_uniform(Device &               device,
     vkUpdateDescriptorSets(device.get_logical_device(), writes.size(), writes.data(), 0, nullptr);
 }
 
-std::optional<VkDescriptorSet> NewUniformResources::get_uniform(UniformHandle2 handle)
+std::optional<VkDescriptorSet> UniformResources::get_uniform(UniformHandle const & handle)
 {
     if (check_valid_set(handle.set) != ErrorCode::NONE
         || check_valid_uniform(handle) != ErrorCode::NONE)
@@ -3271,7 +3272,7 @@ std::optional<VkDescriptorSet> NewUniformResources::get_uniform(UniformHandle2 h
     return uniform_sets[handle.set].uniforms[handle.uniform];
 }
 
-void NewUniformResources::delete_uniform(UniformHandle2 handle)
+void UniformResources::delete_uniform(UniformHandle const & handle)
 {
     if (check_valid_set(handle.set) != ErrorCode::NONE
         || check_valid_uniform(handle) != ErrorCode::NONE)
@@ -3282,7 +3283,18 @@ void NewUniformResources::delete_uniform(UniformHandle2 handle)
     auto & uniform_set = uniform_sets[handle.set];
 }
 
-ErrorCode NewUniformResources::create_uniform_layout(
+std::optional<VkDescriptorSetLayout> UniformResources::get_layout(std::string const & name)
+{
+    auto iter = uniform_set_handles.find(name);
+    if (iter == uniform_set_handles.end())
+    {
+        return std::nullopt;
+    }
+
+    return uniform_layouts[iter->second];
+}
+
+ErrorCode UniformResources::create_uniform_layout(
     Device const &                                    device,
     VkDescriptorSetLayout &                           layout,
     std::vector<VkDescriptorSetLayoutBinding> const & bindings)
@@ -3299,11 +3311,10 @@ ErrorCode NewUniformResources::create_uniform_layout(
     return ErrorCode::NONE;
 }
 
-ErrorCode NewUniformResources::create_uniform_set(
-    Device const &                              device,
-    VkDescriptorSetLayout const &               layout,
-    UniformSet &                                uniform_set,
-    std::vector<VkDescriptorSetLayoutBinding> & bindings)
+ErrorCode UniformResources::create_uniform_set(Device const &                device,
+                                               VkDescriptorSetLayout const & layout,
+                                               UniformSet &                  uniform_set,
+                                               std::vector<VkDescriptorSetLayoutBinding> & bindings)
 {
     uniform_set.bindings = std::move(bindings);
 
@@ -3331,10 +3342,9 @@ ErrorCode NewUniformResources::create_uniform_set(
     return ErrorCode::NONE;
 }
 
-ErrorCode NewUniformResources::create_pool(
-    Device const &                                    device,
-    VkDescriptorPool &                                pool,
-    std::vector<VkDescriptorSetLayoutBinding> const & bindings)
+ErrorCode UniformResources::create_pool(Device const &                                    device,
+                                        VkDescriptorPool &                                pool,
+                                        std::vector<VkDescriptorSetLayoutBinding> const & bindings)
 {
     std::vector<VkDescriptorPoolSize> pool_sizes{bindings.size()};
 
@@ -3356,10 +3366,10 @@ ErrorCode NewUniformResources::create_pool(
     return ErrorCode::NONE;
 }
 
-ErrorCode NewUniformResources::allocate_descriptor_sets(Device const &                device,
-                                                        VkDescriptorSetLayout const & layout,
-                                                        VkDescriptorPool &            pool,
-                                                        VkDescriptorSet * descriptor_sets)
+ErrorCode UniformResources::allocate_descriptor_sets(Device const &                device,
+                                                     VkDescriptorSetLayout const & layout,
+                                                     VkDescriptorPool &            pool,
+                                                     VkDescriptorSet *             descriptor_sets)
 {
     std::vector<VkDescriptorSetLayout> layouts{descriptors_per_pool, layout};
 
@@ -3376,7 +3386,7 @@ ErrorCode NewUniformResources::allocate_descriptor_sets(Device const &          
     return ErrorCode::NONE;
 }
 
-ErrorCode NewUniformResources::check_valid_set(UniformSetHandle const & set_handle)
+ErrorCode UniformResources::check_valid_set(UniformSetHandle const & set_handle)
 {
     assert(set_handle < uniform_sets.size());
     if (set_handle > uniform_sets.size())
@@ -3387,7 +3397,7 @@ ErrorCode NewUniformResources::check_valid_set(UniformSetHandle const & set_hand
     return ErrorCode::NONE;
 }
 
-ErrorCode NewUniformResources::check_valid_uniform(UniformHandle2 const & uniform_handle)
+ErrorCode UniformResources::check_valid_uniform(UniformHandle const & uniform_handle)
 {
     auto & uniform_set = uniform_sets[uniform_handle.set];
 
@@ -3404,6 +3414,7 @@ ErrorCode NewUniformResources::check_valid_uniform(UniformHandle2 const & unifor
     return ErrorCode::NONE;
 }
 
+/*
 bool UniformResources::init(RenderConfig &    render_config,
                             Device const &    device,
                             BufferResources & buffers)
@@ -3672,6 +3683,7 @@ ErrorCode UniformResources::create_uniform_layouts(Device const & device, Buffer
 
     return ErrorCode::NONE;
 }
+*/
 
 bool PipelineResources::init(RenderConfig &        render_config,
                              Device const &        device,
@@ -3982,7 +3994,17 @@ ErrorCode PipelineResources::create_pipeline(Device const &         device,
 
     for (auto & layout_name: pipeline_config.uniform_layout_names)
     {
+        auto opt_layout = uniforms.get_layout(layout_name);
+        if (!opt_layout)
+        {
+            LOG_ERROR("Couldn't get Layout {}", layout_name);
+            return ErrorCode::JSON_ERROR;
+        }
+
+        layouts.push_back(opt_layout.value());
+        /*
         layouts.push_back(uniforms.uniform_layouts[uniforms.uniform_layout_handles[layout_name]]);
+        */
     }
 
     auto pipelineLayoutInfo = VkPipelineLayoutCreateInfo{
@@ -4318,15 +4340,9 @@ bool Renderer::init(RenderConfig & render_config)
         return false;
     }
 
-    if (!uniforms.init(render_config, device, buffers))
+    if (!uniforms.init(render_config, device))
     {
         LOG_ERROR("Failed to initialize UniformResources in Renderer");
-        return false;
-    }
-
-    if (!uniforms2.init(render_config, device))
-    {
-        LOG_ERROR("Failed to initialize NewUniformResources in Renderer");
         return false;
     }
 
@@ -4351,7 +4367,6 @@ void Renderer::quit()
     commands.quit(device);
     pipelines.quit(device);
     uniforms.quit(device);
-    uniforms2.quit(device);
     buffers.quit(device);
     render_passes.quit(device);
     images.quit(device);
@@ -4552,17 +4567,19 @@ ErrorCode Renderer::draw(DrawParameters const & args)
         else
         {
             LOG_ERROR("No Descriptor Set returned for Uniform {} {}",
-                      uniform_handle.uniform_layout_id,
-                      uniform_handle.uniform_id);
+                      uniform_handle.set,
+                      uniform_handle.uniform);
             return ErrorCode::API_ERROR;
         }
 
+        /*
         auto opt_offset = get_dynamic_offset(uniform_handle);
 
         if (opt_offset.has_value())
         {
             dynamic_offsets.push_back(opt_offset.value());
         }
+        */
     }
 
     size_t vk_vertex_buffers_offset = 0;
@@ -4668,11 +4685,24 @@ std::optional<AttachmentHandle> Renderer::get_attachment_handle(std::string cons
     return images.get_attachment_handle(attachment_name);
 }
 
+/*
 std::optional<UniformLayoutHandle> Renderer::get_uniform_layout_handle(
     std::string const & layout_name)
 {
     auto handle_iter = uniforms.uniform_layout_handles.find(layout_name);
     if (handle_iter == uniforms.uniform_layout_handles.end())
+    {
+        return std::nullopt;
+    }
+
+    return handle_iter->second;
+}
+*/
+
+std::optional<UniformSetHandle> Renderer::get_uniform_set_handle(std::string const & set_name)
+{
+    auto handle_iter = uniforms.uniform_set_handles.find(set_name);
+    if (handle_iter == uniforms.uniform_set_handles.end())
     {
         return std::nullopt;
     }
@@ -4691,6 +4721,7 @@ std::optional<PipelineHandle> Renderer::get_pipeline_handle(std::string const & 
     return handle_iter->second;
 }
 
+/*
 std::optional<UniformHandle> Renderer::new_uniform(UniformLayoutHandle const & layout_handle,
                                                    VkDeviceSize                size,
                                                    void *                      data_ptr)
@@ -4810,6 +4841,7 @@ void Renderer::delete_uniforms(size_t uniform_count, UniformHandle const * unifo
 
     memcpy(delete_command->uniform_handles, uniform_handles, uniform_count * sizeof(UniformHandle));
 }
+*/
 
 std::optional<BufferHandle> Renderer::create_buffer(VkDeviceSize          size,
                                                     VkBufferUsageFlags    usage,
@@ -5105,6 +5137,29 @@ void Renderer::delete_textures(size_t texture_count, TextureHandle const * textu
         *(memory_iter++)  = sampler.memory_handle();
     }
 }
+
+std::optional<UniformHandle> Renderer::create_uniform(UniformSetHandle set_handle,
+                                                      size_t           write_count,
+                                                      UniformWrite *   write_infos)
+{
+    auto opt_uniform = uniforms.create_uniform(set_handle);
+    if (!opt_uniform)
+    {
+        return std::nullopt;
+    }
+
+    uniforms.update_uniform(device, opt_uniform.value(), buffers, images, write_count, write_infos);
+
+    return opt_uniform;
+}
+
+std::optional<VkDescriptorSet> Renderer::get_uniform(UniformHandle const & handle)
+{
+    return uniforms.get_uniform(handle);
+}
+
+void delete_uniforms(size_t uniform_count, UniformHandle const * uniforms)
+{}
 
 ErrorCode Renderer::create_command_buffer(uint32_t image_index)
 {

@@ -74,12 +74,13 @@ struct PipelineConfig
     std::vector<VkDynamicState> dynamic_state;
 };
 
-// REMOVE THIS
+/*
 struct UniformConfig
 {
     size_t                       max_uniform_count;
     VkDescriptorSetLayoutBinding layout_binding;
 };
+*/
 
 using ReadFileFn = ErrorCode (*)(char const * file_name, std::vector<char> & buffer);
 
@@ -97,8 +98,9 @@ struct RenderConfig
 
     std::unordered_map<std::string, AttachmentConfig> attachment_configs;
 
-    // REMOVE THIS
+    /*
     std::unordered_map<std::string, UniformConfig> uniform_configs;
+    */
 
     std::unordered_map<std::string, VkDescriptorSetLayoutBinding> uniform_bindings;
 
@@ -1444,8 +1446,8 @@ ErrorCode init(rapidjson::Value &                                   document,
         pipeline_config.vertex_attribute_names.push_back(vai.GetString());
     }
 
-    CHECK_JSON_FIELD(document, uniform_layouts, IsArray);
-    for (auto const & uli: document["uniform_layouts"].GetArray())
+    CHECK_JSON_FIELD(document, uniform_sets, IsArray);
+    for (auto const & uli: document["uniform_sets"].GetArray())
     {
         CHECK_JSON_TYPE(uli, IsString);
         pipeline_config.uniform_layout_names.push_back(uli.GetString());
@@ -1507,6 +1509,7 @@ ErrorCode init(rapidjson::Value &                                   document,
     return ErrorCode::NONE;
 }
 
+/*
 ErrorCode init(rapidjson::Value & document, UniformConfig & uniform_config)
 {
     CHECK_JSON_TYPE(document, IsObject);
@@ -1530,6 +1533,7 @@ ErrorCode init(rapidjson::Value & document, UniformConfig & uniform_config)
 
     return ErrorCode::NONE;
 }
+*/
 
 ErrorCode RenderConfig::init(char const * file_name, ReadFileFn read_file_fn)
 {
@@ -1675,6 +1679,7 @@ ErrorCode RenderConfig::init(char const * file_name, ReadFileFn read_file_fn)
         }
     }
 
+    /*
     CHECK_JSON_FIELD(document, uniform_layouts, IsArray);
     for (auto & ul: document["uniform_layouts"].GetArray())
     {
@@ -1688,6 +1693,7 @@ ErrorCode RenderConfig::init(char const * file_name, ReadFileFn read_file_fn)
             return error;
         }
     }
+    */
 
     CHECK_JSON_FIELD(document, push_constants, IsArray);
     for (auto & pc: document["push_constants"].GetArray())

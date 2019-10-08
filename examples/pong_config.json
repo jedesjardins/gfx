@@ -100,30 +100,19 @@
 			"file": "shaders/square_frag.spv"
 		}
 	],
-	"uniform_layouts":
-	[
-		{
-			"name": "ul_camera_matrix",
-			"binding": 0,
-			"descriptor_type": "UNIFORM_BUFFER_DYNAMIC",
-			"descriptor_count": 1,
-			"stage": ["VERTEX"],
-			"max_count": 1
-		}
-	],
 	"uniforms": [
 		{
-			"name": "uniform_name",
+			"name": "u_camera_matrix",
 			"binding": 0,
-			"descriptor_type": "UNIFORM_BUFFER_DYNAMIC",
+			"descriptor_type": "UNIFORM_BUFFER",
 			"descriptor_count": 1,
 			"stage": ["VERTEX"]
 		}
 	],
 	"uniform_sets": [
 		{
-			"name": "first_set",
-			"uniforms": ["uniform_name"]
+			"name": "us_camera_matrix",
+			"uniforms": ["u_camera_matrix"]
 		}
 	],
 	"push_constants":
@@ -162,7 +151,7 @@
 			"fragment_shader_name": "s_fragment_shader",
 			"vertex_bindings": ["vb_pos"],
 			"vertex_attributes": ["va_pos"],
-			"uniform_layouts": ["ul_camera_matrix"],
+			"uniform_sets": ["us_camera_matrix"],
 			"push_constants": ["pc_model_matrix"],
 			"render_pass": "rp_main_render_pass",
 			"subpass": "sp_first_subpass"

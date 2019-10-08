@@ -2,6 +2,7 @@
 #include "log/logger.hpp"
 #include "gfx/renderer.hpp"
 #include "cmd/cmd.hpp"
+#include "common.hpp"
 
 #include <vulkan/vulkan.h>
 #include <GLFW/glfw3.h>
@@ -536,8 +537,6 @@ void key_callback(GLFWwindow * window, int key, int scancode, int action, int mo
     }
 }
 
-gfx::ErrorCode readFile(char const * file_name, std::vector<char> & buffer);
-
 int main()
 {
     get_console_sink()->set_level(spdlog::level::info);
@@ -573,15 +572,10 @@ int main()
         return 0;
     }
 
-    auto opt_layout_handle = render_device.get_uniform_layout_handle("ul_camera_matrix");
-
     glm::mat4 view = glm::ortho(0.0f, 60.f, 0.0f, 40.f);
 
-    gfx::UniformHandle view_handle = render_device
-                                         .new_uniform(opt_layout_handle.value(),
-                                                      sizeof(glm::mat4),
-                                                      glm::value_ptr(view))
-                                         .value();
+    BufferUniform view_uniform = make_matrix_uniform(render_device, "us_camera_matrix", view);
+    gfx::UniformHandle view_handle = view_uniform.uniform_handle;
 
     auto pipeline_handle = render_device.get_pipeline_handle("pong_shader").value();
 
