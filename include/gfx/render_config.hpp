@@ -3,6 +3,10 @@
 #define JED_GFX_RENDER_CONFIG_HPP
 
 #include <vulkan/vulkan.h>
+#include <vector>
+#include <unordered_map>
+#include <string>
+#include <optional>
 
 #include "gfx/gfx_helper.hpp"
 
