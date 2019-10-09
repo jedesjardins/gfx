@@ -48,14 +48,7 @@
 							"attachment_name": "a_color",
 							"layout": "COLOR_ATTACHMENT_OPTIMAL"
 						}
-					],
-					"color_resolve_attachments": [],
-					"depth_stencil_attachment": {
-						"attachment_name": "UNUSED",
-						"layout": "UNDEFINED"
-					},
-					"input_attachments": [],
-					"preserve_attachments": []
+					]
 				}
 			],
 			"subpass_dependencies":
@@ -144,15 +137,19 @@
 			"file": "shaders/uv_texture_frag.spv"
 		}
 	],
-	"uniform_layouts":
-	[
+	"uniforms": [
 		{
-			"name": "ul_texture",
+			"name": "u_texture",
 			"binding": 0,
 			"descriptor_type": "COMBINED_IMAGE_SAMPLER",
 			"descriptor_count": 1,
-			"stage": ["FRAGMENT"],
-			"max_count": 8
+			"stage": ["FRAGMENT"]
+		}
+	],
+	"uniform_sets": [
+		{
+			"name": "us_texture",
+			"uniforms": ["u_texture"]
 		}
 	],
 	"push_constants": [],
@@ -203,7 +200,7 @@
 			"fragment_shader_name": "simple_white_frag_shader",
 			"vertex_bindings": ["vb_pos"],
 			"vertex_attributes": ["va_pos_only"],
-			"uniform_layouts": [],
+			"uniform_sets": [],
 			"push_constants": [],
 			"render_pass": "rp_first_render_pass",
 			"subpass": "sp_first_subpass"
@@ -214,7 +211,7 @@
 			"fragment_shader_name": "texture_frag_shader",
 			"vertex_bindings": ["vb_pos_uv"],
 			"vertex_attributes": ["va_pos", "va_uv"],
-			"uniform_layouts": ["ul_texture"],
+			"uniform_sets": ["us_texture"],
 			"push_constants": [],
 			"render_pass": "rp_second_render_pass",
 			"subpass": "sp_second_subpass",

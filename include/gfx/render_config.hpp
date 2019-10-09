@@ -74,12 +74,6 @@ struct PipelineConfig
     std::vector<VkDynamicState> dynamic_state;
 };
 
-struct UniformConfig
-{
-    size_t                       max_uniform_count;
-    VkDescriptorSetLayoutBinding layout_binding;
-};
-
 using ReadFileFn = ErrorCode (*)(char const * file_name, std::vector<char> & buffer);
 
 struct RenderConfig
@@ -96,7 +90,9 @@ struct RenderConfig
 
     std::unordered_map<std::string, AttachmentConfig> attachment_configs;
 
-    std::unordered_map<std::string, UniformConfig> uniform_configs;
+    std::unordered_map<std::string, VkDescriptorSetLayoutBinding> uniform_bindings;
+
+    std::unordered_map<std::string, std::vector<std::string>> uniform_sets;
 
     std::unordered_map<std::string, VkPushConstantRange> push_constants;
 
@@ -748,7 +744,7 @@ ErrorCode initAttachmentReference(rapidjson::Value &                        docu
     return ErrorCode::NONE;
 }
 
-ErrorCode initClearValue(rapidjson::Value const & document, VkClearValue value)
+ErrorCode initClearValue(rapidjson::Value const & document, VkClearValue & value)
 {
     CHECK_JSON_TYPE(document, IsObject);
 
@@ -1438,8 +1434,8 @@ ErrorCode init(rapidjson::Value &                                   document,
         pipeline_config.vertex_attribute_names.push_back(vai.GetString());
     }
 
-    CHECK_JSON_FIELD(document, uniform_layouts, IsArray);
-    for (auto const & uli: document["uniform_layouts"].GetArray())
+    CHECK_JSON_FIELD(document, uniform_sets, IsArray);
+    for (auto const & uli: document["uniform_sets"].GetArray())
     {
         CHECK_JSON_TYPE(uli, IsString);
         pipeline_config.uniform_layout_names.push_back(uli.GetString());
@@ -1496,30 +1492,6 @@ ErrorCode init(rapidjson::Value &                                   document,
 
             pipeline_config.dynamic_state.push_back(opt_state.value());
         }
-    }
-
-    return ErrorCode::NONE;
-}
-
-ErrorCode init(rapidjson::Value & document, UniformConfig & uniform_config)
-{
-    CHECK_JSON_TYPE(document, IsObject);
-
-    CHECK_JSON_FIELD(document, max_count, IsUint);
-    uniform_config.max_uniform_count = document["max_count"].GetUint();
-    assert(uniform_config.max_uniform_count != 0);
-
-    if (uniform_config.max_uniform_count == 0)
-    {
-        LOG_ERROR("Uniform Layout cannot have a max_count of 0");
-        return ErrorCode::JSON_ERROR;
-    }
-
-    auto error = initVkDescriptorSetLayoutBinding(document, uniform_config.layout_binding);
-    if (error != ErrorCode::NONE)
-    {
-        LOG_DEBUG("Couldn't read configuration for Uniform Layout");
-        return error;
     }
 
     return ErrorCode::NONE;
@@ -1623,17 +1595,49 @@ ErrorCode RenderConfig::init(char const * file_name, ReadFileFn read_file_fn)
         shader_names[s["name"].GetString()] = s["file"].GetString();
     }
 
-    CHECK_JSON_FIELD(document, uniform_layouts, IsArray);
-    for (auto & ul: document["uniform_layouts"].GetArray())
+    CHECK_JSON_FIELD(document, uniforms, IsArray);
+    for(auto & u: document["uniforms"].GetArray())
     {
-        CHECK_JSON_TYPE(ul, IsObject);
-        CHECK_JSON_FIELD(ul, name, IsString);
+        CHECK_JSON_TYPE(u, IsObject);
+        CHECK_JSON_FIELD(u, name, IsString);
 
-        auto error = gfx::init(ul, uniform_configs[ul["name"].GetString()]);
+        VkDescriptorSetLayoutBinding binding;
+
+        auto error = initVkDescriptorSetLayoutBinding(u, uniform_bindings[u["name"].GetString()]);
         if (error != ErrorCode::NONE)
         {
-            LOG_DEBUG("Couldn't read configuration for Uniform Layout {}", ul["name"].GetString());
+            LOG_DEBUG("Couldn't read configuration for Uniform");
             return error;
+        }
+    }
+
+    CHECK_JSON_FIELD(document, uniform_sets, IsArray);
+    for (auto & us:  document["uniform_sets"].GetArray())
+    {
+        CHECK_JSON_TYPE(us, IsObject);
+        CHECK_JSON_FIELD(us, name, IsString);
+        CHECK_JSON_FIELD(us, uniforms, IsArray);
+
+        auto & uniform_set = uniform_sets[us["name"].GetString()];
+
+        if (us["uniforms"].GetArray().Size() == 0)
+        {
+            LOG_ERROR("Uniform Set {} must have at least one uniform", us["name"].GetString());
+            return ErrorCode::JSON_ERROR;
+        }
+
+        for (auto & u: us["uniforms"].GetArray())
+        {
+            CHECK_JSON_TYPE(u, IsString);
+
+            auto uniform_iter = uniform_bindings.find(u.GetString());
+            if (uniform_iter == uniform_bindings.end())
+            {
+                LOG_ERROR("Couldn't find Uniform {} for Uniform Set {}", u.GetString(), us["name"].GetString());
+                return ErrorCode::JSON_ERROR;
+            }
+
+            uniform_set.push_back(u.GetString());
         }
     }
 

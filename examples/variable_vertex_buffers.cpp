@@ -2,6 +2,7 @@
 #include "log/logger.hpp"
 #include "gfx/renderer.hpp"
 #include "cmd/cmd.hpp"
+#include "common.hpp"
 
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
@@ -213,11 +214,12 @@ public:
 
     void draw(gfx::Renderer & render_device, size_t uniform_count, gfx::UniformHandle * uniforms)
     {
+        VkDeviceSize zero_offset    = 0;
+        uint32_t     dynamic_offset = 0;
+
         if (std::holds_alternative<StaticVertexData>(vertex_data))
         {
             auto & static_data = std::get<StaticVertexData>(vertex_data);
-
-            VkDeviceSize zero_offset = 0;
 
             gfx::DrawParameters params{};
 
@@ -236,6 +238,9 @@ public:
 
             params.uniform_count = uniform_count;
             params.uniforms      = uniforms;
+
+            params.dynamic_offset_count = 1;
+            params.dynamic_offsets      = &dynamic_offset;
 
             render_device.draw(params);
         }
@@ -271,8 +276,6 @@ public:
                    streamed_data.indices,
                    streamed_data.index_count * sizeof(uint32_t));
 
-            VkDeviceSize zero_offset = 0;
-
             gfx::DrawParameters params{};
 
             params.pipeline = material.pipeline;
@@ -290,6 +293,9 @@ public:
 
             params.uniform_count = uniform_count;
             params.uniforms      = uniforms;
+
+            params.dynamic_offset_count = 1;
+            params.dynamic_offsets      = &dynamic_offset;
 
             render_device.draw(params);
 
@@ -484,32 +490,11 @@ int main()
     // Camera View Uniform
     glm::mat4 view = glm::scale(glm::mat4(1.0), glm::vec3(1.f, -1.f, 1.f));
 
-    auto opt_layout_handle = render_device.get_uniform_layout_handle("ul_camera_matrix");
-    if (!opt_layout_handle)
-    {
-        LOG_ERROR("Couldn't get UniformLayoutHandle for \"ul_camera_matrix\" UniformLayout");
-        return 0;
-    }
+    BufferUniform view_uniform = make_matrix_uniform(render_device, "us_camera_matrix", view);
+    auto          view_handle  = view_uniform.uniform_handle;
 
-    auto opt_view_handle = render_device.new_uniform(
-        opt_layout_handle.value(), sizeof(glm::mat4), glm::value_ptr(view));
-    if (!opt_view_handle)
-    {
-        LOG_ERROR("Couldn't create uniform for camera view");
-        return 0;
-    }
-    gfx::UniformHandle view_handle = opt_view_handle.value();
-
-    // Texture Sampler Uniform
-    opt_layout_handle = render_device.get_uniform_layout_handle("ul_texture");
-    if (!opt_layout_handle)
-    {
-        LOG_ERROR("Couldn't get UniformLayoutHandle for \"ul_texture\" UniformLayout");
-        return 0;
-    }
-
-    auto opt_sampler_handle = render_device.new_uniform(opt_layout_handle.value(), texture);
-    gfx::UniformHandle sampler_handle = opt_sampler_handle.value();
+    // Texture Uniform
+    gfx::UniformHandle sampler_handle = make_texture_uniform(render_device, "us_texture", texture);
 
     std::array<gfx::UniformHandle, 2> uniforms{view_handle, sampler_handle};
 
@@ -532,8 +517,12 @@ int main()
         {
             view *= glm::vec4(1.f, -1.f, 1.f, 1.f);
 
-            render_device.update_uniform(
-                view_handle, sizeof(glm::mat4), static_cast<void *>(glm::value_ptr(view)));
+            render_device.delete_uniforms(1, &view_uniform.uniform_handle);
+            render_device.delete_buffers(1, &view_uniform.buffer_handle);
+
+            view_uniform = make_matrix_uniform(render_device, "us_camera_matrix", view);
+            view_handle  = view_uniform.uniform_handle;
+            uniforms[0]  = view_handle;
 
             obj1_vertices[0].pos.y -= .01f;
 

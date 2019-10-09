@@ -72,7 +72,6 @@ using RenderPassHandle      = size_t;
 using SubpassHandle         = size_t;
 using AttachmentHandle      = size_t;
 using FramebufferHandle     = size_t;
-using UniformLayoutHandle   = size_t;
 using PushConstantHandle    = size_t;
 using VertexBindingHandle   = size_t;
 using VertexAttributeHandle = size_t;
@@ -81,11 +80,14 @@ using PipelineHandle        = size_t;
 using BufferHandle          = size_t;
 using TextureHandle         = size_t;
 
+using UniformSetHandle = uint16_t;
+
 struct UniformHandle
 {
-    uint64_t uniform_layout_id : 32;
-    uint64_t uniform_id : 32;
-}; // struct UniformHandle
+	UniformSetHandle set;
+	uint16_t generation;
+	uint32_t uniform;
+};
 
 }; // namespace gfx
 
