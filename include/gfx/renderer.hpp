@@ -685,6 +685,10 @@ public:
 
     bool submit_frame();
 
+    size_t max_buffered_resources();
+
+    size_t current_resource_index();
+
     ErrorCode draw(DrawParameters const & args);
 
     std::optional<AttachmentHandle> get_attachment_handle(std::string const & attachment_name);
@@ -3929,6 +3933,16 @@ bool Renderer::submit_frame()
     }
 
     return true;
+}
+
+size_t Renderer::max_buffered_resources()
+{
+	return frames.MAX_BUFFERED_RESOURCES;
+}
+
+size_t Renderer::current_resource_index()
+{
+	return frames.currentResource;
 }
 
 ErrorCode Renderer::draw(DrawParameters const & args)
