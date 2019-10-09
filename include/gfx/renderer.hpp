@@ -552,8 +552,9 @@ private:
 
 struct Pipeline
 {
-    VkPipeline       vk_pipeline;
-    VkPipelineLayout vk_pipeline_layout;
+    VkPipeline         vk_pipeline;
+    VkPipelineLayout   vk_pipeline_layout;
+    VkShaderStageFlags push_constant_stages;
 };
 
 struct PipelineResources
@@ -1113,8 +1114,9 @@ struct Draw
     size_t   index_buffer_offset;
     VkBuffer index_buffer;
 
-    size_t push_constant_size;
-    void * push_constant_data;
+    size_t             push_constant_size;
+    void *             push_constant_data;
+    VkShaderStageFlags push_constant_flags;
 
     size_t            descriptor_set_count;
     VkDescriptorSet * descriptor_sets;
@@ -1125,6 +1127,7 @@ struct Draw
 
     VkRect2D * scissor;
 };
+
 static_assert(std::is_pod<Draw>::value == true, "Draw must be a POD.");
 
 void draw(void const * data)
@@ -1145,7 +1148,7 @@ void draw(void const * data)
     {
         vkCmdPushConstants(realdata->commandbuffer,
                            *realdata->pipeline_layout,
-                           VK_SHADER_STAGE_VERTEX_BIT,
+                           realdata->push_constant_flags,
                            0,
                            realdata->push_constant_size,
                            realdata->push_constant_data);
@@ -3404,6 +3407,9 @@ ErrorCode PipelineResources::create_pipeline(Device const &         device,
     {
         auto handle = push_constant_handles[push_constant_name];
 
+        pipeline.push_constant_stages = pipeline.push_constant_stages
+                                        | push_constants[handle].stageFlags;
+
         pushConstantRanges.push_back(push_constants[handle]);
     }
 
@@ -3937,12 +3943,12 @@ bool Renderer::submit_frame()
 
 size_t Renderer::max_buffered_resources()
 {
-	return frames.MAX_BUFFERED_RESOURCES;
+    return frames.MAX_BUFFERED_RESOURCES;
 }
 
 size_t Renderer::current_resource_index()
 {
-	return frames.currentResource;
+    return frames.currentResource;
 }
 
 ErrorCode Renderer::draw(DrawParameters const & args)
@@ -4054,8 +4060,9 @@ ErrorCode Renderer::draw(DrawParameters const & args)
     command->index_buffer        = opt_index_buffer.value().buffer_handle();
 
     // push_constant size and data
-    command->push_constant_size = args.push_constant_size;
-    command->push_constant_data = reinterpret_cast<void *>(command_memory + push_constant_offset);
+    command->push_constant_size  = args.push_constant_size;
+    command->push_constant_data  = reinterpret_cast<void *>(command_memory + push_constant_offset);
+    command->push_constant_flags = pipelines.pipelines[args.pipeline].push_constant_stages;
     memcpy(command->push_constant_data, args.push_constant_data, args.push_constant_size);
 
     // descriptor sets and dynamic offsets
