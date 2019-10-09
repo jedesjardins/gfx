@@ -214,11 +214,12 @@ public:
 
     void draw(gfx::Renderer & render_device, size_t uniform_count, gfx::UniformHandle * uniforms)
     {
+        VkDeviceSize zero_offset    = 0;
+        uint32_t     dynamic_offset = 0;
+
         if (std::holds_alternative<StaticVertexData>(vertex_data))
         {
             auto & static_data = std::get<StaticVertexData>(vertex_data);
-
-            VkDeviceSize zero_offset = 0;
 
             gfx::DrawParameters params{};
 
@@ -237,6 +238,9 @@ public:
 
             params.uniform_count = uniform_count;
             params.uniforms      = uniforms;
+
+            params.dynamic_offset_count = 1;
+            params.dynamic_offsets      = &dynamic_offset;
 
             render_device.draw(params);
         }
@@ -272,8 +276,6 @@ public:
                    streamed_data.indices,
                    streamed_data.index_count * sizeof(uint32_t));
 
-            VkDeviceSize zero_offset = 0;
-
             gfx::DrawParameters params{};
 
             params.pipeline = material.pipeline;
@@ -291,6 +293,9 @@ public:
 
             params.uniform_count = uniform_count;
             params.uniforms      = uniforms;
+
+            params.dynamic_offset_count = 1;
+            params.dynamic_offsets      = &dynamic_offset;
 
             render_device.draw(params);
 

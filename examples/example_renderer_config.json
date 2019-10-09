@@ -129,7 +129,7 @@
 		{
 			"name": "u_camera_matrix",
 			"binding": 0,
-			"descriptor_type": "UNIFORM_BUFFER",
+			"descriptor_type": "UNIFORM_BUFFER_DYNAMIC",
 			"descriptor_count": 1,
 			"stage": ["VERTEX"]
 		},

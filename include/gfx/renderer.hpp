@@ -3963,7 +3963,6 @@ ErrorCode Renderer::draw(DrawParameters const & args)
 
     // get descriptor sets
     std::vector<VkDescriptorSet> descriptorsets;
-    std::vector<uint32_t>        dynamic_offsets;
     descriptorsets.reserve(args.uniform_count);
     for (size_t i = 0; i < args.uniform_count; ++i)
     {
@@ -3994,7 +3993,7 @@ ErrorCode Renderer::draw(DrawParameters const & args)
     size_t vk_descriptorsets_size = descriptorsets.size() * sizeof(VkDescriptorSet);
 
     size_t dynamic_offsets_offset = vk_descriptorsets_offset + vk_descriptorsets_size;
-    size_t dynamic_offsets_size   = dynamic_offsets.size() * sizeof(uint32_t);
+    size_t dynamic_offsets_size   = args.dynamic_offset_count * sizeof(uint32_t);
 
     size_t push_constant_offset = dynamic_offsets_offset + dynamic_offsets_size;
 
@@ -4049,12 +4048,12 @@ ErrorCode Renderer::draw(DrawParameters const & args)
     command->descriptor_set_count = args.uniform_count;
     command->descriptor_sets      = reinterpret_cast<VkDescriptorSet *>(command_memory
                                                                    + vk_descriptorsets_offset);
-    command->dynamic_offset_count = dynamic_offsets.size();
+    command->dynamic_offset_count = args.dynamic_offset_count;
     command->dynamic_offsets      = reinterpret_cast<uint32_t *>(command_memory
                                                             + dynamic_offsets_offset);
 
     memcpy(command->descriptor_sets, descriptorsets.data(), vk_descriptorsets_size);
-    memcpy(command->dynamic_offsets, dynamic_offsets.data(), dynamic_offsets_size);
+    memcpy(command->dynamic_offsets, args.dynamic_offsets, dynamic_offsets_size);
 
     // scissor
     if (args.scissor)
@@ -4428,8 +4427,9 @@ void Renderer::delete_uniforms(size_t uniform_count, UniformHandle const * unifo
         0, uniform_count * sizeof(UniformHandle));
 
     delete_command->uniform_resources = &uniforms;
-    delete_command->uniform_count = uniform_count;
-    delete_command->uniform_handles = reinterpret_cast<UniformHandle*>(cmd::commandPacket::GetAuxiliaryMemory(delete_command));
+    delete_command->uniform_count     = uniform_count;
+    delete_command->uniform_handles   = reinterpret_cast<UniformHandle *>(
+        cmd::commandPacket::GetAuxiliaryMemory(delete_command));
 
     memcpy(delete_command->uniform_handles, uniform_handles, uniform_count * sizeof(UniformHandle));
 }
