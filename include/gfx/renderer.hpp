@@ -13,6 +13,10 @@
 
 #include "cmd/cmd.hpp"
 
+#ifdef JED_GFX_USER_CONFIG
+#include JED_GFX_USER_CONFIG
+#endif
+
 #include "gfx/gfx_helper.hpp"
 #include "gfx/render_config.hpp"
 
