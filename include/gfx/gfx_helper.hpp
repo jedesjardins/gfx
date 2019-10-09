@@ -80,18 +80,6 @@ using PipelineHandle        = size_t;
 using BufferHandle          = size_t;
 using TextureHandle         = size_t;
 
-/*
-// REMOVE THIS
-struct UniformHandle
-{
-    uint64_t uniform_layout_id : 32;
-    uint64_t uniform_id : 32;
-}; // struct UniformHandle
-
-using UniformLayoutHandle   = size_t;
-
-*/
-
 using UniformSetHandle = uint16_t;
 
 struct UniformHandle

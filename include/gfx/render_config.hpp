@@ -74,14 +74,6 @@ struct PipelineConfig
     std::vector<VkDynamicState> dynamic_state;
 };
 
-/*
-struct UniformConfig
-{
-    size_t                       max_uniform_count;
-    VkDescriptorSetLayoutBinding layout_binding;
-};
-*/
-
 using ReadFileFn = ErrorCode (*)(char const * file_name, std::vector<char> & buffer);
 
 struct RenderConfig
@@ -97,10 +89,6 @@ struct RenderConfig
     std::vector<std::string> render_pass_order;
 
     std::unordered_map<std::string, AttachmentConfig> attachment_configs;
-
-    /*
-    std::unordered_map<std::string, UniformConfig> uniform_configs;
-    */
 
     std::unordered_map<std::string, VkDescriptorSetLayoutBinding> uniform_bindings;
 
@@ -1509,32 +1497,6 @@ ErrorCode init(rapidjson::Value &                                   document,
     return ErrorCode::NONE;
 }
 
-/*
-ErrorCode init(rapidjson::Value & document, UniformConfig & uniform_config)
-{
-    CHECK_JSON_TYPE(document, IsObject);
-
-    CHECK_JSON_FIELD(document, max_count, IsUint);
-    uniform_config.max_uniform_count = document["max_count"].GetUint();
-    assert(uniform_config.max_uniform_count != 0);
-
-    if (uniform_config.max_uniform_count == 0)
-    {
-        LOG_ERROR("Uniform Layout cannot have a max_count of 0");
-        return ErrorCode::JSON_ERROR;
-    }
-
-    auto error = initVkDescriptorSetLayoutBinding(document, uniform_config.layout_binding);
-    if (error != ErrorCode::NONE)
-    {
-        LOG_DEBUG("Couldn't read configuration for Uniform Layout");
-        return error;
-    }
-
-    return ErrorCode::NONE;
-}
-*/
-
 ErrorCode RenderConfig::init(char const * file_name, ReadFileFn read_file_fn)
 {
     namespace rj = rapidjson;
@@ -1678,22 +1640,6 @@ ErrorCode RenderConfig::init(char const * file_name, ReadFileFn read_file_fn)
             uniform_set.push_back(u.GetString());
         }
     }
-
-    /*
-    CHECK_JSON_FIELD(document, uniform_layouts, IsArray);
-    for (auto & ul: document["uniform_layouts"].GetArray())
-    {
-        CHECK_JSON_TYPE(ul, IsObject);
-        CHECK_JSON_FIELD(ul, name, IsString);
-
-        auto error = gfx::init(ul, uniform_configs[ul["name"].GetString()]);
-        if (error != ErrorCode::NONE)
-        {
-            LOG_DEBUG("Couldn't read configuration for Uniform Layout {}", ul["name"].GetString());
-            return error;
-        }
-    }
-    */
 
     CHECK_JSON_FIELD(document, push_constants, IsArray);
     for (auto & pc: document["push_constants"].GetArray())
