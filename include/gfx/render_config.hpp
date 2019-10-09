@@ -1596,7 +1596,7 @@ ErrorCode RenderConfig::init(char const * file_name, ReadFileFn read_file_fn)
     }
 
     CHECK_JSON_FIELD(document, uniforms, IsArray);
-    for(auto & u: document["uniforms"].GetArray())
+    for (auto & u: document["uniforms"].GetArray())
     {
         CHECK_JSON_TYPE(u, IsObject);
         CHECK_JSON_FIELD(u, name, IsString);
@@ -1612,7 +1612,7 @@ ErrorCode RenderConfig::init(char const * file_name, ReadFileFn read_file_fn)
     }
 
     CHECK_JSON_FIELD(document, uniform_sets, IsArray);
-    for (auto & us:  document["uniform_sets"].GetArray())
+    for (auto & us: document["uniform_sets"].GetArray())
     {
         CHECK_JSON_TYPE(us, IsObject);
         CHECK_JSON_FIELD(us, name, IsString);
@@ -1633,7 +1633,9 @@ ErrorCode RenderConfig::init(char const * file_name, ReadFileFn read_file_fn)
             auto uniform_iter = uniform_bindings.find(u.GetString());
             if (uniform_iter == uniform_bindings.end())
             {
-                LOG_ERROR("Couldn't find Uniform {} for Uniform Set {}", u.GetString(), us["name"].GetString());
+                LOG_ERROR("Couldn't find Uniform {} for Uniform Set {}",
+                          u.GetString(),
+                          us["name"].GetString());
                 return ErrorCode::JSON_ERROR;
             }
 

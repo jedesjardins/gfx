@@ -7,16 +7,12 @@ To initialize the Vulkan Renderer you need a JSON configuration file that outlin
 | Field Name | Type | Description | Mandatory |
 | ---------- | ---- | ----------- | --------- |
 | window_name | string | the name of the window | Y |
-| dynamic_vertex_buffer_size | uint | the size of the vertex buffer used to upload dynamic vertices every frame | Y |
-| dynamic_vertex_buffer_size | uint | the size of the vertex buffer used to upload dynamic vertices every frame | Y |
-| staging_buffer_size| uint | the size of the staging buffer used to upload data to Device Local buffers, Textures, etc. | Y |
-| max_updated_objects | uint | the maximum number of device memory updates per frame | Y |
-| max_deleted_objects | uint | the maximum number of object delete calls per frame | Y |
 | attachments | array of [Attachment objects](#Attachment) | describes the number and type of attachments | Y |
 | renderpasses | array of [Renderpass objects](#Renderpass) | describes the number and layout of renderpasses | Y |
 | renderpass_order | array of strings | order of renderpasses to execute, where each string is the name of the renderpass | Y |
 | shaders | array of [Shader objects](#Shader) | describes all shaders, vertex and fragment, that are used | Y |
-| uniform_layouts | array of [Uniform Layout objects](#Uniform_Layout) | describes all uniform types that are used | Y |
+| uniforms | array of [Uniform objects](#Uniform) | describes all uniform types that are used | Y |
+| uniform_sets | array of [Uniform Set objects](#Uniform_Set) | describes groups of uniforms that will be used together in one set | Y |
 | push_constants | array of [Push Constant objects](#Push_Constant) | describes all push constants that are used | Y |
 | vertex_bindings | array of [Vertex Binding objects](#Vertex_Binding) | describes all vertex bindings that are used | Y |
 | vertex_attributes | array of [Vertex Attribute objects](#Vertex_Attribute) | describes all vertex attributes that are used | Y |
@@ -30,8 +26,9 @@ To initialize the Vulkan Renderer you need a JSON configuration file that outlin
 | name | string | name to reference the attachment by | Y |
 | format | string | either "color" or "depth" | Y |
 | usage | array of [Attachment Usages](#Attachment_Usage) | Lists all possible usages of this attachment | Y |
-| multisamples | uint | the number of samples this attachment uses, must be a power of two, defaults to 1 | N |
+| multisamples | uint | the number of samples this attachment uses, must be a power of two to a maximum of 64, defaults to 1 | N |
 | is_swapchain_image | boolean | if this attachment refers to the screen swapchain  | N |
+| size | a [Size object](#Size) | size of this attachment. If empty, defaults to the framebuffer size, ignored if is_swapchain_image is true | N |
 
 
 #### <a name="Attachment_Usage"></a> Attachment Usage values
@@ -46,6 +43,13 @@ To initialize the Vulkan Renderer you need a JSON configuration file that outlin
 | DEPTH_STENCIL_ATTACHMENT | signifies this attachment can be used as a depth/stencil attachment in a framebuffer |
 | TRANSIENT_ATTACHMENT | signifies this attachments memory can be allocated as needed, not all up front |
 | INPUT_ATTACHMENT | signifies this attachment can be used to create an input attachment uniform |
+
+### <a name="Size"></a> Size object
+
+| Field Name | Type | Description | Mandatory |
+| ---------- | ---- | ----------- | --------- |
+| width | uint | the width | Y |
+| height | uint | the height | Y |
 
 ###	<a name="Renderpass"></a> Renderpass object fields
 
@@ -122,10 +126,12 @@ These operations describe how an attachment is stored at the end of a Renderpass
 | Field Name | Type | Description | Mandatory |
 | ---------- | ---- | ----------- | --------- |
 | name | string | the name of this subpass | Y |
-| multisamples | uint | the number of samples the attachments in this pass use, must be a power of two, defaults to 1 | N |
+| multisamples | uint | the number of samples the attachments in this pass use, must be a power of two to a maximum of 64, defaults to 1 | N |
 | color_attachments | array of [Subpass Attachment objects](#Subpass_Attachment) | all the color attachments for this subpass | Y |
-| resolve_attachment | [Subpass Attachment](#Subpass_Attachment) | the multisample resolve attachment for this subpass | N, only required if multisamples is greater than 1 |
-| depth_stencil_attachment | [Subpass Attachment](#Subpass_Attachment) | the depth/stencil attachment for this subpass | Y |
+| color_resolve_attachments | array of [Subpass Attachment objects](#Subpass_Attachment) | the multisample resolve attachments for this subpass, only required if multisamples is greater than 1, the number of resolve attachments must match the number of color_attachments | N |
+| depth_stencil_attachment | [Subpass Attachment](#Subpass_Attachment) | the depth/stencil attachment for this subpass | N |
+| input_attachments | array of [Subpass Attachment objects](#Subpass_Attachment) | the input_attachments for this subpass| N |
+| preserve_attachments | array of strings | list of attachment names whose contents will be preserved in this subpass, if an attachment isn't used nor preserved then it's contents will be undefined in subsequent subpasses | N |
 
 
 ###	<a name="Subpass_Attachment"></a> Subpass Attachment fields
@@ -196,17 +202,15 @@ These operations describe how an attachment is stored at the end of a Renderpass
 | name | string | the name of this shader | Y |
 | file | string | the path of the file for this shader, the file must be a SPIRV shader | Y |
 
-###	<a name="Uniform_Layout"></a> Uniform Layout object fields
+###	<a name="Uniform"></a> Uniform object fields
 
 | Field Name | Type | Description | Mandatory |
 | ---------- | ---- | ----------- | --------- |
 | name | string | the name of this uniform layout | Y |
 | binding | uint | which slot this uniform will be bound to | Y |
 | descriptor_type | [Uniform Type](#Uniform_Type) | the type of this uniform | Y |
-| descriptor_count | uint | must be 1 for now | Y |
+| descriptor_count | uint | number of uniforms available as accessed in the shader as an array, a minimum of 1 | Y |
 | stage | array of [Shader Stage](#Shader_Stage) | the shader stages where this Uniform is used | Y |
-| max_count | uint | the maximum number of uniforms that can be created for this Layout | Y |
-
 
 #### <a name="Uniform_Type"></a> Uniform Type values
 
@@ -214,7 +218,7 @@ These operations describe how an attachment is stored at the end of a Renderpass
 | ----- | ----------- |
 | UNIFORM_BUFFER_DYNAMIC | a uniform that is directly tied to a buffer resource, this uniform only supports reading the value from it, never writing |
 | STORAGE_BUFFER_DYNAMIC | a uniform that is directly tied to a buffer resource, this uniform supports reading, writing, and atomic operations, it is thusly slower than a UNIFORM_BUFFER_DYNAMIC |
-| COMBINED_IMAGE_SAMPLER |
+| COMBINED_IMAGE_SAMPLER | |
 
 
 #### <a name="Shader_Stage"></a> Shader Stage values
@@ -224,6 +228,13 @@ These operations describe how an attachment is stored at the end of a Renderpass
 | VERTEX | the vertex shader |
 | FRAGMENT | the fragment shader |
 | COMPUTE | the compute shader |
+
+###	<a name="Uniform_Set"></a> Uniform Set object fields
+
+| Field Name | Type | Description | Mandatory |
+| ---------- | ---- | ----------- | --------- |
+| name | string | the name of this uniform set |
+| uniforms | array of strings | array of uniforms used in this set, none of the uniform bindings may contain the same value, bindings must be listed in ascending order, the array must not be empty | Y |
 
 ###	<a name="Push_Constant"></a> Push Constant object fields
 
@@ -279,7 +290,7 @@ These operations describe how an attachment is stored at the end of a Renderpass
 | fragmen_shader_name | string | the name of the fragmen shader to use in this pipeline | Y |
 | vertex_bindings | array of strings | the names of the vertex bindings that this pipeline uses | Y |
 | vertex_attributes | array of strings | the names of the vertex attributes that this pipeline uses | Y |
-| uniform_layouts | array of strings | the names of the uniform layouts that this pipeline uses | Y |
+| uniform_sets | array of strings | the names of the uniform sets that this pipeline uses | Y |
 | push_constants | array of strings | the names of the push constants that this pipeline uses | Y |
 | renderpass | string | the name of the renderpass this pipeline is used in | Y |
 | subpass | string | the name of the subpass this pipeline is used in | Y |

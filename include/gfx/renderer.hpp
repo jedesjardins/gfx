@@ -22,8 +22,8 @@
 
 namespace gfx
 {
-const size_t max_calls_per_bucket = 10;
-const size_t descriptors_per_pool = 8;
+const size_t max_calls_per_bucket = COMMANDS_PER_BUCKET;
+const size_t descriptors_per_pool = DESCRIPTORS_PER_POOL;
 
 class Memory
 {

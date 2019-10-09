@@ -44,6 +44,14 @@
         }                                           \
     } while (0)
 
+#ifndef COMMANDS_PER_BUCKET
+#define COMMANDS_PER_BUCKET 8
+#endif
+
+#ifndef DESCRIPTORS_PER_POOL
+#define DESCRIPTORS_PER_POOL 8
+#endif
+
 namespace gfx
 {
 char const * error_string(VkResult error_code);
@@ -84,9 +92,9 @@ using UniformSetHandle = uint16_t;
 
 struct UniformHandle
 {
-	UniformSetHandle set;
-	uint16_t generation;
-	uint32_t uniform;
+    UniformSetHandle set;
+    uint16_t         generation;
+    uint32_t         uniform;
 };
 
 }; // namespace gfx
