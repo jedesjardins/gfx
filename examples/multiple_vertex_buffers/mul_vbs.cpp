@@ -44,7 +44,7 @@ int main()
 
     auto render_config = gfx::RenderConfig{};
 
-    if (render_config.init(RESOURCE_PATH "mul_vbs.json", readFile) != gfx::ErrorCode::NONE)
+    if (render_config.init(RESOURCE_PATH "multiple_vertex_buffers/mul_vbs.json", readFile) != gfx::ErrorCode::NONE)
     {
         LOG_ERROR("Couldn't initialize the Render Configuration");
         return 0;

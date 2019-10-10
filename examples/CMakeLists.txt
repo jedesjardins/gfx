@@ -3,8 +3,6 @@ project(gfx_examples)
 
 message(STATUS "Examples included")
 
-# Modeled after Catch2 examples directory
-
 FetchContent_Declare(
 	Log
 	GIT_REPOSITORY https://github.com/jedesjardins/log.git
@@ -51,31 +49,15 @@ if(NOT stb_POPULATED)
 	message(STATUS "stb include dir: ${stb_SOURCE_DIR}")
 endif()
 
-# gather all example files
-set(SOURCES_SINGLE_FILE
-	# list test files here
-	variable_vertex_buffers.cpp
-	pong.cpp
-	mul_vbs.cpp
-	resize.cpp
-	render_from_texture.cpp
-	input_attachment.cpp
-)
-
-# get base names of each file (strips off .cpp)
-string(REPLACE ".cpp" "" BASENAMES_SINGLE_FILE "${SOURCES_SINGLE_FILE}")
-
-# gather list of single file targets
-set(TARGETS_SINGLE_FILE ${BASENAMES_SINGLE_FILE} )
-
 add_compile_definitions(RESOURCE_PATH="${CMAKE_CURRENT_SOURCE_DIR}/")
-message(STATUS "current source dir: ${CMAKE_CURRENT_SOURCE_DIR}")
 
 add_library(common STATIC ${CMAKE_CURRENT_LIST_DIR}/common.cpp)
-target_include_directories(common PUBLIC $<BUILD_INTERFACE:${stb_SOURCE_DIR}>)
-target_link_libraries(common JED::gfx JED::log)
+target_include_directories(common PUBLIC ${CMAKE_CURRENT_SOURCE_DIR} $<BUILD_INTERFACE:${stb_SOURCE_DIR}>)
+target_link_libraries(common JED::gfx JED::log glm)
 
-foreach(name ${TARGETS_SINGLE_FILE})
-    add_executable(${name} ${CMAKE_CURRENT_LIST_DIR}/${name}.cpp)
-    target_link_libraries(${name} common glm)
-endforeach()
+add_subdirectory(input_attachment)
+add_subdirectory(multiple_vertex_buffers)
+add_subdirectory(pong)
+add_subdirectory(render_from_texture)
+add_subdirectory(resize)
+add_subdirectory(static_dynamic_vertices)

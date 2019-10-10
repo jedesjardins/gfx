@@ -15,7 +15,6 @@
 #include <vector>
 #include <utility>
 #include <algorithm>
-#include <memory_resource>
 
 // clang-format off
 std::vector<glm::vec3> vertices{{0.f, 0.f, 0.f}, {1.f, 0.f, 0.f}, {1.f, 1.f, 0.f}, {0.f, 1.f, 0.f}};
@@ -559,7 +558,7 @@ int main()
 
     auto render_config = gfx::RenderConfig{};
 
-    if (render_config.init(RESOURCE_PATH "pong_config.json", readFile) != gfx::ErrorCode::NONE)
+    if (render_config.init(RESOURCE_PATH "pong/pong_config.json", readFile) != gfx::ErrorCode::NONE)
     {
         LOG_ERROR("Couldn't initialize the Render Configuration");
         return 0;

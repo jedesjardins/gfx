@@ -79,7 +79,8 @@
 			"file": "shaders/vb_frag.spv"
 		}
 	],
-	"uniform_layouts": [],
+	"uniforms": [],
+	"uniform_sets": [],
 	"push_constants": [],
 	"vertex_bindings":
 	[
@@ -121,7 +122,7 @@
 			"fragment_shader_name": "s_fragment_shader",
 			"vertex_bindings": ["vb_pos", "vb_color"],
 			"vertex_attributes": ["va_pos", "va_color"],
-			"uniform_layouts": [],
+			"uniform_sets": [],
 			"push_constants": [],
 			"render_pass": "rp_main_render_pass",
 			"subpass": "sp_first_subpass"

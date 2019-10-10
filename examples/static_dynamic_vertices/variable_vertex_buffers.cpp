@@ -425,7 +425,7 @@ int main()
 
     auto render_config = gfx::RenderConfig{};
 
-    if (render_config.init(RESOURCE_PATH "example_renderer_config.json", readFile)
+    if (render_config.init(RESOURCE_PATH "static_dynamic_vertices/example_renderer_config.json", readFile)
         != gfx::ErrorCode::NONE)
     {
         LOG_ERROR("Couldn't initialize the Render Configuration");

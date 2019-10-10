@@ -1,6 +1,7 @@
 
 #include "log/logger.hpp"
 #include "gfx/renderer.hpp"
+#include "cmd/cmd.hpp"
 #include "common.hpp"
 
 #include <vulkan/vulkan.h>
@@ -10,8 +11,6 @@
 #define GLM_FORCE_DEPTH_ZERO_TO_ONE
 #include <glm/glm.hpp>
 #include <glm/gtc/type_ptr.hpp>
-
-gfx::ErrorCode readFile(char const * file_name, std::vector<char> & buffer);
 
 bool pressed_esc = false;
 
@@ -31,13 +30,15 @@ struct POS_UV
     glm::vec2 uv;
 };
 
+gfx::ErrorCode readFile(char const * file_name, std::vector<char> & buffer);
+
 int main()
 {
-    get_console_sink()->set_level(spdlog::level::info);
+    get_console_sink()->set_level(spdlog::level::warn);
     get_file_sink()->set_level(spdlog::level::trace);
     get_logger()->set_level(spdlog::level::debug);
 
-    LOG_INFO("Starting Input Attachment test");
+    LOG_INFO("Starting Render to and from texture example");
 
     if (glfwInit() == GLFW_FALSE)
     {
@@ -46,13 +47,13 @@ int main()
 
     glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
 
-    auto window = glfwCreateWindow(600, 400, "mul_vb", nullptr, nullptr);
+    auto window = glfwCreateWindow(600, 400, "Vulkan", nullptr, nullptr);
 
     glfwSetKeyCallback(window, key_callback);
 
     auto render_config = gfx::RenderConfig{};
 
-    if (render_config.init(RESOURCE_PATH "input_attachment_config.json", readFile)
+    if (render_config.init(RESOURCE_PATH "render_from_texture/render_from_texture_config.json", readFile)
         != gfx::ErrorCode::NONE)
     {
         LOG_ERROR("Couldn't initialize the Render Configuration");
@@ -71,7 +72,7 @@ int main()
     auto from_texture_pipeline = renderer.get_pipeline_handle("blit_shader").value();
 
     auto texture_uniform = make_texture_uniform_from_attachment(
-        renderer, "us_input_attachment", "a_input_color");
+        renderer, "us_texture", "a_color");
 
     // object vertices
     std::vector<glm::vec2> object_vertices = {{-.9f, -.9f}, {0.f, -.9f}, {0.f, 0.f}, {-.9f, 0.f}};
@@ -115,7 +116,7 @@ int main()
 
     renderer.update_buffer(index_buffer, indices.size() * sizeof(uint32_t), indices.data());
 
-    bool draw_success{true};
+    bool draw_success = true;
     while (!glfwWindowShouldClose(window) && draw_success && !pressed_esc)
     {
         glfwPollEvents();
@@ -165,8 +166,20 @@ int main()
         texture_params.uniform_count = 1;
         texture_params.uniforms      = &texture_uniform;
 
-        texture_params.scissor  = nullptr;
-        texture_params.viewport = nullptr;
+        texture_params.scissor = nullptr;
+
+        int w, h;
+        glfwGetFramebufferSize(window, &w, &h);
+
+        VkViewport viewport{};
+        viewport.x        = 0;
+        viewport.y        = 0;
+        viewport.width    = .5f * w;
+        viewport.height   = .5f * h;
+        viewport.minDepth = 0.0f;
+        viewport.maxDepth = 1.0f;
+
+        texture_params.viewport = &viewport;
 
         renderer.draw(texture_params);
 
@@ -180,4 +193,6 @@ int main()
     glfwDestroyWindow(window);
 
     glfwTerminate();
+
+    LOG_INFO("Stopping Example\n");
 }

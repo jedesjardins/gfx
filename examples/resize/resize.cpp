@@ -82,7 +82,7 @@ int main()
 
     auto render_config = gfx::RenderConfig{};
 
-    if (render_config.init(RESOURCE_PATH "resize_config.json", readFile) != gfx::ErrorCode::NONE)
+    if (render_config.init(RESOURCE_PATH "resize/resize_config.json", readFile) != gfx::ErrorCode::NONE)
     {
         LOG_ERROR("Couldn't initialize the Render Configuration");
         return 0;
@@ -204,7 +204,6 @@ int main()
         draw_success = render_device.submit_frame();
 
         draw_success &= !pressed_esc;
-        LOG_INFO("Running");
     }
 
     render_device.wait_for_idle();

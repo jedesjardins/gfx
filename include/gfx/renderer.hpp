@@ -4134,7 +4134,7 @@ void Renderer::delete_textures(size_t texture_count, TextureHandle const * textu
         auto opt_sampler = images->get_texture(texture_handles[i]);
         if (!opt_sampler)
         {
-            LOG_WARNs("Renderer: Unable to get texture {} for delete_textures call, ignoring it",
+            LOG_WARN("Renderer: Unable to get texture {} for delete_textures call, ignoring it",
                       texture_handles[i]);
 
             *(sampler_iter++) = VK_NULL_HANDLE;
@@ -4179,7 +4179,7 @@ void Renderer::update_uniform(UniformHandle  uniform_handle,
                               size_t         write_count,
                               UniformWrite * write_infos)
 {
-    LOG_DEBUG("Renderer: updating uniform {}", uniform_handle);
+    LOG_DEBUG("Renderer: updating uniform {} {}", uniform_handle.set, uniform_handle.uniform);
     uniforms->update_uniform(
         device.get(), buffers.get(), images.get(), uniform_handle, write_count, write_infos);
 }
