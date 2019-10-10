@@ -198,13 +198,11 @@ void ImGui_Implgfx_RenderDrawData(gfx::Renderer & renderer, ImDrawData * draw_da
 
                     if (pcmd->TextureId != nullptr)
                     {
-                        LOG_INFO("Texture is set");
                         params.uniform_count = 1;
                         params.uniforms      = static_cast<gfx::UniformHandle*>(pcmd->TextureId);
                     }
                     else
                     {
-                        LOG_INFO("Texture is not set");
                         params.uniform_count = 1;
                         params.uniforms      = &g_font_uniform;
                     }
@@ -299,7 +297,7 @@ int main()
                 ImGui::Text("Pressed");
             }
 
-            ImGui::Image(static_cast<void *>(&sword_uniform), ImVec2(50.0, 50.0));
+            ImGui::Image(static_cast<void *>(&sword_uniform), ImVec2(160.0, 50.0));
 
             ImGui::End();
         }
