@@ -241,7 +241,6 @@ int main()
     ImGui_Implgfx_CreateFontsTexture(renderer);
 
     bool show_window = true;
-    bool radio_button = false;
     while (!glfwWindowShouldClose(window) && !escape)
     {
         glfwPollEvents();
@@ -253,9 +252,8 @@ int main()
         {
             ImGui::Begin("Window", &show_window);
             ImGui::Text("Text");
-            if (ImGui::RadioButton("Button", radio_button))
+            if (ImGui::Button("Button"))
             {
-                radio_button = true;
                 ImGui::Text("Pressed");
             }
             ImGui::End();
