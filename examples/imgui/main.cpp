@@ -68,9 +68,17 @@ void ImGui_Implgfx_CreateFontsTexture(gfx::Renderer & renderer)
 
     LOG_INFO("Size of texture {}", width * height * 4);
 
+    LOG_INFO("Making Font Texture");
+
     g_font_texture = renderer.create_texture(width, height, 4, pixels).value();
 
+    LOG_INFO("Made Font Texture {}\n", g_font_texture);
+
+    LOG_INFO("Making Font Uniform");
+
     g_font_uniform = make_texture_uniform(renderer, "us_texture", g_font_texture);
+
+    LOG_INFO("Made Font Uniform {} {}\n", g_font_uniform.set, g_font_uniform.uniform);
 }
 
 void ImGui_Implgfx_RenderDrawData(gfx::Renderer & renderer, ImDrawData * draw_data)
@@ -276,6 +284,7 @@ int main()
     // upload font here
     ImGui_Implgfx_CreateFontsTexture(renderer);
 
+    LOG_INFO("Making sword uniform");
     gfx::TextureHandle sword_texture = create_texture(renderer, RESOURCE_PATH "sword.png").value();
 
     gfx::UniformHandle sword_uniform = make_texture_uniform(renderer, "us_texture", sword_texture);
