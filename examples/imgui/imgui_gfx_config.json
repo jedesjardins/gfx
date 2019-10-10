@@ -1,0 +1,149 @@
+{
+	"window_name": "Imgui Window",
+	"attachments":
+	[
+		{
+			"name": "a_screen_color",
+			"format": "color",
+			"usage": ["COLOR_ATTACHMENT"],
+			"multisamples": 1,
+			"is_swapchain_image": true
+		}
+	],
+	"render_passes":
+	[
+		{
+			"name": "rp_main_render_pass",
+			"framebuffer":
+			[
+				{
+					"attachment_name": "a_screen_color",
+					"load_op": "CLEAR",
+					"store_op": "STORE",
+					"initial_layout": "UNDEFINED",
+					"final_layout": "PRESENT_SRC_KHR",
+					"clear_value": {
+						"color": [0.5, 0, 0, 1]
+					}
+				}
+			],
+			"subpasses":
+			[
+				{
+					"name": "sp_first_subpass",
+					"multisamples": 1,
+					"color_attachments":
+					[
+						{
+							"attachment_name": "a_screen_color",
+							"layout": "COLOR_ATTACHMENT_OPTIMAL"
+						}
+					]
+				}
+			],
+			"subpass_dependencies":
+			[
+				{
+					"src_subpass": "EXTERNAL_SUBPASS",
+					"dst_subpass": "sp_first_subpass",
+					"src_stage_mask": ["COLOR_ATTACHMENT_OUTPUT"],
+					"dst_stage_mask": ["COLOR_ATTACHMENT_OUTPUT"],
+					"dst_access_mask":
+					[
+						"COLOR_ATTACHMENT_READ",
+						"COLOR_ATTACHMENT_WRITE"
+					]
+				}
+			]
+		}
+	],
+	"render_pass_order": [
+		"rp_main_render_pass"
+	],
+	"shaders":
+	[
+		{
+			"name": "s_vertex_shader",
+			"file": "shaders/imgui_vert.spv"
+		},
+		{
+			"name": "s_fragment_shader",
+			"file": "shaders/imgui_frag.spv"
+		}
+	],
+	"uniforms":
+	[
+		{
+			"name": "u_texture",
+			"binding": 0,
+			"descriptor_type": "COMBINED_IMAGE_SAMPLER",
+			"descriptor_count": 1,
+			"stage": ["FRAGMENT"]
+		}
+	],
+	"uniform_sets":
+	[
+		{
+			"name": "us_texture",
+			"uniforms": ["u_texture"]
+		}
+	],
+	"push_constants":
+	[
+		{
+			"name": "pc_scale_transform",
+			"stage": ["VERTEX"],
+			"offset": 0,
+			"size": 16
+		}
+	],
+	"vertex_bindings":
+	[
+		{
+			"name": "vb_pos_uv_color",
+			"binding_slot": 0,
+			"stride": 20,
+			"input_rate": "PER_VERTEX"
+		}
+	],
+	"vertex_attributes":
+	[
+		{
+			"name": "va_pos",
+			"vertex_binding_name": "vb_pos_uv_color",
+			"location": 0,
+			"format": "R32G32_SFLOAT",
+			"offset": 0
+		},
+		{
+			"name": "va_uv",
+			"vertex_binding_name": "vb_pos_uv_color",
+			"location": 1,
+			"format": "R32G32_SFLOAT",
+			"offset": 8
+		},
+		{
+			"name": "va_color",
+			"vertex_binding_name": "vb_pos_uv_color",
+			"location": 2,
+			"format": "R8G8B8A8_UNORM",
+			"offset": 16
+		}
+	],
+	"pipelines":
+	[
+		{
+			"name": "imgui_pipeline",
+			"vertex_shader_name": "s_vertex_shader",
+			"fragment_shader_name": "s_fragment_shader",
+			"vertex_bindings": ["vb_pos_uv_color"],
+			"vertex_attributes": ["va_pos", "va_uv", "va_color"],
+			"uniform_sets": ["us_texture"],
+			"push_constants": ["pc_scale_transform"],
+			"render_pass": "rp_main_render_pass",
+			"subpass": "sp_first_subpass",
+			"max_drawn_objects": 64,
+			"dynamic_state": ["SCISSOR"]
+		}
+	]
+}
