@@ -152,6 +152,7 @@ void ImGui_Implgfx_RenderDrawData(gfx::Renderer & renderer, ImDrawData * draw_da
                 ImDrawCallback_ResetRenderState) ImGui_ImplVulkan_SetupRenderState(draw_data,
                 command_buffer, rb, fb_width, fb_height); else pcmd->UserCallback(cmd_list, pcmd);
                 */
+                LOG_INFO("Not Drawing");
             }
             else
             {
@@ -195,8 +196,18 @@ void ImGui_Implgfx_RenderDrawData(gfx::Renderer & renderer, ImDrawData * draw_da
                     params.push_constant_size = sizeof(ImguiPushConstant);
                     params.push_constant_data = &push_constant;
 
-                    params.uniform_count = 1;
-                    params.uniforms      = &g_font_uniform;
+                    if (pcmd->TextureId != nullptr)
+                    {
+                        LOG_INFO("Texture is set");
+                        params.uniform_count = 1;
+                        params.uniforms      = static_cast<gfx::UniformHandle*>(pcmd->TextureId);
+                    }
+                    else
+                    {
+                        LOG_INFO("Texture is not set");
+                        params.uniform_count = 1;
+                        params.uniforms      = &g_font_uniform;
+                    }
 
                     params.scissor  = &scissor;
                     params.viewport = nullptr;
@@ -288,7 +299,7 @@ int main()
                 ImGui::Text("Pressed");
             }
 
-            ImGui::Image(static_cast<void *>(&sword_uniform), ImVec2(1.0, 1.0));
+            ImGui::Image(static_cast<void *>(&sword_uniform), ImVec2(50.0, 50.0));
 
             ImGui::End();
         }
