@@ -288,7 +288,7 @@ int main()
                 ImGui::Text("Pressed");
             }
 
-            ImGui::Image(sword_uniform, ImVec2(1.0, 1.0));
+            ImGui::Image(static_cast<void *>(&sword_uniform), ImVec2(1.0, 1.0));
 
             ImGui::End();
         }

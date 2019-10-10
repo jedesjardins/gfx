@@ -4,6 +4,5 @@
 #include "gfx/gfx_helper.hpp"
 
 #define ImDrawIdx uint32_t
-#define ImTextureID gfx::UniformHandle
 
 #endif
