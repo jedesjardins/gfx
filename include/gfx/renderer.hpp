@@ -200,6 +200,25 @@ char const * error_string(VkResult error_code)
     }
 }
 
+#define VK_CHECK_RESULT(op, error_message)          \
+    do                                              \
+    {                                               \
+        VkResult result = op;                       \
+        if (result != VK_SUCCESS)                   \
+        {                                           \
+            LOG_CRITICAL("{} {} {} {} {} {} {}",    \
+                         error_message,             \
+                         "with value",              \
+                         gfx::error_string(result), \
+                         "in",                      \
+                         __FILE__,                  \
+                         "at line",                 \
+                         __LINE__);                 \
+            assert(result == VK_SUCCESS);           \
+            return ErrorCode::VULKAN_ERROR;         \
+        }                                           \
+    } while (0)
+
 class Memory
 {
 public:
@@ -209,6 +228,8 @@ public:
                                 VkMemoryPropertyFlags properties,
                                 T                     object_handle)
     {
+        LOG_TRACE("Memory: allocating and binding memory");
+
         VkMemoryRequirements requirements;
         get_memory_requirements(logical_device, object_handle, requirements);
 
@@ -227,12 +248,14 @@ public:
         VK_CHECK_RESULT(vkAllocateMemory(logical_device, &allocInfo, nullptr, &vk_memory),
                         "Unable to allocate VkDeviceMemory");
 
+        LOG_DEBUG("Memory: created memory {}", static_cast<void *>(vk_memory));
+
         return bind_memory(logical_device, object_handle);
     }
 
     ErrorCode map(VkDevice logical_device, VkDeviceSize offset, VkDeviceSize size, void ** data)
     {
-        LOG_DEBUG("Memory: mapping VkDeviceMemory {}", static_cast<void *>(vk_memory));
+        LOG_TRACE("Memory: mapping VkDeviceMemory {}", static_cast<void *>(vk_memory));
         VK_CHECK_RESULT(vkMapMemory(logical_device, vk_memory, offset, size, 0, data),
                         "Unable to map VkDeviceMemory");
 
@@ -320,7 +343,7 @@ public:
                      VkMemoryPropertyFlags properties,
                      VkImageAspectFlags    aspectFlags)
     {
-        LOG_DEBUG("Creating VkImage and VkImageView");
+        LOG_TRACE("Image: creating VkImage and VkImageView");
         auto imageInfo = VkImageCreateInfo{.sType         = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
                                            .imageType     = VK_IMAGE_TYPE_2D,
                                            .extent.width  = width,
@@ -357,6 +380,10 @@ public:
 
         VK_CHECK_RESULT(vkCreateImageView(logical_device, &viewInfo, nullptr, &vk_image_view),
                         "Unable to create VkImageView");
+
+        LOG_DEBUG("Image: created image {} {}",
+                  static_cast<void *>(vk_image_view),
+                  static_cast<void *>(vk_image));
 
         return ErrorCode::NONE;
     }
@@ -400,7 +427,7 @@ public:
                      VkMemoryPropertyFlags properties,
                      VkImageAspectFlags    aspectFlags)
     {
-        LOG_DEBUG("Creating VkSampler");
+        LOG_TRACE("Sampler: creating sampler");
         auto error = static_cast<Image &>(*this).create(physical_device,
                                                         logical_device,
                                                         width,
@@ -437,11 +464,19 @@ public:
         VK_CHECK_RESULT(vkCreateSampler(logical_device, &samplerInfo, nullptr, &vk_sampler),
                         "Unable to create VkSampler");
 
+        LOG_DEBUG("Sampler: created {}", static_cast<void *>(vk_sampler));
+
         return ErrorCode::NONE;
     }
 
     void destroy(VkDevice logical_device)
     {
+        LOG_DEBUG("Sampler: destroying {} {} {} {}",
+                  static_cast<void *>(vk_sampler),
+                  static_cast<void *>(vk_image_view),
+                  static_cast<void *>(vk_image),
+                  static_cast<void *>(vk_memory));
+
         vkDestroySampler(logical_device, vk_sampler, nullptr);
         vk_sampler = VK_NULL_HANDLE;
         static_cast<Image &>(*this).destroy(logical_device);
@@ -1551,6 +1586,8 @@ public:
     {
         TextureHandle handle = next_sampler_handle++;
 
+        LOG_TRACE("ImageResources: creating texture at handle {}", handle);
+
         Sampler & sampler = samplers[handle];
 
         if (sampler.create(physical_device,
@@ -1639,8 +1676,11 @@ public:
 private:
     ErrorCode create_attachments(Device const * device)
     {
+        LOG_TRACE("ImageResources: create_attachments");
+
         for (size_t i = 0; i < attachment_configs.size(); ++i)
         {
+            LOG_TRACE("ImageResources: looping create_attachment");
             auto const & attachment_config = attachment_configs[i];
 
             auto error = create_attachment(device, attachment_config, attachments[i]);
@@ -1721,9 +1761,18 @@ private:
 
     void destroy_attachments(Device const * device)
     {
-        for (TextureHandle attachment: attachments)
+        assert(attachments.size() == attachment_configs.size());
+
+        for (size_t i = 0; i < attachment_configs.size(); ++i)
         {
-            samplers[attachment].destroy(device->get_logical_device());
+            TextureHandle &    attachment = attachments[i];
+            AttachmentConfig & config     = attachment_configs[i];
+
+            if (!config.is_swapchain_image)
+            {
+                LOG_TRACE("Destroying Attachment with TextureHandle {}", attachment);
+                samplers[attachment].destroy(device->get_logical_device());
+            }
         }
     }
 
@@ -2239,6 +2288,10 @@ public:
 
         auto generation = ++uniform_set.generations[descriptor_index];
 
+        LOG_TRACE("created uniform {} {}",
+                  set_handle,
+                  static_cast<void *>(uniform_set.uniforms[descriptor_index]));
+
         return UniformHandle{.set        = set_handle,
                              .generation = generation,
                              .uniform    = static_cast<uint16_t>(descriptor_index)};
@@ -2398,7 +2451,6 @@ public:
 
         return handle_iter->second;
     }
-
 
 private:
     ErrorCode create_uniform_layout(Device const *                                    device,
@@ -3956,7 +4008,7 @@ void Renderer::delete_buffers(size_t buffer_count, BufferHandle const * buffer_h
         if (!opt_buffer)
         {
             LOG_WARN("Renderer: unable to get buffer {} for delete_buffers call, ignoring it",
-                      buffer_handles[i]);
+                     buffer_handles[i]);
 
             *(buffer_iter++) = VK_NULL_HANDLE;
             *(memory_iter++) = VK_NULL_HANDLE;
@@ -4135,7 +4187,7 @@ void Renderer::delete_textures(size_t texture_count, TextureHandle const * textu
         if (!opt_sampler)
         {
             LOG_WARN("Renderer: Unable to get texture {} for delete_textures call, ignoring it",
-                      texture_handles[i]);
+                     texture_handles[i]);
 
             *(sampler_iter++) = VK_NULL_HANDLE;
             *(view_iter++)    = VK_NULL_HANDLE;

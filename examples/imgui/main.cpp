@@ -6,6 +6,10 @@
 #include "imgui.h"
 #include "examples/imgui_impl_glfw.h"
 
+#define STB_IMAGE_IMPLEMENTATION
+#include "stb_image.h"
+#undef STB_IMAGE_IMPLEMENTATION
+
 #include <glm/glm.hpp>
 
 gfx::TextureHandle    g_font_texture;
@@ -22,6 +26,29 @@ void key_callback(GLFWwindow * window, int key, int scancode, int action, int mo
         break;
     }
 }
+
+std::optional<gfx::TextureHandle> create_texture(gfx::Renderer & renderer,
+                                                 char const *    texture_path)
+{
+    int       texWidth, texHeight, texChannels;
+    stbi_uc * pixels = stbi_load(texture_path, &texWidth, &texHeight, &texChannels, STBI_rgb_alpha);
+
+    if (!pixels)
+    {
+        LOG_ERROR("Failed to load texture image {}", texture_path);
+        return std::nullopt;
+    }
+
+    auto texture = renderer.create_texture(texWidth, texHeight, 4, pixels);
+
+    stbi_image_free(pixels);
+
+    return texture;
+}
+
+//
+// Imgui Helper Functions
+//
 
 struct ImguiPushConstant
 {
@@ -41,9 +68,17 @@ void ImGui_Implgfx_CreateFontsTexture(gfx::Renderer & renderer)
 
     LOG_INFO("Size of texture {}", width * height * 4);
 
+    LOG_INFO("Making Font Texture");
+
     g_font_texture = renderer.create_texture(width, height, 4, pixels).value();
 
+    LOG_INFO("Made Font Texture {}\n", g_font_texture);
+
+    LOG_INFO("Making Font Uniform");
+
     g_font_uniform = make_texture_uniform(renderer, "us_texture", g_font_texture);
+
+    LOG_INFO("Made Font Uniform {} {}\n", g_font_uniform.set, g_font_uniform.uniform);
 }
 
 void ImGui_Implgfx_RenderDrawData(gfx::Renderer & renderer, ImDrawData * draw_data)
@@ -125,6 +160,7 @@ void ImGui_Implgfx_RenderDrawData(gfx::Renderer & renderer, ImDrawData * draw_da
                 ImDrawCallback_ResetRenderState) ImGui_ImplVulkan_SetupRenderState(draw_data,
                 command_buffer, rb, fb_width, fb_height); else pcmd->UserCallback(cmd_list, pcmd);
                 */
+                LOG_INFO("Not Drawing");
             }
             else
             {
@@ -168,8 +204,16 @@ void ImGui_Implgfx_RenderDrawData(gfx::Renderer & renderer, ImDrawData * draw_da
                     params.push_constant_size = sizeof(ImguiPushConstant);
                     params.push_constant_data = &push_constant;
 
-                    params.uniform_count = 1;
-                    params.uniforms      = &g_font_uniform;
+                    if (pcmd->TextureId != nullptr)
+                    {
+                        params.uniform_count = 1;
+                        params.uniforms      = static_cast<gfx::UniformHandle*>(pcmd->TextureId);
+                    }
+                    else
+                    {
+                        params.uniform_count = 1;
+                        params.uniforms      = &g_font_uniform;
+                    }
 
                     params.scissor  = &scissor;
                     params.viewport = nullptr;
@@ -240,6 +284,11 @@ int main()
     // upload font here
     ImGui_Implgfx_CreateFontsTexture(renderer);
 
+    LOG_INFO("Making sword uniform");
+    gfx::TextureHandle sword_texture = create_texture(renderer, RESOURCE_PATH "sword.png").value();
+
+    gfx::UniformHandle sword_uniform = make_texture_uniform(renderer, "us_texture", sword_texture);
+
     bool show_window = true;
     while (!glfwWindowShouldClose(window) && !escape)
     {
@@ -256,6 +305,9 @@ int main()
             {
                 ImGui::Text("Pressed");
             }
+
+            ImGui::Image(static_cast<void *>(&sword_uniform), ImVec2(160.0, 50.0));
+
             ImGui::End();
         }
 
