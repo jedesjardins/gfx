@@ -200,6 +200,25 @@ char const * error_string(VkResult error_code)
     }
 }
 
+#define VK_CHECK_RESULT(op, error_message)          \
+    do                                              \
+    {                                               \
+        VkResult result = op;                       \
+        if (result != VK_SUCCESS)                   \
+        {                                           \
+            LOG_CRITICAL("{} {} {} {} {} {} {}",    \
+                         error_message,             \
+                         "with value",              \
+                         gfx::error_string(result), \
+                         "in",                      \
+                         __FILE__,                  \
+                         "at line",                 \
+                         __LINE__);                 \
+            assert(result == VK_SUCCESS);           \
+            return ErrorCode::VULKAN_ERROR;         \
+        }                                           \
+    } while (0)
+
 class Memory
 {
 public:
@@ -2399,7 +2418,6 @@ public:
         return handle_iter->second;
     }
 
-
 private:
     ErrorCode create_uniform_layout(Device const *                                    device,
                                     VkDescriptorSetLayout &                           layout,
@@ -3956,7 +3974,7 @@ void Renderer::delete_buffers(size_t buffer_count, BufferHandle const * buffer_h
         if (!opt_buffer)
         {
             LOG_WARN("Renderer: unable to get buffer {} for delete_buffers call, ignoring it",
-                      buffer_handles[i]);
+                     buffer_handles[i]);
 
             *(buffer_iter++) = VK_NULL_HANDLE;
             *(memory_iter++) = VK_NULL_HANDLE;
@@ -4135,7 +4153,7 @@ void Renderer::delete_textures(size_t texture_count, TextureHandle const * textu
         if (!opt_sampler)
         {
             LOG_WARN("Renderer: Unable to get texture {} for delete_textures call, ignoring it",
-                      texture_handles[i]);
+                     texture_handles[i]);
 
             *(sampler_iter++) = VK_NULL_HANDLE;
             *(view_iter++)    = VK_NULL_HANDLE;

@@ -6,6 +6,10 @@
 #include "imgui.h"
 #include "examples/imgui_impl_glfw.h"
 
+#define STB_IMAGE_IMPLEMENTATION
+#include "stb_image.h"
+#undef STB_IMAGE_IMPLEMENTATION
+
 #include <glm/glm.hpp>
 
 gfx::TextureHandle    g_font_texture;
@@ -22,6 +26,29 @@ void key_callback(GLFWwindow * window, int key, int scancode, int action, int mo
         break;
     }
 }
+
+std::optional<gfx::TextureHandle> create_texture(gfx::Renderer & renderer,
+                                                 char const *    texture_path)
+{
+    int       texWidth, texHeight, texChannels;
+    stbi_uc * pixels = stbi_load(texture_path, &texWidth, &texHeight, &texChannels, STBI_rgb_alpha);
+
+    if (!pixels)
+    {
+        LOG_ERROR("Failed to load texture image {}", texture_path);
+        return std::nullopt;
+    }
+
+    auto texture = renderer.create_texture(texWidth, texHeight, 4, pixels);
+
+    stbi_image_free(pixels);
+
+    return texture;
+}
+
+//
+// Imgui Helper Functions
+//
 
 struct ImguiPushConstant
 {
@@ -240,6 +267,10 @@ int main()
     // upload font here
     ImGui_Implgfx_CreateFontsTexture(renderer);
 
+    gfx::TextureHandle sword_texture = create_texture(renderer, RESOURCE_PATH "sword.png").value();
+
+    gfx::UniformHandle sword_uniform = make_texture_uniform(renderer, "us_texture", sword_texture);
+
     bool show_window = true;
     while (!glfwWindowShouldClose(window) && !escape)
     {
@@ -256,6 +287,9 @@ int main()
             {
                 ImGui::Text("Pressed");
             }
+
+            ImGui::Image(sword_uniform, ImVec2(1.0, 1.0));
+
             ImGui::End();
         }
 

@@ -1,6 +1,9 @@
 #ifndef JED_GFX_GFX_HELPER_HPP
 #define JED_GFX_GFX_HELPER_HPP
 
+#include <cstddef>
+#include <cstdint>
+
 #ifndef LOG_TRACE
 #define LOG_TRACE(...)
 #endif
@@ -25,25 +28,6 @@
 #define LOG_CRITICAL(...)
 #endif
 
-#define VK_CHECK_RESULT(op, error_message)          \
-    do                                              \
-    {                                               \
-        VkResult result = op;                       \
-        if (result != VK_SUCCESS)                   \
-        {                                           \
-            LOG_CRITICAL("{} {} {} {} {} {} {}",    \
-                         error_message,             \
-                         "with value",              \
-                         gfx::error_string(result), \
-                         "in",                      \
-                         __FILE__,                  \
-                         "at line",                 \
-                         __LINE__);                 \
-            assert(result == VK_SUCCESS);           \
-            return ErrorCode::VULKAN_ERROR;         \
-        }                                           \
-    } while (0)
-
 #ifndef COMMANDS_PER_BUCKET
 #define COMMANDS_PER_BUCKET 8
 #endif
@@ -54,7 +38,6 @@
 
 namespace gfx
 {
-char const * error_string(VkResult error_code);
 
 enum class ErrorCode
 {
