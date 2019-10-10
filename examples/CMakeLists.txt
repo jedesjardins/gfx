@@ -36,23 +36,10 @@ if(NOT glm_POPULATED)
 	add_subdirectory(${glm_SOURCE_DIR} ${glm_BINARY_DIR})
 endif()
 
-FetchContent_Declare(
-	stb
-	GIT_REPOSITORY https://github.com/nothings/stb.git
-)
-
-FetchContent_GetProperties(stb)
-if(NOT stb_POPULATED)
-	FetchContent_Populate(stb)
-	message(STATUS "stb source dir: ${stb_SOURCE_DIR}")
-	message(STATUS "stb binary dir: ${stb_BINARY_DIR}")
-	message(STATUS "stb include dir: ${stb_SOURCE_DIR}")
-endif()
-
 add_compile_definitions(RESOURCE_PATH="${CMAKE_CURRENT_SOURCE_DIR}/")
 
 add_library(common STATIC ${CMAKE_CURRENT_LIST_DIR}/common.cpp)
-target_include_directories(common PUBLIC ${CMAKE_CURRENT_SOURCE_DIR} $<BUILD_INTERFACE:${stb_SOURCE_DIR}>)
+target_include_directories(common PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(common JED::gfx JED::log glm)
 
 add_subdirectory(input_attachment)
