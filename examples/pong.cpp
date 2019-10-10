@@ -15,6 +15,7 @@
 #include <vector>
 #include <utility>
 #include <algorithm>
+#include <memory_resource>
 
 // clang-format off
 std::vector<glm::vec3> vertices{{0.f, 0.f, 0.f}, {1.f, 0.f, 0.f}, {1.f, 1.f, 0.f}, {0.f, 1.f, 0.f}};

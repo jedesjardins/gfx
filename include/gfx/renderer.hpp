@@ -232,6 +232,7 @@ public:
 
     ErrorCode map(VkDevice logical_device, VkDeviceSize offset, VkDeviceSize size, void ** data)
     {
+        LOG_DEBUG("Memory: mapping VkDeviceMemory {}", static_cast<void *>(vk_memory));
         VK_CHECK_RESULT(vkMapMemory(logical_device, vk_memory, offset, size, 0, data),
                         "Unable to map VkDeviceMemory");
 
@@ -1330,16 +1331,12 @@ private:
 
             VkExtent2D actualExtent = {static_cast<uint32_t>(width), static_cast<uint32_t>(height)};
 
-            LOG_INFO("ActualExtent {} {}", width, height);
-
             actualExtent.width = std::max(
                 capabilities.minImageExtent.width,
                 std::min(capabilities.maxImageExtent.width, actualExtent.width));
             actualExtent.height = std::max(
                 capabilities.minImageExtent.height,
                 std::min(capabilities.maxImageExtent.height, actualExtent.height));
-
-            LOG_INFO("ActualExtent {} {}", width, height);
 
             return actualExtent;
         }
@@ -2078,7 +2075,7 @@ public:
             return std::nullopt;
         }
 
-        LOG_DEBUG("Created buffer {} {}",
+        LOG_DEBUG("BufferResources: Created buffer {} {}",
                   static_cast<void *>(buffer.buffer_handle()),
                   static_cast<void *>(buffer.memory_handle()));
 
@@ -2383,11 +2380,25 @@ public:
         auto iter = uniform_set_handles.find(name);
         if (iter == uniform_set_handles.end())
         {
+            LOG_WARN("UniformResources: couldn't find VkDescriptorSetLayout for {}", name);
             return std::nullopt;
         }
 
         return uniform_layouts[iter->second];
     }
+
+    std::optional<UniformSetHandle> get_uniform_set_handle(std::string const & set_name) const
+    {
+        auto handle_iter = uniform_set_handles.find(set_name);
+        if (handle_iter == uniform_set_handles.end())
+        {
+            LOG_WARN("UniformResources: couldn't find UniformSetHandle for {}", set_name);
+            return std::nullopt;
+        }
+
+        return handle_iter->second;
+    }
+
 
 private:
     ErrorCode create_uniform_layout(Device const *                                    device,
@@ -2641,6 +2652,18 @@ public:
         pipeline_draw_buckets.emplace_back(max_calls_per_bucket
                                            * (pipeline_draw_buckets.size() + 1));
         return pipeline_draw_buckets.back();
+    }
+
+    std::optional<PipelineHandle> get_pipeline_handle(std::string const & pipeline_name)
+    {
+        auto handle_iter = pipeline_handles.find(pipeline_name);
+        if (handle_iter == pipeline_handles.end())
+        {
+            LOG_WARN("PipelineResources: couldn't find PipelineHandle for {}", pipeline_name);
+            return std::nullopt;
+        }
+
+        return handle_iter->second;
     }
 
 private:
@@ -3439,7 +3462,7 @@ Renderer::~Renderer() = default;
 
 bool Renderer::init(RenderConfig & render_config)
 {
-    LOG_INFO("Initializing Renderer");
+    LOG_DEBUG("Initializing Renderer");
 
     if (!device->init(render_config))
     {
@@ -3494,7 +3517,7 @@ bool Renderer::init(RenderConfig & render_config)
 
 void Renderer::quit()
 {
-    LOG_INFO("Quitting Renderer");
+    LOG_DEBUG("Quitting Renderer");
     commands->quit(device.get());
     pipelines->quit(device.get());
     uniforms->quit(device.get());
@@ -3507,7 +3530,7 @@ void Renderer::quit()
 
 void Renderer::wait_for_idle()
 {
-    LOG_INFO("Waiting for Graphics Card to become Idle");
+    LOG_DEBUG("Waiting for Graphics Card to become Idle");
     vkDeviceWaitIdle(device->get_logical_device());
 }
 
@@ -3666,6 +3689,7 @@ size_t Renderer::current_resource_index()
 
 ErrorCode Renderer::draw(DrawParameters const & args)
 {
+    LOG_DEBUG("Renderer: drawing object");
     // get bucket
     auto & bucket = pipelines->get_draw_bucket(args.pipeline);
 
@@ -3816,56 +3840,46 @@ ErrorCode Renderer::draw(DrawParameters const & args)
 
 std::optional<AttachmentHandle> Renderer::get_attachment_handle(std::string const & attachment_name)
 {
+    LOG_DEBUG("Renderer: getting AttachmentHandle for {}", attachment_name);
     return images->get_attachment_handle(attachment_name);
 }
 
 std::optional<UniformSetHandle> Renderer::get_uniform_set_handle(std::string const & set_name)
 {
-    auto handle_iter = uniforms->uniform_set_handles.find(set_name);
-    if (handle_iter == uniforms->uniform_set_handles.end())
-    {
-        return std::nullopt;
-    }
-
-    return handle_iter->second;
+    LOG_DEBUG("Renderer: getting UniformSetHandle for {}", set_name);
+    return uniforms->get_uniform_set_handle(set_name);
 }
 
 std::optional<PipelineHandle> Renderer::get_pipeline_handle(std::string const & pipeline_name)
 {
-    auto handle_iter = pipelines->pipeline_handles.find(pipeline_name);
-    if (handle_iter == pipelines->pipeline_handles.end())
-    {
-        return std::nullopt;
-    }
-
-    return handle_iter->second;
+    LOG_DEBUG("Renderer: getting PipelineHandle for {}", pipeline_name);
+    return pipelines->get_pipeline_handle(pipeline_name);
 }
 
 std::optional<BufferHandle> Renderer::create_buffer(VkDeviceSize          size,
                                                     VkBufferUsageFlags    usage,
                                                     VkMemoryPropertyFlags properties)
 {
-    LOG_INFO("Creating Buffer");
-
+    LOG_DEBUG("Renderer: creating buffer");
     return buffers->create_buffer(device.get(), size, usage, properties);
 }
 
 std::optional<void *> Renderer::map_buffer(BufferHandle const & buffer_handle)
 {
-    LOG_INFO("Mapping Buffer");
+    LOG_DEBUG("Renderer: mapping Buffer {}", buffer_handle);
 
     return buffers->map_buffer(buffer_handle);
 }
 
 void Renderer::update_buffer(BufferHandle const & buffer_handle, VkDeviceSize size, void * data)
 {
-    LOG_INFO("Updating Buffer");
+    LOG_DEBUG("Renderer: updating Buffer {}", buffer_handle);
 
     auto opt_buffer = buffers->get_buffer(buffer_handle);
 
     if (!opt_buffer)
     {
-        LOG_ERROR("Unable to get buffer for update_buffer call, ignoring call");
+        LOG_ERROR("Renderer: invalid BufferHandle {} in update_buffer", buffer_handle);
         return;
     }
 
@@ -3879,15 +3893,17 @@ void Renderer::update_buffer(BufferHandle const & buffer_handle, VkDeviceSize si
 
     if (!opt_mapped_buffer_handle)
     {
-        LOG_ERROR("Couldn't create a staging buffer for updating device local buffer {}",
+        LOG_ERROR("Renderer: couldn't create a staging buffer for updating buffer {}",
                   buffer_handle);
+        return;
     }
 
     auto opt_mapped_buffer_ptr = buffers->map_buffer(opt_mapped_buffer_handle.value());
 
     if (!opt_mapped_buffer_ptr)
     {
-        LOG_ERROR("Couldn't map a staging buffer for uploading texture");
+        LOG_ERROR("Renderer: couldn't map a staging buffer for updating buffer {}", buffer_handle);
+        return;
     }
 
     memcpy(opt_mapped_buffer_ptr.value(), data, size);
@@ -3916,7 +3932,7 @@ void Renderer::update_buffer(BufferHandle const & buffer_handle, VkDeviceSize si
 
 void Renderer::delete_buffers(size_t buffer_count, BufferHandle const * buffer_handles)
 {
-    LOG_INFO("Deleting Buffers");
+    LOG_DEBUG("Renderer: deleting buffers");
 
     auto & bucket = commands->get_delete_bucket(frames->currentResource);
 
@@ -3939,7 +3955,7 @@ void Renderer::delete_buffers(size_t buffer_count, BufferHandle const * buffer_h
         auto opt_buffer = buffers->get_buffer(buffer_handles[i]);
         if (!opt_buffer)
         {
-            LOG_ERROR("Unable to get buffer for delete_buffers call, ignoring buffer {}",
+            LOG_WARN("Renderer: unable to get buffer {} for delete_buffers call, ignoring it",
                       buffer_handles[i]);
 
             *(buffer_iter++) = VK_NULL_HANDLE;
@@ -3951,7 +3967,8 @@ void Renderer::delete_buffers(size_t buffer_count, BufferHandle const * buffer_h
         auto buffer = opt_buffer.value();
         buffers->delete_buffer(buffer_handles[i]);
 
-        LOG_DEBUG("Queuing buffer {} {} for delete",
+        LOG_DEBUG("Renderer: queuing buffer {} with vulkan handles {} {} for delete",
+                  buffer_handles[i],
                   static_cast<void *>(buffer.buffer_handle()),
                   static_cast<void *>(buffer.memory_handle()));
 
@@ -3965,7 +3982,7 @@ std::optional<TextureHandle> Renderer::create_texture(size_t       width,
                                                       size_t       pixel_size,
                                                       void * const pixels)
 {
-    LOG_INFO("Creating Texture");
+    LOG_DEBUG("Renderer: creating texture");
 
     size_t imageSize = width * height * pixel_size;
 
@@ -3977,7 +3994,7 @@ std::optional<TextureHandle> Renderer::create_texture(size_t       width,
 
     if (!opt_mapped_buffer_handle)
     {
-        LOG_ERROR("Couldn't create a staging buffer for uploading texture");
+        LOG_ERROR("Renderer: couldn't create a staging buffer for uploading to a texture");
         return std::nullopt;
     }
 
@@ -3985,7 +4002,7 @@ std::optional<TextureHandle> Renderer::create_texture(size_t       width,
 
     if (!opt_mapped_buffer_ptr)
     {
-        LOG_ERROR("Couldn't map a staging buffer for uploading texture");
+        LOG_ERROR("Renderer: couldn't map a staging buffer for uploading texture");
         return std::nullopt;
     }
 
@@ -3995,7 +4012,7 @@ std::optional<TextureHandle> Renderer::create_texture(size_t       width,
 
     if (!opt_mapped_buffer)
     {
-        LOG_ERROR("Couldn't get the staging buffer for uploading texture");
+        LOG_ERROR("Renderer: couldn't get the staging buffer for uploading texture");
         return std::nullopt;
     }
 
@@ -4014,7 +4031,7 @@ std::optional<TextureHandle> Renderer::create_texture(size_t       width,
 
     if (!opt_texture_handle)
     {
-        LOG_ERROR("Unable to create texture");
+        LOG_ERROR("Renderer: unable to create texture");
         return std::nullopt;
     }
 
@@ -4073,12 +4090,13 @@ std::optional<TextureHandle> Renderer::create_texture(size_t       width,
 
 std::optional<TextureHandle> Renderer::get_texture(AttachmentHandle const & attachment)
 {
+    LOG_DEBUG("Renderer: getting texture for AttachmentHandle {}", attachment);
     return images->get_texture_handle(attachment);
 }
 
 void Renderer::delete_textures(size_t texture_count, TextureHandle const * texture_handles)
 {
-    LOG_INFO("Deleting Textures");
+    LOG_DEBUG("Renderer: deleting textures");
 
     auto & bucket = commands->get_delete_bucket(frames->currentResource);
 
@@ -4116,7 +4134,7 @@ void Renderer::delete_textures(size_t texture_count, TextureHandle const * textu
         auto opt_sampler = images->get_texture(texture_handles[i]);
         if (!opt_sampler)
         {
-            LOG_ERROR("Unable to get texture for delete_textures call, ignoring texture {}",
+            LOG_WARNs("Renderer: Unable to get texture {} for delete_textures call, ignoring it",
                       texture_handles[i]);
 
             *(sampler_iter++) = VK_NULL_HANDLE;
@@ -4140,14 +4158,17 @@ std::optional<UniformHandle> Renderer::create_uniform(UniformSetHandle set_handl
                                                       size_t           write_count,
                                                       UniformWrite *   write_infos)
 {
+    LOG_DEBUG("Renderer: creating uniform for UniformSetHandle {}", set_handle);
     auto opt_uniform = uniforms->create_uniform(set_handle);
     if (!opt_uniform)
     {
+        LOG_ERROR("Renderer: unable to create uniform for UniformSetHandle {}", set_handle);
         return std::nullopt;
     }
 
     if (write_count > 0 && write_infos != nullptr)
     {
+        LOG_TRACE("Renderer: updating uniform from create_uniform");
         update_uniform(opt_uniform.value(), write_count, write_infos);
     }
 
@@ -4158,13 +4179,14 @@ void Renderer::update_uniform(UniformHandle  uniform_handle,
                               size_t         write_count,
                               UniformWrite * write_infos)
 {
+    LOG_DEBUG("Renderer: updating uniform {}", uniform_handle);
     uniforms->update_uniform(
         device.get(), buffers.get(), images.get(), uniform_handle, write_count, write_infos);
 }
 
 void Renderer::delete_uniforms(size_t uniform_count, UniformHandle const * uniform_handles)
 {
-    LOG_INFO("Deleting Uniform");
+    LOG_DEBUG("Renderer: deleting uniforms");
 
     auto & bucket = commands->get_delete_bucket(frames->currentResource);
 
@@ -4178,9 +4200,6 @@ void Renderer::delete_uniforms(size_t uniform_count, UniformHandle const * unifo
 
     memcpy(delete_command->uniform_handles, uniform_handles, uniform_count * sizeof(UniformHandle));
 }
-
-void delete_uniforms(size_t uniform_count, UniformHandle const * uniforms)
-{}
 
 ErrorCode Renderer::create_command_buffer(uint32_t image_index)
 {
