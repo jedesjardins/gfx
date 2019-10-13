@@ -2560,8 +2560,8 @@ private:
     {
         auto & uniform_set = uniform_sets[uniform_handle.set];
 
-        assert(uniform_handle.uniform < uniform_set.uniforms.size()
-               && uniform_handle.generation == uniform_set.generations[uniform_handle.uniform]);
+        assert(uniform_handle.uniform < uniform_set.uniforms.size());
+        assert(uniform_handle.generation == uniform_set.generations[uniform_handle.uniform]);
 
         if (uniform_handle.uniform > uniform_set.uniforms.size()
             || uniform_handle.generation != uniform_set.generations[uniform_handle.uniform])
