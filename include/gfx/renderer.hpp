@@ -47,21 +47,21 @@ struct UniformWrite
 
 struct DrawParameters
 {
-    PipelineHandle  pipeline;
-    size_t          vertex_buffer_count;
-    BufferHandle *  vertex_buffers;
-    VkDeviceSize *  vertex_buffer_offsets;
-    BufferHandle    index_buffer;
-    size_t          index_buffer_offset;
-    size_t          index_count;
-    size_t          push_constant_size;
-    void *          push_constant_data;
-    size_t          uniform_count;
-    UniformHandle * uniforms;
-    size_t          dynamic_offset_count;
-    uint32_t *      dynamic_offsets;
-    VkRect2D *      scissor;
-    VkViewport *    viewport;
+    PipelineHandle        pipeline;
+    size_t                vertex_buffer_count;
+    BufferHandle const *  vertex_buffers;
+    VkDeviceSize const *  vertex_buffer_offsets;
+    BufferHandle          index_buffer;
+    size_t                index_buffer_offset;
+    size_t                index_count;
+    size_t                push_constant_size;
+    void const *          push_constant_data;
+    size_t                uniform_count;
+    UniformHandle const * uniforms;
+    size_t                dynamic_offset_count;
+    uint32_t const *      dynamic_offsets;
+    VkRect2D const *      scissor;
+    VkViewport const *    viewport;
 };
 
 class Renderer
