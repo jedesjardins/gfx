@@ -4372,6 +4372,8 @@ void Renderer::change_swapchain()
     images->recreate_attachments(device.get());
 
     render_passes->recreate_framebuffers(device.get(), images.get());
+
+    pipelines->recreate_pipelines(device.get(), render_passes.get(), uniforms.get());
 }
 
 }; // namespace gfx
