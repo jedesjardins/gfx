@@ -57,6 +57,19 @@ struct DrawParameters
     size_t                push_constant_size;
     void const *          push_constant_data;
     size_t                uniform_count;
+    uint32_t              first_set_index;
+    UniformHandle const * uniforms;
+    size_t                dynamic_offset_count;
+    uint32_t const *      dynamic_offsets;
+    VkRect2D const *      scissor;
+    VkViewport const *    viewport;
+};
+
+struct StateParameters
+{
+    PipelineHandle        pipeline;
+    size_t                uniform_count;
+    uint32_t              first_set_index;
     UniformHandle const * uniforms;
     size_t                dynamic_offset_count;
     uint32_t const *      dynamic_offsets;
@@ -83,6 +96,8 @@ public:
     size_t current_resource_index();
 
     ErrorCode draw(DrawParameters const & args);
+
+    ErrorCode set_state(StateParameters const & args);
 
     std::optional<AttachmentHandle> get_attachment_handle(std::string const & attachment_name);
     std::optional<UniformSetHandle> get_uniform_set_handle(std::string const & set_name);
@@ -3208,6 +3223,7 @@ struct Draw
     void *             push_constant_data;
     VkShaderStageFlags push_constant_flags;
 
+    uint32_t          first_set_index;
     size_t            descriptor_set_count;
     VkDescriptorSet * descriptor_sets;
     size_t            dynamic_offset_count;
@@ -3249,7 +3265,7 @@ void draw(void const * data)
         vkCmdBindDescriptorSets(realdata->commandbuffer,
                                 VK_PIPELINE_BIND_POINT_GRAPHICS,
                                 *realdata->pipeline_layout,
-                                0,
+                                realdata->first_set_index,
                                 realdata->descriptor_set_count,
                                 realdata->descriptor_sets,
                                 realdata->dynamic_offset_count,
@@ -3271,6 +3287,57 @@ void draw(void const * data)
 }
 
 cmd::BackendDispatchFunction const Draw::DISPATCH_FUNCTION = &draw;
+
+// SetState
+
+struct SetState
+{
+    static cmd::BackendDispatchFunction const DISPATCH_FUNCTION;
+
+    VkCommandBuffer    commandbuffer;
+    VkPipelineLayout * pipeline_layout;
+
+    uint32_t          first_set_index;
+    size_t            descriptor_set_count;
+    VkDescriptorSet * descriptor_sets;
+    size_t            dynamic_offset_count;
+    uint32_t *        dynamic_offsets;
+
+    VkViewport * viewport;
+
+    VkRect2D * scissor;
+};
+
+static_assert(std::is_pod<SetState>::value == true, "SetState must be a POD.");
+
+void setState(void const * data)
+{
+    SetState const * realdata = reinterpret_cast<SetState const *>(data);
+
+    if (realdata->scissor != nullptr)
+    {
+        vkCmdSetScissor(realdata->commandbuffer, 0, 1, realdata->scissor);
+    }
+
+    if (realdata->viewport != nullptr)
+    {
+        vkCmdSetViewport(realdata->commandbuffer, 0, 1, realdata->viewport);
+    }
+
+    if (realdata->descriptor_set_count != 0)
+    {
+        vkCmdBindDescriptorSets(realdata->commandbuffer,
+                                VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                *realdata->pipeline_layout,
+                                realdata->first_set_index,
+                                realdata->descriptor_set_count,
+                                realdata->descriptor_sets,
+                                realdata->dynamic_offset_count,
+                                realdata->dynamic_offsets);
+    }
+}
+
+cmd::BackendDispatchFunction const SetState::DISPATCH_FUNCTION = &setState;
 
 // COPY BUFFERS
 
@@ -3855,6 +3922,100 @@ ErrorCode Renderer::draw(DrawParameters const & args)
     memcpy(command->push_constant_data, args.push_constant_data, args.push_constant_size);
 
     // descriptor sets and dynamic offsets
+    command->first_set_index      = args.first_set_index;
+    command->descriptor_set_count = args.uniform_count;
+    command->descriptor_sets      = reinterpret_cast<VkDescriptorSet *>(command_memory
+                                                                   + vk_descriptorsets_offset);
+    command->dynamic_offset_count = args.dynamic_offset_count;
+    command->dynamic_offsets      = reinterpret_cast<uint32_t *>(command_memory
+                                                            + dynamic_offsets_offset);
+
+    memcpy(command->descriptor_sets, descriptorsets.data(), vk_descriptorsets_size);
+    memcpy(command->dynamic_offsets, args.dynamic_offsets, dynamic_offsets_size);
+
+    // scissor
+    if (args.scissor)
+    {
+        command->scissor = reinterpret_cast<VkRect2D *>(command_memory + scissor_offset);
+        memcpy(command->scissor, args.scissor, scissor_size);
+    }
+    else
+    {
+        command->scissor = nullptr;
+    }
+
+    // viewport
+    if (args.viewport)
+    {
+        command->viewport = reinterpret_cast<VkViewport *>(command_memory + viewport_offset);
+        memcpy(command->viewport, args.viewport, viewport_size);
+    }
+    else
+    {
+        command->viewport = nullptr;
+    }
+
+    return ErrorCode::NONE;
+}
+
+ErrorCode Renderer::set_state(StateParameters const & args)
+{
+    LOG_DEBUG("Renderer: setting state");
+    // get bucket
+    auto & bucket = pipelines->get_draw_bucket(args.pipeline);
+
+    // get descriptor sets
+    std::vector<VkDescriptorSet> descriptorsets;
+    descriptorsets.reserve(args.uniform_count);
+    for (size_t i = 0; i < args.uniform_count; ++i)
+    {
+        auto uniform_handle = args.uniforms[i];
+        auto opt_uniform    = uniforms->get_uniform(uniform_handle);
+
+        if (opt_uniform.has_value())
+        {
+            descriptorsets.push_back(opt_uniform.value());
+        }
+        else
+        {
+            LOG_ERROR("No Descriptor Set returned for Uniform {} {}",
+                      uniform_handle.set,
+                      uniform_handle.uniform);
+            return ErrorCode::API_ERROR;
+        }
+    }
+
+    size_t vk_descriptorsets_offset = 0;
+    size_t vk_descriptorsets_size   = descriptorsets.size() * sizeof(VkDescriptorSet);
+
+    size_t dynamic_offsets_offset = vk_descriptorsets_offset + vk_descriptorsets_size;
+    size_t dynamic_offsets_size   = args.dynamic_offset_count * sizeof(uint32_t);
+
+    size_t scissor_offset = dynamic_offsets_offset + dynamic_offsets_size;
+    size_t scissor_size   = 0;
+    if (args.scissor)
+    {
+        scissor_size = sizeof(VkRect2D);
+    }
+
+    size_t viewport_offset = scissor_offset + scissor_size;
+    size_t viewport_size   = 0;
+    if (args.viewport)
+    {
+        viewport_size = sizeof(VkViewport);
+    }
+
+    SetState * command = bucket.AddCommand<SetState>(
+        0, vk_descriptorsets_size + dynamic_offsets_size + scissor_size + viewport_size);
+
+    assert(command != nullptr);
+
+    char * command_memory = cmd::commandPacket::GetAuxiliaryMemory(command);
+
+    command->commandbuffer   = commands->draw_commandbuffers[frames->currentResource];
+    command->pipeline_layout = &pipelines->pipelines[args.pipeline].vk_pipeline_layout;
+
+    command->first_set_index      = args.first_set_index;
     command->descriptor_set_count = args.uniform_count;
     command->descriptor_sets      = reinterpret_cast<VkDescriptorSet *>(command_memory
                                                                    + vk_descriptorsets_offset);
