@@ -4099,9 +4099,8 @@ std::optional<TextureHandle> Renderer::create_texture(size_t       width,
 
     Sampler texture = opt_texture.value();
 
-    auto & bucket = commands->get_transfer_bucket(frames->currentResource);
-
-    SetImageLayout * dst_optimal_command = bucket.AddCommand<SetImageLayout>(0, 0);
+    auto &           first_bucket        = commands->get_transfer_bucket(frames->currentResource);
+    SetImageLayout * dst_optimal_command = first_bucket.AddCommand<SetImageLayout>(0, 0);
     dst_optimal_command->commandbuffer = commands->transfer_commandbuffers[frames->currentResource];
     dst_optimal_command->srcAccessMask = 0;
     dst_optimal_command->dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
@@ -4113,7 +4112,8 @@ std::optional<TextureHandle> Renderer::create_texture(size_t       width,
     dst_optimal_command->sourceStage   = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
     dst_optimal_command->destinationStage = VK_PIPELINE_STAGE_TRANSFER_BIT;
 
-    CopyToImage * copy_command  = bucket.AddCommand<CopyToImage>(0, 0);
+    auto &        second_bucket = commands->get_transfer_bucket(frames->currentResource);
+    CopyToImage * copy_command  = second_bucket.AddCommand<CopyToImage>(0, 0);
     copy_command->commandbuffer = commands->transfer_commandbuffers[frames->currentResource];
     copy_command->srcBuffer     = opt_mapped_buffer.value().buffer_handle();
     copy_command->srcOffset     = 0;
@@ -4121,7 +4121,8 @@ std::optional<TextureHandle> Renderer::create_texture(size_t       width,
     copy_command->width         = static_cast<uint32_t>(width);
     copy_command->height        = static_cast<uint32_t>(height);
 
-    SetImageLayout * shader_optimal_command = bucket.AddCommand<SetImageLayout>(0, 0);
+    auto &           third_bucket = commands->get_transfer_bucket(frames->currentResource);
+    SetImageLayout * shader_optimal_command = third_bucket.AddCommand<SetImageLayout>(0, 0);
     shader_optimal_command->commandbuffer
         = commands->transfer_commandbuffers[frames->currentResource];
     shader_optimal_command->srcAccessMask    = VK_ACCESS_TRANSFER_WRITE_BIT;
