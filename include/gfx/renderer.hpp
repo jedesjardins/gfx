@@ -99,9 +99,10 @@ public:
 
     ErrorCode set_state(StateParameters const & args);
 
-    std::optional<AttachmentHandle> get_attachment_handle(std::string const & attachment_name);
-    std::optional<UniformSetHandle> get_uniform_set_handle(std::string const & set_name);
-    std::optional<PipelineHandle>   get_pipeline_handle(std::string const & pipeline_name);
+    std::optional<AttachmentHandle> get_attachment_handle(
+        std::string const & attachment_name) const;
+    std::optional<UniformSetHandle> get_uniform_set_handle(std::string const & set_name) const;
+    std::optional<PipelineHandle>   get_pipeline_handle(std::string const & pipeline_name) const;
 
     std::optional<BufferHandle> create_buffer(VkDeviceSize          size,
                                               VkBufferUsageFlags    usage,
@@ -109,26 +110,26 @@ public:
 
     std::optional<void *> map_buffer(BufferHandle const & buffer_handle);
 
-    void update_buffer(BufferHandle const & buffer, VkDeviceSize size, void * data);
+    void update_buffer(BufferHandle const & buffer, VkDeviceSize size, void const * data);
 
     void delete_buffers(size_t buffer_count, BufferHandle const * buffers);
 
     std::optional<TextureHandle> create_texture(size_t       width,
                                                 size_t       height,
                                                 size_t       pixel_size,
-                                                void * const pixels);
+                                                void const * pixels);
 
     std::optional<TextureHandle> get_texture(AttachmentHandle const & attachment);
 
     void delete_textures(size_t sampler_count, TextureHandle const * texture_handles);
 
-    std::optional<UniformHandle> create_uniform(UniformSetHandle set_handle,
-                                                size_t           write_count = 0,
-                                                UniformWrite *   write_infos = nullptr);
+    std::optional<UniformHandle> create_uniform(UniformSetHandle     set_handle,
+                                                size_t               write_count = 0,
+                                                UniformWrite const * write_infos = nullptr);
 
-    void update_uniform(UniformHandle  uniform_handle,
-                        size_t         write_count,
-                        UniformWrite * write_infos);
+    void update_uniform(UniformHandle        uniform_handle,
+                        size_t               write_count,
+                        UniformWrite const * write_infos);
 
     void delete_uniforms(size_t uniform_count, UniformHandle const * uniforms);
 
@@ -2317,7 +2318,7 @@ public:
                         ImageResources const *  images,
                         UniformHandle const &   uniform_handle,
                         size_t                  uniform_write_count,
-                        UniformWrite *          uniform_write_infos)
+                        UniformWrite const *    uniform_write_infos)
     {
         check_valid_set(uniform_handle.set);
         check_valid_uniform(uniform_handle);
@@ -4051,19 +4052,20 @@ ErrorCode Renderer::set_state(StateParameters const & args)
     return ErrorCode::NONE;
 }
 
-std::optional<AttachmentHandle> Renderer::get_attachment_handle(std::string const & attachment_name)
+std::optional<AttachmentHandle> Renderer::get_attachment_handle(
+    std::string const & attachment_name) const
 {
     LOG_DEBUG("Renderer: getting AttachmentHandle for {}", attachment_name);
     return images->get_attachment_handle(attachment_name);
 }
 
-std::optional<UniformSetHandle> Renderer::get_uniform_set_handle(std::string const & set_name)
+std::optional<UniformSetHandle> Renderer::get_uniform_set_handle(std::string const & set_name) const
 {
     LOG_DEBUG("Renderer: getting UniformSetHandle for {}", set_name);
     return uniforms->get_uniform_set_handle(set_name);
 }
 
-std::optional<PipelineHandle> Renderer::get_pipeline_handle(std::string const & pipeline_name)
+std::optional<PipelineHandle> Renderer::get_pipeline_handle(std::string const & pipeline_name) const
 {
     LOG_DEBUG("Renderer: getting PipelineHandle for {}", pipeline_name);
     return pipelines->get_pipeline_handle(pipeline_name);
@@ -4084,7 +4086,9 @@ std::optional<void *> Renderer::map_buffer(BufferHandle const & buffer_handle)
     return buffers->map_buffer(buffer_handle);
 }
 
-void Renderer::update_buffer(BufferHandle const & buffer_handle, VkDeviceSize size, void * data)
+void Renderer::update_buffer(BufferHandle const & buffer_handle,
+                             VkDeviceSize         size,
+                             void const *         data)
 {
     LOG_DEBUG("Renderer: updating Buffer {}", buffer_handle);
 
@@ -4193,7 +4197,7 @@ void Renderer::delete_buffers(size_t buffer_count, BufferHandle const * buffer_h
 std::optional<TextureHandle> Renderer::create_texture(size_t       width,
                                                       size_t       height,
                                                       size_t       pixel_size,
-                                                      void * const pixels)
+                                                      void const * pixels)
 {
     LOG_DEBUG("Renderer: creating texture");
 
@@ -4368,9 +4372,9 @@ void Renderer::delete_textures(size_t texture_count, TextureHandle const * textu
     }
 }
 
-std::optional<UniformHandle> Renderer::create_uniform(UniformSetHandle set_handle,
-                                                      size_t           write_count,
-                                                      UniformWrite *   write_infos)
+std::optional<UniformHandle> Renderer::create_uniform(UniformSetHandle     set_handle,
+                                                      size_t               write_count,
+                                                      UniformWrite const * write_infos)
 {
     LOG_DEBUG("Renderer: creating uniform for UniformSetHandle {}", set_handle);
     auto opt_uniform = uniforms->create_uniform(set_handle);
@@ -4389,9 +4393,9 @@ std::optional<UniformHandle> Renderer::create_uniform(UniformSetHandle set_handl
     return opt_uniform;
 }
 
-void Renderer::update_uniform(UniformHandle  uniform_handle,
-                              size_t         write_count,
-                              UniformWrite * write_infos)
+void Renderer::update_uniform(UniformHandle        uniform_handle,
+                              size_t               write_count,
+                              UniformWrite const * write_infos)
 {
     LOG_DEBUG("Renderer: updating uniform {} {}", uniform_handle.set, uniform_handle.uniform);
     uniforms->update_uniform(
