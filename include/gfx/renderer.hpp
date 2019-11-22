@@ -101,6 +101,7 @@ public:
 
     std::optional<AttachmentHandle> get_attachment_handle(
         std::string const & attachment_name) const;
+    std::optional<TextureHandle>    get_texture_handle(AttachmentHandle const & attachment) const;
     std::optional<UniformSetHandle> get_uniform_set_handle(std::string const & set_name) const;
     std::optional<PipelineHandle>   get_pipeline_handle(std::string const & pipeline_name) const;
 
@@ -118,8 +119,6 @@ public:
                                                 size_t       height,
                                                 size_t       pixel_size,
                                                 void const * pixels);
-
-    std::optional<TextureHandle> get_texture(AttachmentHandle const & attachment);
 
     void delete_textures(size_t sampler_count, TextureHandle const * texture_handles);
 
@@ -4306,7 +4305,7 @@ std::optional<TextureHandle> Renderer::create_texture(size_t       width,
     return texture_handle;
 }
 
-std::optional<TextureHandle> Renderer::get_texture(AttachmentHandle const & attachment)
+std::optional<TextureHandle> Renderer::get_texture_handle(AttachmentHandle const & attachment) const
 {
     LOG_DEBUG("Renderer: getting texture for AttachmentHandle {}", attachment);
     return images->get_texture_handle(attachment);

@@ -93,7 +93,7 @@ gfx::UniformHandle make_texture_uniform_from_attachment(gfx::Renderer &     rend
                                                         std::string const & attachment_name)
 {
     auto attachment         = renderer.get_attachment_handle(attachment_name).value();
-    auto attachment_texture = renderer.get_texture(attachment).value();
+    auto attachment_texture = renderer.get_texture_handle(attachment).value();
 
     return make_texture_uniform(renderer, set_name, attachment_texture);
 }
