@@ -1583,8 +1583,25 @@ public:
 
     ErrorCode recreate_attachments(Device const * device)
     {
-        destroy_attachments(device);
-        return create_attachments(device);
+        for (size_t i = 0; i < attachment_configs.size(); ++i)
+        {
+            TextureHandle &    attachment = attachments[i];
+            AttachmentConfig & config     = attachment_configs[i];
+
+            if (!config.is_swapchain_image && config.use_swapchain_size)
+            {
+                LOG_TRACE("Destroying and recreating Attachment with TextureHandle {}", attachment);
+                samplers[attachment].destroy(device->get_logical_device());
+
+                auto result = create_attachment(device, config, attachment);
+                if (result != ErrorCode::NONE)
+                {
+                    return result;
+                }
+            }
+        }
+
+        return ErrorCode::NONE;
     }
 
     std::optional<TextureHandle> create_texture(VkPhysicalDevice const & physical_device,
@@ -1772,23 +1789,6 @@ private:
         attachment = opt_handle.value();
 
         return ErrorCode::NONE;
-    }
-
-    void destroy_attachments(Device const * device)
-    {
-        assert(attachments.size() == attachment_configs.size());
-
-        for (size_t i = 0; i < attachment_configs.size(); ++i)
-        {
-            TextureHandle &    attachment = attachments[i];
-            AttachmentConfig & config     = attachment_configs[i];
-
-            if (!config.is_swapchain_image)
-            {
-                LOG_TRACE("Destroying Attachment with TextureHandle {}", attachment);
-                samplers[attachment].destroy(device->get_logical_device());
-            }
-        }
     }
 
 private:
