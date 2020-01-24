@@ -53,8 +53,6 @@ if(NOT RapidJSON_FOUND)
 	endif()
 endif()
 
-message(STATUS "${RAPIDJSON_INCLUDE_DIRS}")
-
 add_library(Gfx INTERFACE)
 target_include_directories(Gfx
 	INTERFACE
