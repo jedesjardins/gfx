@@ -1,22 +1,11 @@
 
+#include "log/logger.hpp"
+#include "gfx/renderer.hpp"
+#include "cmd/cmd.hpp"
+#include "common.hpp"
+
 #include <vulkan/vulkan.h>
 #include <GLFW/glfw3.h>
-
-#define JED_LOG_IMPLEMENTATION
-#include "log/logger.hpp"
-#undef JED_LOG_IMPLEMENTATION
-
-#define JED_GFX_IMPLEMENTATION
-#include "gfx/render_device.hpp"
-#undef JED_GFX_IMPLEMENTATION
-
-#define JED_CMD_IMPLEMENTATION
-#include "cmd/cmd.hpp"
-#undef JED_CMD_IMPLEMENTATION
-
-#define STB_IMAGE_IMPLEMENTATION
-#include "stb_image.h"
-#undef STB_IMAGE_IMPLEMENTATION
 
 #define GLM_FORCE_RADIANS
 #define GLM_FORCE_DEPTH_ZERO_TO_ONE
@@ -187,16 +176,30 @@ public:
               gfx::PipelineHandle pipeline_handle,
               gfx::UniformHandle  view_handle)
     {
-        render_device.draw(pipeline_handle,
-                           vertex_buffer,
-                           0,
-                           index_buffer,
-                           0,
-                           index_count,
-                           sizeof(glm::mat4),
-                           glm::value_ptr(transform),
-                           1,
-                           &view_handle);
+        gfx::DrawParameters params{};
+
+        VkDeviceSize vertex_buffer_offset = 0;
+
+        params.pipeline = pipeline_handle;
+
+        params.vertex_buffer_count   = 1;
+        params.vertex_buffers        = &vertex_buffer;
+        params.vertex_buffer_offsets = &vertex_buffer_offset;
+
+        params.index_buffer        = index_buffer;
+        params.index_buffer_offset = 0;
+        params.index_count         = index_count;
+
+        params.push_constant_size = sizeof(glm::mat4);
+        params.push_constant_data = glm::value_ptr(transform);
+
+        params.uniform_count = 1;
+        params.uniforms      = &view_handle;
+
+        params.scissor  = nullptr;
+        params.viewport = nullptr;
+
+        render_device.draw(params);
     }
 
     void draw(gfx::Renderer &     render_device,
@@ -204,16 +207,30 @@ public:
               gfx::UniformHandle  view_handle,
               glm::mat4 &         n_transform)
     {
-        render_device.draw(pipeline_handle,
-                           vertex_buffer,
-                           0,
-                           index_buffer,
-                           0,
-                           index_count,
-                           sizeof(glm::mat4),
-                           glm::value_ptr(n_transform),
-                           1,
-                           &view_handle);
+        gfx::DrawParameters params{};
+
+        VkDeviceSize vertex_buffer_offset = 0;
+
+        params.pipeline = pipeline_handle;
+
+        params.vertex_buffer_count   = 1;
+        params.vertex_buffers        = &vertex_buffer;
+        params.vertex_buffer_offsets = &vertex_buffer_offset;
+
+        params.index_buffer        = index_buffer;
+        params.index_buffer_offset = 0;
+        params.index_count         = index_count;
+
+        params.push_constant_size = sizeof(glm::mat4);
+        params.push_constant_data = glm::value_ptr(n_transform);
+
+        params.uniform_count = 1;
+        params.uniforms      = &view_handle;
+
+        params.scissor  = nullptr;
+        params.viewport = nullptr;
+
+        render_device.draw(params);
     }
 };
 
@@ -391,7 +408,7 @@ States game_step(Object &   paddle_1,
 
         if (paddle_1.pos.y < 0.f)
         {
-           paddle_1.pos.y = 0.f; 
+            paddle_1.pos.y = 0.f;
         }
     }
 
@@ -411,7 +428,7 @@ States game_step(Object &   paddle_1,
 
         if (paddle_2.pos.y < 0.f)
         {
-           paddle_2.pos.y = 0.f; 
+            paddle_2.pos.y = 0.f;
         }
     }
 
@@ -539,11 +556,15 @@ int main()
 
     glfwSetKeyCallback(window, key_callback);
 
+    auto render_config = gfx::RenderConfig{};
+
+    if (render_config.init(RESOURCE_PATH "pong/pong_config.json", readFile) != gfx::ErrorCode::NONE)
+    {
+        LOG_ERROR("Couldn't initialize the Render Configuration");
+        return 0;
+    }
+
     auto render_device = gfx::Renderer{window};
-
-    auto render_config = gfx::RenderConfig{.config_filename = RESOURCE_PATH "pong_config.json"};
-
-    render_config.init();
 
     if (!render_device.init(render_config))
     {
@@ -551,15 +572,10 @@ int main()
         return 0;
     }
 
-    auto opt_layout_handle = render_device.get_uniform_layout_handle("ul_camera_matrix");
-
     glm::mat4 view = glm::ortho(0.0f, 60.f, 0.0f, 40.f);
 
-    gfx::UniformHandle view_handle = render_device
-                                         .new_uniform(opt_layout_handle.value(),
-                                                      sizeof(glm::mat4),
-                                                      glm::value_ptr(view))
-                                         .value();
+    BufferUniform view_uniform = make_matrix_uniform(render_device, "us_camera_matrix", view);
+    gfx::UniformHandle view_handle = view_uniform.uniform_handle;
 
     auto pipeline_handle = render_device.get_pipeline_handle("pong_shader").value();
 
@@ -576,8 +592,11 @@ int main()
     auto six_index_buffer     = make_index_buffer(render_device, six_indices);
     auto seven_index_buffer   = make_index_buffer(render_device, seven_indices);
 
+    LOG_DEBUG("Making Paddle 1");
     Object paddle_1{
         object_vertex_buffer, object_index_buffer, indices.size(), {1.f, 17.5f}, {1.f, 5.f}};
+
+    LOG_DEBUG("Ended making Paddle 1");
 
     Object paddle_2{
         object_vertex_buffer, object_index_buffer, indices.size(), {58.f, 17.5f}, {1.f, 5.f}};

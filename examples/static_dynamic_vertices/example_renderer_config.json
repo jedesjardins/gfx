@@ -1,10 +1,5 @@
 {
 	"window_name": "Example Window",
-	"dynamic_vertex_buffer_size": 1024,
-	"dynamic_index_buffer_size": 1024,
-	"staging_buffer_size": 1024,
-	"max_updated_objects": 7,
-	"max_deleted_objects": 4,
 	"attachments":
 	[
 		{
@@ -24,10 +19,10 @@
 			"is_swapchain_image": true,
 			"format": "color",
 			"usage": ["COLOR_ATTACHMENT"],
-			"multisampled": false
+			"multisamples": 1
 		}
 	],
-	"renderpasses":
+	"render_passes":
 	[
 		{
 			"name": "rp_main_render_pass",
@@ -50,7 +45,7 @@
 					"initial_layout": "UNDEFINED",
 					"final_layout": "DEPTH_STENCIL_ATTACHMENT_OPTIMAL",
 					"clear_value": {
-						"depth_stencil": [1, 0]
+						"depth_stencil": [1.0, 0]
 					}
 				},
 				{
@@ -73,11 +68,13 @@
 							"layout": "COLOR_ATTACHMENT_OPTIMAL"
 						}
 					],
-					"resolve_attachment":
-					{
+					"color_resolve_attachments":
+					[
+						{
 						"attachment_name": "a_screen_color",
 						"layout": "COLOR_ATTACHMENT_OPTIMAL"
-					},
+						}
+					],
 					"depth_stencil_attachment":
 					{
 						"attachment_name": "a_depth",
@@ -89,7 +86,7 @@
 			[
 				{
 					"src_subpass": "EXTERNAL_SUBPASS",
-					"dst_subpass": 0,
+					"dst_subpass": "sp_first_subpass",
 					"src_stage_mask": ["COLOR_ATTACHMENT_OUTPUT"],
 					"dst_stage_mask": ["COLOR_ATTACHMENT_OUTPUT"],
 					"dst_access_mask":
@@ -97,11 +94,19 @@
 						"COLOR_ATTACHMENT_READ",
 						"COLOR_ATTACHMENT_WRITE"
 					]
+				},
+				{
+					"src_subpass": "EXTERNAL_SUBPASS",
+					"dst_subpass": "sp_first_subpass",
+					"src_stage_mask": ["TRANSFER"],
+					"dst_stage_mask": ["VERTEX_INPUT"],
+					"src_access_mask": ["TRANSFER_WRITE"],
+					"dst_access_mask": ["VERTEX_ATTRIBUTE_READ", "INDEX_READ"]
 				}
 			]
 		}
 	],
-	"renderpass_order": [
+	"render_pass_order": [
 		"rp_main_render_pass"
 	],
 	"shaders":
@@ -119,23 +124,32 @@
 			"file": "shaders/simple-frag.spv"
 		}
 	],
-	"uniform_layouts":
+	"uniforms":
 	[
 		{
-			"name": "ul_camera_matrix",
+			"name": "u_camera_matrix",
 			"binding": 0,
 			"descriptor_type": "UNIFORM_BUFFER_DYNAMIC",
 			"descriptor_count": 1,
-			"stage": ["VERTEX"],
-			"max_count": 8
+			"stage": ["VERTEX"]
 		},
 		{
-			"name": "ul_texture",
+			"name": "u_texture",
 			"binding": 1,
 			"descriptor_type": "COMBINED_IMAGE_SAMPLER",
 			"descriptor_count": 1,
-			"stage": ["FRAGMENT"],
-			"max_count": 8
+			"stage": ["FRAGMENT"]
+		}
+	],
+	"uniform_sets":
+	[
+		{
+			"name": "us_camera_matrix",
+			"uniforms": ["u_camera_matrix"]
+		},
+		{
+			"name": "us_texture",
+			"uniforms": ["u_texture"]
 		}
 	],
 	"push_constants":
@@ -181,11 +195,10 @@
 			"fragment_shader_name": "s_fragment_shader",
 			"vertex_bindings": ["vb_pos_color"],
 			"vertex_attributes": ["va_color", "va_pos"],
-			"uniform_layouts": ["ul_camera_matrix", "ul_texture"],
+			"uniform_sets": ["us_camera_matrix", "us_texture"],
 			"push_constants": ["pc_model_matrix"],
-			"renderpass": "rp_main_render_pass",
-			"subpass": "sp_first_subpass",
-			"max_drawn_objects": 3
+			"render_pass": "rp_main_render_pass",
+			"subpass": "sp_first_subpass"
 		},
 		{
 			"name": "simple_texture_shader",
@@ -193,11 +206,10 @@
 			"fragment_shader_name": "s_simple_fragment_shader",
 			"vertex_bindings": ["vb_pos_color"],
 			"vertex_attributes": ["va_color", "va_pos"],
-			"uniform_layouts": ["ul_camera_matrix", "ul_texture"],
+			"uniform_sets": ["us_camera_matrix", "us_texture"],
 			"push_constants": ["pc_model_matrix"],
-			"renderpass": "rp_main_render_pass",
-			"subpass": "sp_first_subpass",
-			"max_drawn_objects": 1
+			"render_pass": "rp_main_render_pass",
+			"subpass": "sp_first_subpass"
 		}
 	]
 }

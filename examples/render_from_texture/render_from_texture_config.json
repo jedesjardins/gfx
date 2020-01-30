@@ -1,0 +1,221 @@
+{
+	"window_name": "Example Window",
+	"attachments":
+	[
+		{
+			"name": "a_color",
+			"format": "color",
+			"usage": ["COLOR_ATTACHMENT", "SAMPLED"],
+			"multisamples": 1,
+			"size": {
+				"width": 60,
+				"height": 40
+			}
+		},
+		{
+			"name": "a_screen",
+			"is_swapchain_image": true,
+			"format": "color",
+			"usage": ["COLOR_ATTACHMENT"],
+			"multisamples": 1
+		}
+	],
+	"render_passes":
+	[
+		{
+			"name": "rp_first_render_pass",
+			"framebuffer":
+			[
+				{
+					"attachment_name": "a_color",
+					"load_op": "CLEAR",
+					"store_op": "STORE",
+					"initial_layout": "UNDEFINED",
+					"final_layout": "SHADER_READ_ONLY_OPTIMAL",
+					"clear_value": {
+						"color": [0, 0, 1, 1]
+					}
+				}
+			],
+			"subpasses":
+			[
+				{
+					"name": "sp_first_subpass",
+					"multisamples": 1,
+					"color_attachments":
+					[
+						{
+							"attachment_name": "a_color",
+							"layout": "COLOR_ATTACHMENT_OPTIMAL"
+						}
+					]
+				}
+			],
+			"subpass_dependencies":
+			[
+				{
+					"src_subpass": "EXTERNAL_SUBPASS",
+					"dst_subpass": "sp_first_subpass",
+					"src_stage_mask": ["COLOR_ATTACHMENT_OUTPUT"],
+					"dst_stage_mask": ["COLOR_ATTACHMENT_OUTPUT"],
+					"dst_access_mask":
+					[
+						"COLOR_ATTACHMENT_READ",
+						"COLOR_ATTACHMENT_WRITE"
+					]
+				},
+				{
+					"src_subpass": "EXTERNAL_SUBPASS",
+					"dst_subpass": "sp_first_subpass",
+					"src_stage_mask": ["TRANSFER"],
+					"dst_stage_mask": ["VERTEX_INPUT"],
+					"src_access_mask": ["TRANSFER_WRITE"],
+					"dst_access_mask": ["VERTEX_ATTRIBUTE_READ", "INDEX_READ"]
+				}
+			]
+		},
+		{
+			"name": "rp_second_render_pass",
+			"framebuffer":
+			[
+				{
+					"attachment_name": "a_screen",
+					"load_op": "DONT_CARE",
+					"store_op": "STORE",
+					"initial_layout": "UNDEFINED",
+					"final_layout": "PRESENT_SRC_KHR"
+				}
+			],
+			"subpasses":
+			[
+				{
+					"name": "sp_second_subpass",
+					"multisamples": 1,
+					"color_attachments":
+					[
+						{
+							"attachment_name": "a_screen",
+							"layout": "COLOR_ATTACHMENT_OPTIMAL"
+						}
+					]
+				}
+			],
+			"subpass_dependencies": [
+				{
+					"src_subpass": "EXTERNAL_SUBPASS",
+					"dst_subpass": "sp_second_subpass",
+					"src_stage_mask": ["COLOR_ATTACHMENT_OUTPUT"],
+					"dst_stage_mask": ["COLOR_ATTACHMENT_OUTPUT"],
+					"dst_access_mask": 
+					[
+						"COLOR_ATTACHMENT_READ",
+						"COLOR_ATTACHMENT_WRITE"
+					]
+				}
+			]
+		}
+	],
+	"render_pass_order": [
+		"rp_first_render_pass", "rp_second_render_pass"
+	],
+	"shaders":
+	[
+		{
+			"name": "simple_pos_vert_shader",
+			"file": "shaders/pos_vert.spv"
+		},
+		{
+			"name": "simple_white_frag_shader",
+			"file": "shaders/white_pos_frag.spv"
+		},
+		{
+			"name": "texture_vert_shader",
+			"file": "shaders/pos_uv_texture_vert.spv"
+		},
+		{
+			"name": "texture_frag_shader",
+			"file": "shaders/uv_texture_frag.spv"
+		}
+	],
+	"uniforms": [
+		{
+			"name": "u_texture",
+			"binding": 0,
+			"descriptor_type": "COMBINED_IMAGE_SAMPLER",
+			"descriptor_count": 1,
+			"stage": ["FRAGMENT"]
+		}
+	],
+	"uniform_sets": [
+		{
+			"name": "us_texture",
+			"uniforms": ["u_texture"]
+		}
+	],
+	"push_constants": [],
+	"vertex_bindings":
+	[
+		{
+			"name": "vb_pos",
+			"binding_slot": 0,
+			"stride": 8,
+			"input_rate": "PER_VERTEX"
+		},
+		{
+			"name": "vb_pos_uv",
+			"binding_slot": 0,
+			"stride": 16,
+			"input_rate": "PER_VERTEX"
+		}
+	],
+	"vertex_attributes":
+	[
+		{
+			"name": "va_pos_only",
+			"vertex_binding_name": "vb_pos",
+			"location": 0,
+			"format": "R32G32_SFLOAT",
+			"offset": 0
+		},
+		{
+			"name": "va_pos",
+			"vertex_binding_name": "vb_pos_uv",
+			"location": 0,
+			"format": "R32G32_SFLOAT",
+			"offset": 0
+		},
+		{
+			"name": "va_uv",
+			"vertex_binding_name": "vb_pos_uv",
+			"location": 1,
+			"format": "R32G32_SFLOAT",
+			"offset": 8
+		}
+	],
+	"pipelines":
+	[
+		{
+			"name": "initial_shader",
+			"vertex_shader_name": "simple_pos_vert_shader",
+			"fragment_shader_name": "simple_white_frag_shader",
+			"vertex_bindings": ["vb_pos"],
+			"vertex_attributes": ["va_pos_only"],
+			"uniform_sets": [],
+			"push_constants": [],
+			"render_pass": "rp_first_render_pass",
+			"subpass": "sp_first_subpass"
+		},
+		{
+			"name": "blit_shader",
+			"vertex_shader_name": "texture_vert_shader",
+			"fragment_shader_name": "texture_frag_shader",
+			"vertex_bindings": ["vb_pos_uv"],
+			"vertex_attributes": ["va_pos", "va_uv"],
+			"uniform_sets": ["us_texture"],
+			"push_constants": [],
+			"render_pass": "rp_second_render_pass",
+			"subpass": "sp_second_subpass",
+			"dynamic_state": ["VIEWPORT"]
+		}
+	]
+}

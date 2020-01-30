@@ -1,22 +1,15 @@
 
-#include <vulkan/vulkan.h>
-#include <GLFW/glfw3.h>
-
-#define JED_LOG_IMPLEMENTATION
 #include "log/logger.hpp"
-#undef JED_LOG_IMPLEMENTATION
-
-#define JED_GFX_IMPLEMENTATION
-#include "gfx/render_device.hpp"
-#undef JED_GFX_IMPLEMENTATION
-
-#define JED_CMD_IMPLEMENTATION
+#include "gfx/renderer.hpp"
 #include "cmd/cmd.hpp"
-#undef JED_CMD_IMPLEMENTATION
+#include "common.hpp"
 
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
 #undef STB_IMAGE_IMPLEMENTATION
+
+#include <vulkan/vulkan.h>
+#include <GLFW/glfw3.h>
 
 #define GLM_FORCE_RADIANS
 #define GLM_FORCE_DEPTH_ZERO_TO_ONE
@@ -221,32 +214,95 @@ public:
 
     void draw(gfx::Renderer & render_device, size_t uniform_count, gfx::UniformHandle * uniforms)
     {
+        VkDeviceSize zero_offset    = 0;
+        uint32_t     dynamic_offset = 0;
+
         if (std::holds_alternative<StaticVertexData>(vertex_data))
         {
             auto & static_data = std::get<StaticVertexData>(vertex_data);
 
-            render_device.draw(material.pipeline,
-                               static_data.vertexbuffer,
-                               0,
-                               static_data.indexbuffer,
-                               0,
-                               static_data.index_count,
-                               sizeof(glm::mat4),
-                               glm::value_ptr(material.transform),
-                               uniform_count, uniforms);
+            gfx::DrawParameters params{};
+
+            params.pipeline = material.pipeline;
+
+            params.vertex_buffer_count   = 1;
+            params.vertex_buffers        = &static_data.vertexbuffer;
+            params.vertex_buffer_offsets = &zero_offset;
+
+            params.index_buffer        = static_data.indexbuffer;
+            params.index_buffer_offset = 0;
+            params.index_count         = static_data.index_count;
+
+            params.push_constant_size = sizeof(glm::mat4);
+            params.push_constant_data = glm::value_ptr(material.transform);
+
+            params.uniform_count = uniform_count;
+            params.uniforms      = uniforms;
+
+            params.dynamic_offset_count = 1;
+            params.dynamic_offsets      = &dynamic_offset;
+
+            render_device.draw(params);
         }
         else if (std::holds_alternative<StreamedVertexData>(vertex_data))
         {
             auto & streamed_data = std::get<StreamedVertexData>(vertex_data);
 
-            render_device.draw(material.pipeline,
-                               streamed_data.vertex_count * sizeof(Vertex),
-                               streamed_data.vertices,
-                               streamed_data.index_count,
-                               streamed_data.indices,
-                               sizeof(glm::mat4),
-                               glm::value_ptr(material.transform),
-                               uniform_count, uniforms);
+            auto vertex_buffer_handle = render_device
+                                            .create_buffer(
+                                                streamed_data.vertex_count * sizeof(Vertex),
+                                                VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+                                                VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT
+                                                    | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT)
+                                            .value();
+
+            void * vertex_buffer_ptr = render_device.map_buffer(vertex_buffer_handle).value();
+
+            memcpy(vertex_buffer_ptr,
+                   streamed_data.vertices,
+                   streamed_data.vertex_count * sizeof(Vertex));
+
+            auto index_buffer_handle = render_device
+                                           .create_buffer(
+                                               streamed_data.index_count * sizeof(uint32_t),
+                                               VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
+                                               VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT
+                                                   | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT)
+                                           .value();
+
+            void * index_buffer_ptr = render_device.map_buffer(index_buffer_handle).value();
+
+            memcpy(index_buffer_ptr,
+                   streamed_data.indices,
+                   streamed_data.index_count * sizeof(uint32_t));
+
+            gfx::DrawParameters params{};
+
+            params.pipeline = material.pipeline;
+
+            params.vertex_buffer_count   = 1;
+            params.vertex_buffers        = &vertex_buffer_handle;
+            params.vertex_buffer_offsets = &zero_offset;
+
+            params.index_buffer        = index_buffer_handle;
+            params.index_buffer_offset = 0;
+            params.index_count         = streamed_data.index_count;
+
+            params.push_constant_size = sizeof(glm::mat4);
+            params.push_constant_data = glm::value_ptr(material.transform);
+
+            params.uniform_count = uniform_count;
+            params.uniforms      = uniforms;
+
+            params.dynamic_offset_count = 1;
+            params.dynamic_offsets      = &dynamic_offset;
+
+            render_device.draw(params);
+
+            std::array<gfx::BufferHandle, 2> delete_buffers{vertex_buffer_handle,
+                                                            index_buffer_handle};
+
+            render_device.delete_buffers(delete_buffers.size(), delete_buffers.data());
         }
     }
 
@@ -329,6 +385,27 @@ private:
 
 }; // class RawClock
 
+std::optional<gfx::TextureHandle> create_texture(gfx::Renderer & renderer,
+                                                 char const *    texture_path)
+{
+    int       texWidth, texHeight, texChannels;
+    stbi_uc * pixels = stbi_load(texture_path, &texWidth, &texHeight, &texChannels, STBI_rgb_alpha);
+
+    if (!pixels)
+    {
+        LOG_ERROR("Failed to load texture image {}", texture_path);
+        return std::nullopt;
+    }
+
+    auto texture = renderer.create_texture(texWidth, texHeight, 4, pixels);
+
+    stbi_image_free(pixels);
+
+    return texture;
+}
+
+gfx::ErrorCode readFile(char const * file_name, std::vector<char> & buffer);
+
 int main()
 {
     get_console_sink()->set_level(spdlog::level::warn);
@@ -346,12 +423,16 @@ int main()
 
     auto window = glfwCreateWindow(600, 400, "Vulkan", nullptr, nullptr);
 
+    auto render_config = gfx::RenderConfig{};
+
+    if (render_config.init(RESOURCE_PATH "static_dynamic_vertices/example_renderer_config.json", readFile)
+        != gfx::ErrorCode::NONE)
+    {
+        LOG_ERROR("Couldn't initialize the Render Configuration");
+        return 0;
+    }
+
     auto render_device = gfx::Renderer{window};
-
-    auto render_config = gfx::RenderConfig{
-        .config_filename = RESOURCE_PATH "example_renderer_config.json"};
-
-    render_config.init();
 
     if (!render_device.init(render_config))
     {
@@ -361,7 +442,7 @@ int main()
 
     std::vector<Object> objects{};
 
-    auto opt_texture = render_device.create_texture(RESOURCE_PATH "sword.png");
+    auto opt_texture = create_texture(render_device, RESOURCE_PATH "sword.png");
     if (!opt_texture)
     {
         LOG_ERROR("Couldn't create texture, exiting program!!");
@@ -409,32 +490,11 @@ int main()
     // Camera View Uniform
     glm::mat4 view = glm::scale(glm::mat4(1.0), glm::vec3(1.f, -1.f, 1.f));
 
-    auto opt_layout_handle = render_device.get_uniform_layout_handle("ul_camera_matrix");
-    if (!opt_layout_handle)
-    {
-        LOG_ERROR("Couldn't get UniformLayoutHandle for \"ul_camera_matrix\" UniformLayout");
-        return 0;
-    }
+    BufferUniform view_uniform = make_matrix_uniform(render_device, "us_camera_matrix", view);
+    auto          view_handle  = view_uniform.uniform_handle;
 
-    auto opt_view_handle = render_device.new_uniform(
-        opt_layout_handle.value(), sizeof(glm::mat4), glm::value_ptr(view));
-    if (!opt_view_handle)
-    {
-        LOG_ERROR("Couldn't create uniform for camera view");
-        return 0;
-    }
-    gfx::UniformHandle view_handle = opt_view_handle.value();
-
-    // Texture Sampler Uniform
-    opt_layout_handle = render_device.get_uniform_layout_handle("ul_texture");
-    if (!opt_layout_handle)
-    {
-        LOG_ERROR("Couldn't get UniformLayoutHandle for \"ul_texture\" UniformLayout");
-        return 0;
-    }
-
-    auto opt_sampler_handle = render_device.new_uniform(opt_layout_handle.value(), texture);
-    gfx::UniformHandle sampler_handle = opt_sampler_handle.value();
+    // Texture Uniform
+    gfx::UniformHandle sampler_handle = make_texture_uniform(render_device, "us_texture", texture);
 
     std::array<gfx::UniformHandle, 2> uniforms{view_handle, sampler_handle};
 
@@ -457,8 +517,12 @@ int main()
         {
             view *= glm::vec4(1.f, -1.f, 1.f, 1.f);
 
-            render_device.update_uniform(
-                view_handle, sizeof(glm::mat4), static_cast<void *>(glm::value_ptr(view)));
+            render_device.delete_uniforms(1, &view_uniform.uniform_handle);
+            render_device.delete_buffers(1, &view_uniform.buffer_handle);
+
+            view_uniform = make_matrix_uniform(render_device, "us_camera_matrix", view);
+            view_handle  = view_uniform.uniform_handle;
+            uniforms[0]  = view_handle;
 
             obj1_vertices[0].pos.y -= .01f;
 

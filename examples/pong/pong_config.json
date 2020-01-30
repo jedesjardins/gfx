@@ -1,0 +1,160 @@
+{
+	"window_name": "Example Window",
+	"attachments":
+	[
+		{
+			"name": "a_screen_color",
+			"format": "color",
+			"usage": ["COLOR_ATTACHMENT"],
+			"is_swapchain_image": true,
+			"multisamples": 1
+		},
+		{
+			"name": "a_depth",
+			"format": "depth",
+			"usage": ["DEPTH_STENCIL_ATTACHMENT"],
+			"multisamples": 1
+		}
+	],
+	"render_passes":
+	[
+		{
+			"name": "rp_main_render_pass",
+			"framebuffer":
+			[
+				{
+					"attachment_name": "a_screen_color",
+					"load_op": "CLEAR",
+					"store_op": "STORE",
+					"initial_layout": "UNDEFINED",
+					"final_layout": "PRESENT_SRC_KHR",
+					"clear_value": {
+						"color": [0, 0, 0, 1]
+					}
+				},
+				{
+					"attachment_name": "a_depth",
+					"load_op": "CLEAR",
+					"store_op": "DONT_CARE",
+					"initial_layout": "UNDEFINED",
+					"final_layout": "DEPTH_STENCIL_ATTACHMENT_OPTIMAL",
+					"clear_value": {
+						"depth_stencil": [1.0, 0]
+					}
+				}
+			],
+			"subpasses":
+			[
+				{
+					"name": "sp_first_subpass",
+					"multisamples": 1,
+					"color_attachments":
+					[
+						{
+							"attachment_name": "a_screen_color",
+							"layout": "COLOR_ATTACHMENT_OPTIMAL"
+						}
+					],
+					"depth_stencil_attachment":
+					{
+						"attachment_name": "a_depth",
+						"layout": "DEPTH_STENCIL_ATTACHMENT_OPTIMAL"
+					}
+				}
+			],
+			"subpass_dependencies":
+			[
+				{
+					"src_subpass": "EXTERNAL_SUBPASS",
+					"dst_subpass": "sp_first_subpass",
+					"src_stage_mask": ["COLOR_ATTACHMENT_OUTPUT"],
+					"dst_stage_mask": ["COLOR_ATTACHMENT_OUTPUT"],
+					"dst_access_mask":
+					[
+						"COLOR_ATTACHMENT_READ",
+						"COLOR_ATTACHMENT_WRITE"
+					]
+				},
+				{
+					"src_subpass": "EXTERNAL_SUBPASS",
+					"dst_subpass": "sp_first_subpass",
+					"src_stage_mask": ["TRANSFER"],
+					"dst_stage_mask": ["VERTEX_INPUT"],
+					"src_access_mask": ["TRANSFER_WRITE"],
+					"dst_access_mask": ["VERTEX_ATTRIBUTE_READ", "INDEX_READ"]
+				}
+			]
+		}
+	],
+	"render_pass_order": [
+		"rp_main_render_pass"
+	],
+	"shaders":
+	[
+		{
+			"name": "s_vertex_shader",
+			"file": "shaders/square_vert.spv"
+		},
+		{
+			"name": "s_fragment_shader",
+			"file": "shaders/square_frag.spv"
+		}
+	],
+	"uniforms": [
+		{
+			"name": "u_camera_matrix",
+			"binding": 0,
+			"descriptor_type": "UNIFORM_BUFFER",
+			"descriptor_count": 1,
+			"stage": ["VERTEX"]
+		}
+	],
+	"uniform_sets": [
+		{
+			"name": "us_camera_matrix",
+			"uniforms": ["u_camera_matrix"]
+		}
+	],
+	"push_constants":
+	[
+		{
+			"name": "pc_model_matrix",
+			"stage": ["VERTEX"],
+			"offset": 0,
+			"size": 64
+		}
+	],
+	"vertex_bindings":
+	[
+		{
+			"name": "vb_pos",
+			"binding_slot": 0,
+			"stride": 12,
+			"input_rate": "PER_VERTEX"
+		}
+	],
+	"vertex_attributes":
+	[
+		{
+			"name": "va_pos",
+			"vertex_binding_name": "vb_pos",
+			"location": 0,
+			"format": "R32G32B32_SFLOAT",
+			"offset": 0
+		}
+	],
+	"pipelines":
+	[
+		{
+			"name": "pong_shader",
+			"vertex_shader_name": "s_vertex_shader",
+			"fragment_shader_name": "s_fragment_shader",
+			"vertex_bindings": ["vb_pos"],
+			"vertex_attributes": ["va_pos"],
+			"uniform_sets": ["us_camera_matrix"],
+			"push_constants": ["pc_model_matrix"],
+			"render_pass": "rp_main_render_pass",
+			"subpass": "sp_first_subpass"
+		}
+	]
+}
