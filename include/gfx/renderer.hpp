@@ -633,13 +633,12 @@ struct IndexAllocator
 struct PhysicalDeviceInfo
 {
     std::vector<VkQueueFamilyProperties> queue_family_properties{};
-    int32_t                              present_queue{-1};
-    int32_t                              graphics_queue{-1};
-    int32_t                              transfer_queue{-1};
+    int32_t                              general_queue_family{-1};
+    int32_t                              async_queue_family{-1};
 
     bool queues_complete() const
     {
-        return present_queue != -1 && graphics_queue != -1 && transfer_queue != -1;
+        return general_queue_family != -1; // async_queue_family != -1;
     }
 
     std::vector<VkExtensionProperties> available_extensions{};
@@ -1085,22 +1084,13 @@ private:
             VkBool32 presentSupport = false;
             vkGetPhysicalDeviceSurfaceSupportKHR(device, i, surface, &presentSupport);
 
-            if (device_info.present_queue == -1 && queueFamily.queueCount > 0 && presentSupport)
+            if (device_info.general_queue_family == -1
+                && queueFamily.queueCount > 0
+                && presentSupport
+                && queueFamily.queueFlags & VK_QUEUE_GRAPHICS_BIT
+                && queueFamily.queueFlags & VK_QUEUE_COMPUTE_BIT)
             {
-                device_info.present_queue = i;
-            }
-
-            if (device_info.graphics_queue == -1 && queueFamily.queueCount > 0
-                && queueFamily.queueFlags & VK_QUEUE_GRAPHICS_BIT)
-            {
-                device_info.graphics_queue = i;
-            }
-
-            if (queueFamily.queueCount > 0 && (i != device_info.graphics_queue)
-                && (queueFamily.queueFlags & VK_QUEUE_TRANSFER_BIT
-                    || queueFamily.queueFlags & VK_QUEUE_GRAPHICS_BIT))
-            {
-                device_info.transfer_queue = i;
+                device_info.general_queue_family = i;
             }
 
             if (device_info.queues_complete())
@@ -1109,11 +1099,6 @@ private:
             }
 
             i++;
-        }
-
-        if (device_info.transfer_queue == -1)
-        {
-            device_info.transfer_queue = device_info.graphics_queue;
         }
     }
 
@@ -1206,24 +1191,13 @@ private:
     // LOGICAL DEVICE
     ErrorCode create_logical_device()
     {
-        // create queue info for graphics and present queues
-        std::vector<VkDeviceQueueCreateInfo> queueCreateInfos;
-        std::set<uint32_t>                   uniqueQueueFamilies = {
-            static_cast<uint32_t>(physical_device_info.present_queue),
-            static_cast<uint32_t>(physical_device_info.graphics_queue),
-            static_cast<uint32_t>(physical_device_info.transfer_queue)};
-
         float queuePriority = 1.0f;
-        for (uint32_t queueFamily: uniqueQueueFamilies)
-        {
-            auto queueCreateInfo = VkDeviceQueueCreateInfo{
-                .sType            = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
-                .queueFamilyIndex = queueFamily,
-                .queueCount       = 1,
-                .pQueuePriorities = &queuePriority};
+        auto general_queue_create_info = VkDeviceQueueCreateInfo{
+            .sType            = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
+            .queueFamilyIndex = static_cast<uint32_t>(physical_device_info.general_queue_family),
+            .queueCount       = 1,
+            .pQueuePriorities = &queuePriority};
 
-            queueCreateInfos.push_back(queueCreateInfo);
-        }
 
         // ensure physical device supports this
         auto deviceFeatures = VkPhysicalDeviceFeatures{.samplerAnisotropy = VK_TRUE,
@@ -1233,8 +1207,8 @@ private:
         // create logical device info
         auto createInfo = VkDeviceCreateInfo{
             .sType                = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
-            .pQueueCreateInfos    = queueCreateInfos.data(),
-            .queueCreateInfoCount = static_cast<uint32_t>(queueCreateInfos.size()),
+            .pQueueCreateInfos    = &general_queue_create_info,
+            .queueCreateInfoCount = 1,
             .pEnabledFeatures     = &deviceFeatures,
 
             // extensions
@@ -1301,26 +1275,15 @@ private:
             .compositeAlpha   = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR,
             .presentMode      = present_mode,
             .clipped          = VK_TRUE,
-            .oldSwapchain     = VK_NULL_HANDLE};
+            .oldSwapchain     = VK_NULL_HANDLE,
+            .imageSharingMode      = VK_SHARING_MODE_EXCLUSIVE,
+            .queueFamilyIndexCount = 0,      // Optional
+            .pQueueFamilyIndices   = nullptr // Optional
+        };
 
-        // if there are two queues, enable concurrent access
-        // since graphics queue will draw to the swap chain and present queue will present the image
-        if (physical_device_info.graphics_queue != physical_device_info.present_queue)
-        {
-            uint32_t queueFamilyIndices[] = {
-                static_cast<uint32_t>(physical_device_info.graphics_queue),
-                static_cast<uint32_t>(physical_device_info.present_queue)};
-
-            createInfo.imageSharingMode      = VK_SHARING_MODE_CONCURRENT;
-            createInfo.queueFamilyIndexCount = 2;
-            createInfo.pQueueFamilyIndices   = queueFamilyIndices; // queues with concurrent access
-        }
-        else
-        {
-            createInfo.imageSharingMode      = VK_SHARING_MODE_EXCLUSIVE;
+        createInfo.imageSharingMode      = VK_SHARING_MODE_EXCLUSIVE;
             createInfo.queueFamilyIndexCount = 0;       // Optional
             createInfo.pQueueFamilyIndices   = nullptr; // Optional
-        }
 
         VK_CHECK_RESULT(vkCreateSwapchainKHR(logical_device, &createInfo, nullptr, &swapchain),
                         "Unable to create the VkSwapchainKHR");
@@ -3123,24 +3086,16 @@ private:
     void get_queues(Device const * device)
     {
         vkGetDeviceQueue(device->get_logical_device(),
-                         device->get_device_info().present_queue,
+                         device->get_device_info().general_queue_family,
                          0,
-                         &present_queue);
-        vkGetDeviceQueue(device->get_logical_device(),
-                         device->get_device_info().graphics_queue,
-                         0,
-                         &graphics_queue);
-        vkGetDeviceQueue(device->get_logical_device(),
-                         device->get_device_info().transfer_queue,
-                         0,
-                         &transfer_queue);
+                         &general_queue);
     }
 
     ErrorCode create_command_pool(Device const * device)
     {
         auto poolInfo = VkCommandPoolCreateInfo{
             .sType            = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
-            .queueFamilyIndex = static_cast<uint32_t>(device->get_device_info().graphics_queue),
+            .queueFamilyIndex = static_cast<uint32_t>(device->get_device_info().general_queue_family),
             .flags            = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT};
 
         VK_CHECK_RESULT(
@@ -3183,9 +3138,7 @@ private:
     }
 
 public:
-    VkQueue graphics_queue{VK_NULL_HANDLE};
-    VkQueue transfer_queue{VK_NULL_HANDLE};
-    VkQueue present_queue{VK_NULL_HANDLE};
+    VkQueue general_queue{VK_NULL_HANDLE};
 
     std::vector<VkCommandBuffer> draw_commandbuffers;
     std::vector<VkCommandBuffer> transfer_commandbuffers;
@@ -3719,13 +3672,13 @@ bool Renderer::submit_frame()
         .commandBufferCount = 1,
         .pCommandBuffers    = &commands->transfer_commandbuffers[frames->currentResource]};
 
-    if (vkQueueSubmit(commands->graphics_queue, 1, &submitTransferInfo, VK_NULL_HANDLE)
+    if (vkQueueSubmit(commands->general_queue, 1, &submitTransferInfo, VK_NULL_HANDLE)
         != VK_SUCCESS)
     {
         LOG_ERROR("Failed to submit transfer command buffer!");
         return false;
     }
-    // the graphics queue will wait to do anything in the color_attachment_output stage
+    // the general queue will wait to do anything in the color_attachment_output stage
     // until the waitSemaphore is signalled by vkAcquireNextImageKHR
     VkSemaphore waitSemaphores[]      = {frames->image_available_semaphores[frames->currentFrame]};
     VkPipelineStageFlags waitStages[] = {VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT};
@@ -3749,7 +3702,7 @@ bool Renderer::submit_frame()
 
     vkResetFences(device->get_logical_device(), 1, &frames->in_flight_fences[frames->currentFrame]);
 
-    if (vkQueueSubmit(commands->graphics_queue,
+    if (vkQueueSubmit(commands->general_queue,
                       1,
                       &submitInfo,
                       frames->in_flight_fences[frames->currentFrame])
@@ -3771,7 +3724,7 @@ bool Renderer::submit_frame()
 
                                         .pResults = nullptr};
 
-    result = vkQueuePresentKHR(commands->present_queue, &presentInfo);
+    result = vkQueuePresentKHR(commands->general_queue, &presentInfo);
 
     if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR)
     {
